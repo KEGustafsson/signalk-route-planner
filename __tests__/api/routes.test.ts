@@ -1,7 +1,8 @@
 import { EventEmitter } from "events";
+import { PassThrough } from "stream";
 import type { Request, RequestHandler, Response } from "express";
 import { PLANNING_API } from "../../src/oracle/contract";
-import { registerRoutes } from "../../src/api/routes";
+import { MAX_BODY_BYTES, readJsonBody, registerRoutes } from "../../src/api/routes";
 import { apiFor } from "../../src/plugin-api";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -111,5 +112,21 @@ describe("REST routes", () => {
       code: 503,
       body: { errors: ["plugin not started"] }
     });
+  });
+
+  test("an oversize streamed body is refused without closing the socket", async () => {
+    const req = new PassThrough();
+    const read = readJsonBody(req as unknown as Request);
+    req.write(Buffer.alloc(MAX_BODY_BYTES + 1, 32));
+    req.end(Buffer.from("{}"));
+    await expect(read).rejects.toThrow("request body too large");
+    expect(req.destroyed).toBe(false);
+  });
+
+  test("a streamed body within the cap is parsed", async () => {
+    const req = new PassThrough();
+    const read = readJsonBody(req as unknown as Request);
+    req.end(Buffer.from('{"a":1}'));
+    await expect(read).resolves.toEqual({ a: 1 });
   });
 });

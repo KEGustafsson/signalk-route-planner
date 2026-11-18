@@ -150,7 +150,8 @@ export function syntheticApi(
         return {
           index: i,
           status,
-          risk: status === "fail" ? 0.9 : 0,
+          risk: status === "fail" ? 0.9 : v.risk,
+          flags: v.flags,
           length: Math.round(haversine(a, b))
         };
       });

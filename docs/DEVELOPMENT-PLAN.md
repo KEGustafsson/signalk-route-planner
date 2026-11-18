@@ -51,7 +51,7 @@ for the tide, or explains why each leg is safe. This plan does all four:
 ```text
 Freeboard-SK ──(Plotter Extensions bus: route.create / replace / save, overlays, panel)──┐
                                                                                           │
-Freeboard extension (public/) ── POST /plugins/signalk-route-planner/plan ──► planner plugin
+Freeboard extension (public/) ─ POST /plugins/signalk-route-planner/v1/plan ─► planner plugin
                                                                                  │
                                          in-process planning API v1 (globalThis) │
                                                                                  ▼
@@ -76,59 +76,21 @@ Freeboard extension (public/) ── POST /plugins/signalk-route-planner/plan �
 
 ### 2.1 Planning API v1 (`signalk-underkeel`)
 
-```ts
-interface PlanningApiV1 {
-  readonly version: 1;
-  /** Why planning cannot run now; undefined when the index is ready. */
-  unavailable(): string | undefined;
-  /** The box the index covers [west, south, east, north]; undefined for a whole index. */
-  coverage(): [number, number, number, number] | undefined;
-  defaults(): { speed: number; xteLimit: number; probability: number; planningBuffer: number };
-  /** Runs `job` with the index, in underkeel's request queue. */
-  session<T>(
-    params: SessionParams,
-    signal: AbortSignal,
-    job: (s: Session) => Promise<T>
-  ): Promise<T>;
-  /** The `/route-check` service: same body, same reply. */
-  routeCheck(body: unknown, signal: AbortSignal): Promise<{ status: number; body: unknown }>;
-}
+The types are in `src/oracle/contract.ts`, a copy of underkeel's `src/planning-api.ts`. What
+the planner relies on:
 
-interface SessionParams {
-  departure: number; // epoch ms
-  until: number; // end of the time window the verdicts hold for, epoch ms
-  speed: number; // m/s
-  xteLimit?: number;
-  probability?: number;
-  draft?: number;
-}
-
-interface Session {
-  /** Corridor half-width: xteLimit + planning buffer, metres. */
-  readonly halfWidth: number;
-  /** Every point of the box with halfWidth around it, at the lowest level in the window.
-   *  Throws RangeError when the box with that buffer is over 25 km². */
-  box(sw: [number, number], ne: [number, number], window?: { start: number; end: number }): Verdict;
-  /** The leg a → b, checked as /route-check checks a leg, over the window. Throws
-   *  RangeError when its corridor (length plus both ends, times 2 · halfWidth) is over 25 km². */
-  segment(
-    a: [number, number],
-    b: [number, number],
-    window?: { start: number; end: number }
-  ): Verdict;
-  /** Work done so far, in underkeel's work units (src/engine/work.ts). */
-  work(): number;
-  /** Yields to the event loop; rejects once the request is aborted. */
-  pause(): Promise<void>;
-}
-
-interface Verdict {
-  status: "ok" | "marginal" | "fail" | "unverified";
-  risk: number;
-  flags: string[];
-  worst?: [number, number];
-}
-```
+- `unavailable()` says why planning cannot run now; `defaults()` gives the route check's speed,
+  cross-track limit, probability and planning buffer.
+- `session(params, signal, job)` runs `job` in underkeel's request queue with a `Session` over a
+  time window: `box(sw, ne)` checks every point of the box with the corridor half-width around
+  it, `segment(a, b)` checks a leg as `/route-check` does, both at the window's lowest water
+  level. A box or leg corridor over 25 km² throws `RangeError`; the planner never sends one.
+- `work()` counts underkeel's work units and `pause()` yields, rejecting once the request is
+  aborted.
+- `routeCheck(body, signal)` is the `/route-check` service itself, so the proof's statuses are
+  underkeel's.
+- Every verdict carries its status (`ok`, `marginal`, `fail`, `unverified`), P(UKC < 0), flags
+  and the worst point: the planner never makes a status up.
 
 ## 3. Safety invariants
 
@@ -164,11 +126,14 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
      Squares are classified lazily as A* reaches them, so open water stays a few large leaves.
 3. **A\*** over free leaves that share an edge, through the midpoint of the shared edge, with the
    straight-line distance as the heuristic.
-4. **String pulling.** From each kept waypoint, the farthest later path point whose straight leg
-   `session.segment` passes becomes the next waypoint. Every leg of the result has passed the
-   corridor check over the trip window.
+4. **String pulling.** From each kept waypoint, later path points are tried farthest first, then
+   halving the distance in points, and the first whose straight leg `session.segment` passes
+   becomes the next waypoint. This bounded heuristic costs O(log n) checks a waypoint and can
+   miss a longer shortcut that passes after a shorter one failed. Every leg of the result has
+   passed the corridor check over the trip window.
 5. **Proof.** `routeCheck` checks the route at its departure, leg by leg at each leg's own arrival.
-   Its statuses are the answer.
+   Its statuses are the answer. A plan without `fallback` is offered only when every leg is `ok`,
+   `marginal` or an accepted `unverified`; otherwise the reply is 422 with the route check.
 6. **Why not straight.** The direct line's check result is returned when it fails, naming the
    worst hazard: the binding constraint.
 7. **Data not for navigation.** With `accept: ["NOT_FOR_NAVIGATION"]` the search may plan through
@@ -183,8 +148,12 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    the route check, marked.
 9. **Diagonal channels.** Squares that meet only at a corner are joined through that corner: a
    path through it lies in the two squares, so its corridor stays in their checked footprints.
-10. **Bounded work.** The plan counts underkeel work units and stops at a limit sized for about
-    3 s on a Raspberry Pi 4, refusing with the reason rather than returning a partial route.
+10. **Bounded work.** The search and string pulling count underkeel work units and stop at a
+    limit sized for about 3 s on a Raspberry Pi 4, refusing with the reason rather than returning
+    a partial route.
+11. **Boxes the API takes.** A box's longitude span widens away from the frame's origin latitude,
+    so each box is measured at its own latitude and split while it is over 24 km² with its
+    buffer. A region across the 180° meridian or over a pole is refused.
 
 ### 4.2 R2: planning beyond the chart box
 
@@ -233,7 +202,7 @@ worker at low priority, from the same cell cache, released after use. API v1 gai
 
 ## 5. REST API
 
-`POST /plugins/signalk-route-planner/plan`
+`POST /plugins/signalk-route-planner/v1/plan`
 
 ```jsonc
 {
@@ -261,23 +230,24 @@ Reply 200:
     ]
   },
   "length": 14250, // metres
-  "legs": [/* underkeel route-check legs */],
   "status": "ok", // worst leg status
+  "check": { "legs": [/* underkeel route-check legs */] }, // the route check's reply
   "direct": { "status": "fail", "worst": [22.21, 60.24] }, // the straight line's check
   "work": 182340
 }
 ```
 
-Reply 422 when no route exists, with `reason` and, when only unverified water connects the
-points, `unverifiedOnly: true`. Reply 503 when the planning API is missing or the index is not
-ready.
+Reply 422 when no route exists, with `reason` and, when the search met water the check cannot
+verify, `unverifiedSquares`: how many one-unit squares it was. Reply 503 when the planning API
+is missing or the index is not ready.
 
 ## 6. Performance budget
 
 Raspberry Pi 4 is the reference. One plan may do 1 200 000 underkeel work units (about 3 s on a
-Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop). The search stops at 80 % of that and the
-proof gets the rest. Work is counted, never timed, so a request gives the same answer on any
-machine.
+Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop). A\* stops at 80 % of that and string
+pulling at the whole. The proof is underkeel's route check, bounded by `/route-check`'s own
+limits; its work is not counted in the plan's. Work is counted, never timed, so a request gives
+the same answer on any machine.
 
 ## 7. Testing
 

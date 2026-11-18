@@ -71,7 +71,7 @@ export function manifestProvider(version: string): ResourceProvider {
     methods: {
       listResources: () => Promise.resolve(manifest),
       getResource: (id: string) => {
-        const m = manifest[id];
+        const m = Object.hasOwn(manifest, id) ? manifest[id] : undefined;
         return m
           ? Promise.resolve(m as unknown as object)
           : Promise.reject(new Error(`no plotterExtensions resource ${id}`));

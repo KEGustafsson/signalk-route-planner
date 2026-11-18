@@ -61,6 +61,38 @@ describe("plan", () => {
     expect((r.body as { status: string }).status).toBe("marginal");
   });
 
+  test.each([
+    ["fail", 0.9, []],
+    ["unverified", 0, ["NO_COVERAGE"]]
+  ])(
+    "a final route check with a %s leg refuses the strict plan with the legs",
+    async (status, risk, flags) => {
+      const api = syntheticApi(ISLAND, {
+        routeCheck: (body) => {
+          const coords = (body as { route: { coordinates: unknown[] } }).route.coordinates;
+          const legs = coords.slice(1).map((_, i) => ({
+            index: i,
+            ...(i === 0 ? { status, risk, flags } : { status: "ok", risk: 0, flags: [] }),
+            length: 100
+          }));
+          return Promise.resolve({ status: 200, body: { legs } });
+        }
+      });
+      const r = await plan(
+        api,
+        { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3 },
+        NEVER,
+        NOW
+      );
+      expect(r.status).toBe(422);
+      expect(r.body).toMatchObject({
+        reason: expect.stringMatching(/does not pass 1 of the \d+ planned legs/),
+        check: { legs: expect.arrayContaining([expect.objectContaining({ status })]) }
+      });
+      expect(r.body).not.toHaveProperty("route");
+    }
+  );
+
   test("no route: 422 with the reason and the direct line's verdict", async () => {
     const ring = Array.from({ length: 48 }, (_, i) => {
       const t = (i / 48) * 2 * Math.PI;

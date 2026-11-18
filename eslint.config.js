@@ -6,16 +6,29 @@ const tsPlugin = require("@typescript-eslint/eslint-plugin");
 // Import-boundary rule: a module may import only its own layer or layers
 // BELOW it:
 //   foundation < oracle < search < plan < api
-// `src/index.ts` (plugin entry) sits above all of them. Patterns for
-// directories that do not exist yet are inert until they are created.
+// `src/index.ts` (plugin entry) sits above all of them, so no layer imports
+// it. Patterns for directories that do not exist yet are inert until they
+// are created.
 const LAYERS = ["foundation", "oracle", "search", "plan", "api"];
+// `..` from a layer directory, or a path ending in `index`, is the plugin entry.
+const ENTRY = {
+  regex: "^(\\.\\./)*\\.\\.$|(^|/)index(\\.[jt]s)?$",
+  message: "src/index.ts is the plugin entry; no layer imports it"
+};
 
-const layerBoundaries = LAYERS.slice(0, -1).map((layer, i) => ({
+const layerBoundaries = LAYERS.map((layer, i) => ({
   files: [`src/${layer}/**/*.ts`],
   rules: {
     "no-restricted-imports": [
       "error",
-      { patterns: LAYERS.slice(i + 1).map((above) => `**/${above}/**`) }
+      {
+        patterns: [
+          ...(i + 1 < LAYERS.length
+            ? [{ group: LAYERS.slice(i + 1).map((above) => `**/${above}/**`) }]
+            : []),
+          ENTRY
+        ]
+      }
     ]
   }
 }));

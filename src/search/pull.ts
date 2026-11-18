@@ -6,16 +6,17 @@ import { OK_ONLY, passes } from "./passes";
 /**
  * String pulling (plan §4.1 step 4). The path from the quadtree search holds
  * because each of its pieces lies inside one free square; it zig-zags through
- * square centres and edge midpoints. From each kept waypoint, the farthest
- * later point whose straight leg passes (`passes.ts`) becomes the next
- * waypoint. Candidates are tried farthest first, then halving the distance
- * in points, so a waypoint costs O(log n) checks; the next point along the
- * path is kept unchecked when no candidate passes, since it lies in the same
- * free square.
+ * square centres and edge midpoints. From each kept waypoint, later points are
+ * tried farthest first, then halving the distance in points, and the first
+ * whose straight leg passes (`passes.ts`) becomes the next waypoint. This is a
+ * bounded heuristic, O(log n) checks a waypoint: it samples the shortcuts and
+ * can miss a longer one that passes after a shorter one failed. The next point
+ * along the path is kept unchecked when no candidate passes, since it lies in
+ * the same free square.
  */
 
 export interface PullLimits {
-  /** True once pulling has used its work; the remaining points are then kept as they are. */
+  /** True once pulling has used its work; pulling then stops and reports it. */
   exhausted(): boolean;
   pause(): Promise<void>;
 }
@@ -29,7 +30,7 @@ export async function pull(
   limits: PullLimits,
   rule: PassRule = OK_ONLY,
   also?: Shortcut
-): Promise<LonLat[]> {
+): Promise<LonLat[] | "work"> {
   if (points.length <= 2) {
     return [...points];
   }
@@ -37,12 +38,11 @@ export async function pull(
   let i = 0;
   const last = points.length - 1;
   while (i < last) {
-    if (limits.exhausted()) {
-      kept.push(...points.slice(i + 1));
-      return kept;
-    }
     let next = i + 1;
     for (let step = last - i; step > 1; step = Math.ceil(step / 2)) {
+      if (limits.exhausted()) {
+        return "work";
+      }
       const j = i + step;
       const v = segment(points[i] as LonLat, points[j] as LonLat);
       if (passes(v, rule) || (also?.(v, i, j) ?? false)) {

@@ -8,7 +8,7 @@ import { crossable, fallbackWeight } from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
-import { centre, QuadTree } from "../search/quadtree";
+import { centre, MAX_BOX_KM2, QuadTree } from "../search/quadtree";
 import type { PlanOptions } from "./options";
 
 /**
@@ -37,8 +37,8 @@ export type SearchOutcome =
       work: number;
     };
 
-/** A box with its corridor buffer stays under the planning API's 25 km² (24 km² here). */
-const MAX_BOX_SIDE = Math.sqrt(24e6);
+/** A box with its corridor buffer at the frame's origin stays under MAX_BOX_KM2. */
+const MAX_BOX_SIDE = Math.sqrt(MAX_BOX_KM2 * 1e6);
 
 /** Legs whose corridor is over this, km², are never checked as one leg (the API refuses 25). */
 const MAX_LEG_KM2 = 24;
@@ -78,7 +78,18 @@ export function shapeFor(
   }
   const maxLeaf = 2 ** Math.floor(Math.log2(leafMetres / unit));
   const extent = (side * unit) / 2;
-  return { frame: frameAt(midpoint(from, to)), x0: -extent, y0: -extent, unit, side, maxLeaf };
+  const frame = frameAt(midpoint(from, to));
+  // Planning API v1 boxes are west–east corner pairs: none may cross the 180° meridian.
+  if (frame.toLonLat(-extent, 0)[0] > frame.toLonLat(extent, 0)[0]) {
+    return "the planning region crosses the 180° meridian, which the planning API does not take";
+  }
+  if (
+    Math.abs(frame.toLonLat(0, extent)[1]) >= 90 ||
+    Math.abs(frame.toLonLat(0, -extent)[1]) >= 90
+  ) {
+    return "the planning region reaches a pole";
+  }
+  return { frame, x0: -extent, y0: -extent, unit, side, maxLeaf };
 }
 
 interface Access {
@@ -131,6 +142,10 @@ function access(
     .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
     .filter((n) => mode.enter(n))
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
+    .filter(({ n }) => {
+      const c = centre(n);
+      return haversine(p, tree.lonLat(c[0], c[1])) <= opts.accessMetres;
+    })
     .sort((a, b) => a.d - b.d)
     .slice(0, 8);
   for (const { n } of near) {
@@ -259,6 +274,9 @@ export async function searchRoute(
     rule,
     found === strict ? undefined : fallbackShortcut(tree, found.path)
   );
+  if (coordinates === "work") {
+    return refuse(WORK_LIMIT);
+  }
   return {
     ok: true,
     coordinates,

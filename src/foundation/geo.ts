@@ -50,3 +50,20 @@ export function frameAt(origin: LonLat): Frame {
 export function midpoint(a: LonLat, b: LonLat): LonLat {
   return [wrapLon(a[0] + wrapLon(b[0] - a[0]) / 2), (a[1] + b[1]) / 2];
 }
+
+/**
+ * An upper bound, km², on the area of the box sw–ne grown by `r` metres on every side,
+ * as signalk-underkeel's planning API v1 grows and measures it (`grownBox`): its longitude
+ * buffer is taken at the box's poleward edge, and its width here at the edge nearest the
+ * equator, where it is widest.
+ */
+export function grownBoxKm2(sw: LonLat, ne: LonLat, r: number): number {
+  const dLat = r / (EARTH_RADIUS * DEG);
+  const s = sw[1] - dLat;
+  const n = ne[1] + dLat;
+  const poleward = Math.cos(Math.max(Math.abs(s), Math.abs(n)) * DEG);
+  const dLon = r / (EARTH_RADIUS * DEG * Math.max(poleward, 1e-6));
+  const wide = s > 0 ? s : n < 0 ? n : 0;
+  const width = (ne[0] - sw[0] + 2 * dLon) * DEG * EARTH_RADIUS * Math.cos(wide * DEG);
+  return (width * (n - s) * DEG * EARTH_RADIUS) / 1e6;
+}

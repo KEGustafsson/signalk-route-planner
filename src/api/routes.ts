@@ -46,15 +46,22 @@ export function readJsonBody(req: Request): Promise<unknown> {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on("data", (chunk: Buffer) => {
+      if (size > MAX_BODY_BYTES) {
+        // Drained, not kept: the socket stays open for the 400.
+        return;
+      }
       size += chunk.length;
       if (size > MAX_BODY_BYTES) {
+        chunks.length = 0;
         reject(new BodyError("request body too large"));
-        req.destroy();
         return;
       }
       chunks.push(chunk);
     });
     req.on("end", () => {
+      if (size > MAX_BODY_BYTES) {
+        return;
+      }
       try {
         resolve(chunks.length === 0 ? {} : JSON.parse(Buffer.concat(chunks).toString("utf8")));
       } catch {

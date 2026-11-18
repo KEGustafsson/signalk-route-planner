@@ -74,6 +74,23 @@ describe("extension assets", () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
+  test("a same-size replacement that keeps the mtime is served afresh", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "planner-assets-"));
+    const file = path.join(root, "panel.js");
+    fs.writeFileSync(file, "one");
+    const mw = assetMiddleware(root);
+    const first = serve("/panel.js", "GET", {}, mw);
+    const { atime, mtime } = fs.statSync(file);
+    const next = path.join(root, "panel.js.new");
+    fs.writeFileSync(next, "two");
+    fs.renameSync(next, file);
+    fs.utimesSync(file, atime, mtime);
+    const replaced = serve("/panel.js", "GET", {}, mw);
+    expect(String(replaced.res.body)).toBe("two");
+    expect(replaced.headers.ETag).not.toBe(first.headers.ETag);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
   test("paths outside public/ and unknown file types are refused", () => {
     expect(assetFile(PUBLIC, "/../package.json")).toBeUndefined();
     expect(assetFile(PUBLIC, "/%2e%2e/package.json")).toBeUndefined();

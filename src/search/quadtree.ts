@@ -1,4 +1,5 @@
 import type { Frame, LonLat } from "../foundation/geo";
+import { grownBoxKm2 } from "../foundation/geo";
 import type { Session, Status } from "../oracle/contract";
 import type { PassRule } from "./passes";
 import { OK_ONLY, passes } from "./passes";
@@ -15,6 +16,12 @@ import { OK_ONLY, passes } from "./passes";
  * that is not `ok` is blocked, and remembered as unverified when its verdict
  * said so.
  */
+
+/** The largest box with its buffer the tree sends, km²: under the planning API's 25. */
+export const MAX_BOX_KM2 = 24;
+
+/** A one-unit square too large to ask about: never free, counted as unverified. */
+const TOO_LARGE = { status: "unverified" as const, risk: 0, flags: ["BOX_TOO_LARGE"] };
 
 export type NodeState = "unknown" | "free" | "blocked" | "unverified" | "split";
 
@@ -95,7 +102,20 @@ export class QuadTree {
       this.split(n);
       return;
     }
-    const v = this.session.box(this.lonLat(n.x, n.y), this.lonLat(n.x + n.size, n.y + n.size));
+    const sw = this.lonLat(n.x, n.y);
+    const ne = this.lonLat(n.x + n.size, n.y + n.size);
+    // A box's longitude span widens away from the frame's origin latitude.
+    if (grownBoxKm2(sw, ne, this.session.halfWidth) > MAX_BOX_KM2) {
+      if (n.size > 1) {
+        this.split(n);
+      } else {
+        n.verdict = { ...TOO_LARGE, flags: [...TOO_LARGE.flags] };
+        n.state = "unverified";
+        this.unverified++;
+      }
+      return;
+    }
+    const v = this.session.box(sw, ne);
     this.classified++;
     n.verdict = { status: v.status, flags: v.flags, risk: v.risk };
     if (passes(v, this.rule)) {

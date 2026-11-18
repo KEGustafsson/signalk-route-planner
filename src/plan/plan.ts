@@ -1,6 +1,8 @@
 import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { PlanningApiV1, Reply, Status, Verdict } from "../oracle/contract";
+import type { PassRule } from "../search/passes";
+import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
 import { DEFAULT_PLAN } from "./options";
 import type { SearchOutcome } from "./search";
@@ -29,6 +31,8 @@ export interface PlanInput {
 interface CheckedLeg {
   status: Status;
   length: number;
+  risk: number;
+  flags: string[];
 }
 
 const RANK: Record<Status, number> = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
@@ -68,7 +72,8 @@ function search(
   input: PlanInput,
   window: number,
   signal: AbortSignal,
-  opts: PlanOptions
+  opts: PlanOptions,
+  rule: PassRule
 ) {
   return api.session(
     {
@@ -80,18 +85,7 @@ function search(
       draft: input.draft
     },
     signal,
-    (s) =>
-      searchRoute(
-        s,
-        input.from,
-        input.to,
-        opts,
-        {
-          accept: input.accept ?? [],
-          probability: input.probability ?? api.defaults().probability
-        },
-        input.fallback === true
-      )
+    (s) => searchRoute(s, input.from, input.to, opts, rule, input.fallback === true)
   );
 }
 
@@ -115,7 +109,11 @@ export async function plan(
   const window = Math.ceil(
     Math.max(opts.minWindow, ((opts.windowFactor * d) / input.speed) * 1000)
   );
-  const session = await search(api, input, window, signal, opts);
+  const rule: PassRule = {
+    accept: input.accept ?? [],
+    probability: input.probability ?? api.defaults().probability
+  };
+  const session = await search(api, input, window, signal, opts, rule);
   if (!session.ok) {
     return { status: session.status, body: { errors: [session.error] } };
   }
@@ -141,6 +139,24 @@ export async function plan(
     return check;
   }
   const legs = (check.body as { legs: CheckedLeg[] }).legs;
+  // The search's legs passed over the trip window; the proof checks each at its own
+  // arrival. A strict plan is offered only when every leg still passes (or is marginal);
+  // a fallback plan is offered with its risky legs marked, as the request asked.
+  const refused =
+    found.fallback === undefined
+      ? legs.filter((l) => l.status !== "marginal" && !passes(l, rule)).length
+      : 0;
+  if (refused > 0) {
+    return {
+      status: 422,
+      body: {
+        ...base,
+        reason: `the route check does not pass ${refused} of the ${legs.length} planned legs at the departure`,
+        check: check.body,
+        work: found.work
+      }
+    };
+  }
   return {
     status: 200,
     body: {

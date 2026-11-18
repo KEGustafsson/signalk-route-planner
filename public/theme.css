@@ -1,7 +1,6 @@
 /*
  * Colours of the extension pages, one set per scheme. The pages use these tokens only, so a
- * colour is changed here once; __tests__/ext/theme.test.ts holds every text colour to WCAG
- * contrast against the surfaces it is drawn on, in every scheme.
+ * colour is changed here once.
  *
  * day:   light, the default.
  * dusk:  dark, when the OS prefers it (prefers-color-scheme) or the page is told to.

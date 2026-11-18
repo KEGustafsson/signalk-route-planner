@@ -72,6 +72,8 @@ export function assetFile(root: string, urlPath: string): string | undefined {
 
 interface Cached {
   mtimeMs: number;
+  ctimeMs: number;
+  ino: number;
   size: number;
   body: Buffer;
   etag: string;
@@ -99,7 +101,14 @@ export function assetMiddleware(root = PUBLIC_DIR): Middleware {
       return undefined;
     }
     const hit = cache.get(file);
-    if (hit && hit.mtimeMs === st.mtimeMs && hit.size === st.size) {
+    // ctime and the inode change on a replacement that keeps the size and restores the mtime.
+    if (
+      hit &&
+      hit.mtimeMs === st.mtimeMs &&
+      hit.ctimeMs === st.ctimeMs &&
+      hit.ino === st.ino &&
+      hit.size === st.size
+    ) {
       return hit;
     }
     let body: Buffer;
@@ -109,7 +118,14 @@ export function assetMiddleware(root = PUBLIC_DIR): Middleware {
       return undefined;
     }
     const etag = `"${createHash("sha1").update(body).digest("base64url")}"`;
-    const entry = { mtimeMs: st.mtimeMs, size: st.size, body, etag };
+    const entry = {
+      mtimeMs: st.mtimeMs,
+      ctimeMs: st.ctimeMs,
+      ino: st.ino,
+      size: st.size,
+      body,
+      etag
+    };
     cache.set(file, entry);
     return entry;
   };

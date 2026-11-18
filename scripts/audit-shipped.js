@@ -7,7 +7,8 @@
 //
 // Prints { packages, vulnerabilities, advisories } as JSON on stdout, where
 // vulnerabilities counts the shipped packages' advisories by severity.
-// Exits 1 when one is at or above --audit-level (default low), and 2 when
+// Exits 1 when one is at or above --audit-level (default info: any
+// advisory, as __tests__/npm-audit.test.ts holds), and 2 when
 // npm returns no audit report (offline, registry error).
 
 const { execFileSync } = require("child_process");
@@ -19,7 +20,7 @@ const VENDORED = ["signalk-plotterext-bus"];
 const SEVERITIES = ["info", "low", "moderate", "high", "critical"];
 
 const levelArg = process.argv.find((a) => a.startsWith("--audit-level="));
-const level = levelArg ? levelArg.slice("--audit-level=".length) : "low";
+const level = levelArg ? levelArg.slice("--audit-level=".length) : "info";
 if (!SEVERITIES.includes(level)) {
   process.stderr.write(`audit-shipped: unknown --audit-level ${level}\n`);
   process.exit(2);

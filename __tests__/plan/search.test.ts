@@ -1,8 +1,10 @@
 import type { LonLat } from "../../src/foundation/geo";
-import { haversine } from "../../src/foundation/geo";
+import { EARTH_RADIUS, frameAt, grownBoxKm2, haversine } from "../../src/foundation/geo";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { SearchOutcome } from "../../src/plan/search";
 import { searchRoute, shapeFor } from "../../src/plan/search";
+import type { Session } from "../../src/oracle/contract";
+import { QuadTree } from "../../src/search/quadtree";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -129,6 +131,80 @@ describe("tree shape", () => {
     expect((s.maxLeaf * s.unit + 200) ** 2).toBeLessThanOrEqual(25e6);
     // The region holds both ends with margin.
     expect(s.side * s.unit).toBeGreaterThanOrEqual(80000);
+  });
+
+  test("a region across the 180° meridian or over a pole is refused", () => {
+    expect(shapeFor([179.99, 10], [-179.99, 10], 40, DEFAULT_PLAN)).toMatch(/180° meridian/);
+    expect(shapeFor([0, 89.95], [180, 89.95], 40, DEFAULT_PLAN)).toMatch(/pole/);
+  });
+
+  test("far from the frame's origin at high latitude, every box stays inside the API's bound", () => {
+    // Underkeel's planning API: the box grown by r, its width at the mean latitude.
+    const k = Math.PI / 180;
+    const underkeelKm2 = (sw: LonLat, ne: LonLat, r: number) => {
+      const dLat = r / (EARTH_RADIUS * k);
+      const [s, n] = [sw[1] - dLat, ne[1] + dLat];
+      const dLon = r / (EARTH_RADIUS * k * Math.cos(Math.max(Math.abs(s), Math.abs(n)) * k));
+      const width = (ne[0] - sw[0] + 2 * dLon) * k * EARTH_RADIUS * Math.cos(((s + n) / 2) * k);
+      return (width * (n - s) * k * EARTH_RADIUS) / 1e6;
+    };
+    const r = 816;
+    const shape = shapeFor([0, 84.45], [0, 84.95], r, DEFAULT_PLAN);
+    if (typeof shape === "string") {
+      throw new Error(shape);
+    }
+    const areas: number[] = [];
+    const session = {
+      halfWidth: r,
+      box: (sw: LonLat, ne: LonLat) => {
+        areas.push(underkeelKm2(sw, ne, r));
+        return { status: "ok", risk: 0, flags: [] };
+      }
+    } as unknown as Session;
+    const tree = new QuadTree(shape, session);
+    // The south-west corner, farthest from the origin's latitude on the equator side.
+    tree.leaves((n) => n.x === 0 && n.y === 0);
+    expect(areas.length).toBeGreaterThan(0);
+    expect(Math.max(...areas)).toBeLessThanOrEqual(25);
+    expect(grownBoxKm2([0, 0], [0.01, 0.01], 0)).toBeCloseTo(
+      (0.01 * k * EARTH_RADIUS) ** 2 / 1e6,
+      3
+    );
+  });
+
+  test("a start whose own square is blocked joins only squares whose centres are within reach", async () => {
+    const api = syntheticApi({ obstacles: [] });
+    const from = at(0, 0);
+    const to = at(5000, 0);
+    const opts = { ...DEFAULT_PLAN, accessMetres: 30 };
+    const shape = shapeFor(from, to, 40, opts);
+    if (typeof shape === "string") {
+      throw new Error(shape);
+    }
+    const frame = frameAt(shape.frame.origin);
+    const [fx, fy] = frame.toXY(from);
+    // Every square within 25 m of the start fails, so the nearest free centres are over 30 m off.
+    const inside = (sw: LonLat, ne: LonLat) => {
+      const [x0, y0] = frame.toXY(sw);
+      const [x1, y1] = frame.toXY(ne);
+      return Math.hypot(Math.max(x0 - fx, 0, fx - x1), Math.max(y0 - fy, 0, fy - y1)) < 25;
+    };
+    const r = await api.session({ departure: 0, until: 1, speed: 3 }, NEVER, (s) => {
+      s.box = (sw, ne) =>
+        inside(sw, ne)
+          ? { status: "fail", risk: 0.9, flags: [] }
+          : { status: "ok", risk: 0, flags: [] };
+      s.segment = (a, b) =>
+        a === from && b === to
+          ? { status: "fail", risk: 0.9, flags: [] }
+          : { status: "ok", risk: 0, flags: [] };
+      return searchRoute(s, from, to, opts);
+    });
+    if (!r.ok) {
+      throw new Error(r.error);
+    }
+    const o = r.value;
+    expect(!o.ok || haversine(from, o.coordinates[1] as LonLat) <= 30 + 1e-6).toBe(true);
   });
 
   test("a corridor too wide to plan in is refused", () => {
