@@ -135,3 +135,26 @@ describe("tree shape", () => {
     expect(shapeFor(at(0, 0), at(1000, 0), 2600, DEFAULT_PLAN)).toMatch(/too wide/);
   });
 });
+
+describe("long legs", () => {
+  test("a leg whose corridor is over 24 km² is never sent to the planning API", async () => {
+    // 40 km apart at ±400 m: (40 km + 800 m) × 800 m = 32.6 km² for the direct line.
+    const api = syntheticApi({ obstacles: [{ x: 20000, y: 0, r: 600 }], halfWidth: 400 });
+    const longest: number[] = [];
+    const r = await api.session({ departure: 0, until: 1, speed: 3 }, NEVER, (s) => {
+      const segment = s.segment.bind(s);
+      s.segment = (a, b) => {
+        longest.push(haversine(a, b));
+        return segment(a, b);
+      };
+      return searchRoute(s, at(0, 0), at(40000, 0), DEFAULT_PLAN);
+    });
+    expect(r.ok && r.value.direct).toEqual({
+      status: "unverified",
+      risk: 0,
+      flags: ["TOO_LONG_FOR_ONE_LEG"]
+    });
+    expect(Math.max(...longest)).toBeLessThanOrEqual(24e6 / 800 - 800);
+    expect(r.ok && r.value.ok).toBe(true);
+  });
+});

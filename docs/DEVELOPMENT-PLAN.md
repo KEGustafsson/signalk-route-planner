@@ -63,6 +63,8 @@ Freeboard extension (public/) ── POST /plugins/signalk-route-planner/plan �
   budget of a Raspberry Pi or Cerbo GX. `signalk-underkeel` (0.7.0 and later) registers a
   versioned object under `globalThis[Symbol.for("signalk-underkeel.planning")]` when it starts
   and removes it when it stops. Both plugins run in the Signal K server's Node process.
+- **A session's parameters** are held to `/route-check`'s bounds (speed, cross-track limit,
+  probability, draft); an out-of-range value answers 400 before the search starts.
 - **When the API is missing** (underkeel not installed, stopped, or older), `/plan` answers 503
   with the reason, and the plugin status says so (never silent).
 - **Planning runs inside underkeel's request queue** (`session`), one request at a time with the
@@ -104,9 +106,11 @@ interface SessionParams {
 interface Session {
   /** Corridor half-width: xteLimit + planning buffer, metres. */
   readonly halfWidth: number;
-  /** Every point of the box with halfWidth around it, at the lowest level in the window. */
+  /** Every point of the box with halfWidth around it, at the lowest level in the window.
+   *  Throws RangeError when the box with that buffer is over 25 km². */
   box(sw: [number, number], ne: [number, number], window?: { start: number; end: number }): Verdict;
-  /** The leg a → b, checked as /route-check checks a leg, over the window. */
+  /** The leg a → b, checked as /route-check checks a leg, over the window. Throws
+   *  RangeError when its corridor (length plus both ends, times 2 · halfWidth) is over 25 km². */
   segment(
     a: [number, number],
     b: [number, number],

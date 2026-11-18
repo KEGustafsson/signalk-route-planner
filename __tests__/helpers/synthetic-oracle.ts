@@ -111,6 +111,10 @@ export function syntheticApi(
           );
         },
         segment(a, b) {
+          // As signalk-underkeel: a leg's corridor over 25 km² is refused.
+          if (((haversine(a, b) + 2 * r) * 2 * r) / 1e6 > 25) {
+            throw new RangeError("leg corridor over 25 km²");
+          }
           work += per;
           return verdict(legStatus(chart, a, b, r));
         },

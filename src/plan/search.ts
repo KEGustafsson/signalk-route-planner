@@ -28,6 +28,22 @@ export type SearchOutcome =
 /** A box with its corridor buffer stays under the planning API's 25 km² (24 km² here). */
 const MAX_BOX_SIDE = Math.sqrt(24e6);
 
+/** Legs whose corridor is over this, km², are never checked as one leg (the API refuses 25). */
+const MAX_LEG_KM2 = 24;
+
+const NOT_CHECKED: Verdict = { status: "unverified", risk: 0, flags: ["TOO_LONG_FOR_ONE_LEG"] };
+
+/**
+ * The leg a → b checked through the session, or NOT_CHECKED when its corridor (length plus
+ * both ends, times twice the half-width) is over MAX_LEG_KM2: the planning API throws on those.
+ */
+export function checkLeg(session: Session, a: LonLat, b: LonLat): Verdict {
+  const r = session.halfWidth;
+  return ((haversine(a, b) + 2 * r) * 2 * r) / 1e6 > MAX_LEG_KM2
+    ? NOT_CHECKED
+    : session.segment(a, b);
+}
+
 const pow2 = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
 
 /** The quadtree's shape around start and goal, or why there is none. */
@@ -88,7 +104,7 @@ function access(
   for (const { n } of near) {
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
-    if ((goal ? session.segment(cl, p) : session.segment(p, cl)).status === "ok") {
+    if ((goal ? checkLeg(session, cl, p) : checkLeg(session, p, cl)).status === "ok") {
       return { leaf: n, at: c, joined: p };
     }
   }
@@ -103,7 +119,7 @@ export async function searchRoute(
   to: LonLat,
   opts: PlanOptions
 ): Promise<SearchOutcome> {
-  const direct = session.segment(from, to);
+  const direct = checkLeg(session, from, to);
   if (direct.status === "ok") {
     return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
   }
@@ -148,7 +164,7 @@ export async function searchRoute(
     ...found.points.map(([x, y]) => tree.lonLat(x, y)),
     ...(goal.joined ? [goal.joined] : [])
   ];
-  const coordinates = await pull(path, (a, b) => session.segment(a, b), {
+  const coordinates = await pull(path, (a, b) => checkLeg(session, a, b), {
     exhausted: () => session.work() >= opts.maxWork,
     pause: () => session.pause()
   });
