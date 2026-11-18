@@ -5,7 +5,7 @@ import { QuadTree } from "../../src/search/quadtree";
 
 /** The quadtree's adjacency, on a chart where only chosen unit squares are free. */
 
-function treeWith(free: (x: number, y: number) => boolean) {
+function treeWith(free: (x: number, y: number) => boolean, queries = { n: 0 }) {
   const holder: { tree?: QuadTree; boxes: number } = { boxes: 0 };
   const verdict = (ok: boolean): Verdict => ({
     status: ok ? "ok" : "fail",
@@ -16,6 +16,7 @@ function treeWith(free: (x: number, y: number) => boolean) {
     halfWidth: 0,
     box(sw, ne) {
       holder.boxes++;
+      queries.n++;
       const t = holder.tree as QuadTree;
       const [x0, y0] = t.units(sw);
       const [x1, y1] = t.units(ne);
@@ -69,6 +70,22 @@ describe("quadtree adjacency", () => {
     const ids = tree.neighbours(n as never).map((m) => m.node.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBe(2);
+  });
+
+  test("an expansion stops classifying its neighbours at the work limit", async () => {
+    // Only the start square and the far corner are free: the start's neighbours split down
+    // to unit squares, many queries in one expansion.
+    const queries = { n: 0 };
+    const tree = treeWith((x, y) => (x === 0 && y === 0) || (x === 7 && y === 7), queries);
+    const from = tree.leafAt(0.5, 0.5);
+    const to = tree.leafAt(7.5, 7.5);
+    const cap = queries.n + 3;
+    const r = await aStar(tree, from as never, [0.5, 0.5], to as never, [7.5, 7.5], {
+      ...limits,
+      exhausted: () => queries.n >= cap
+    });
+    expect(r).toMatchObject({ found: false, reason: "work" });
+    expect(queries.n).toBeLessThanOrEqual(cap);
   });
 });
 
