@@ -57,7 +57,8 @@
           (legs.length === 1 ? " leg" : " legs") +
           ": " +
           b.status +
-          (b.status === "ok" ? "" : " (see the legs below)")
+          (b.status === "ok" ? "" : " (see the legs below)") +
+          (b.fallback ? ". No route passes the check: this is the least risky one, " + b.fallback : "")
       };
     }
     if (status === 422) {

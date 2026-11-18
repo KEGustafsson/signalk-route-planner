@@ -60,7 +60,9 @@ Base `/plugins/signalk-route-planner/v1`, open to logged-in readonly users.
 
 A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departure` (ISO 8601),
 `speed` (m/s), `xteLimit` (m), `probability` and `draft` (m); unset options take
-signalk-underkeel's route-check settings. Start and destination may be at most 60 km apart.
+signalk-underkeel's route-check settings. `accept: ["NOT_FOR_NAVIGATION"]` plans on depth data
+marked not for navigation (its legs stay `unverified`), and `fallback: true` returns, when no
+route passes, the least risky route through charted water with its risky legs marked. Start and destination may be at most 60 km apart.
 
 ## Documentation map
 

@@ -6,12 +6,18 @@ import { centre } from "./quadtree";
  * through the midpoint of the edge it shares with the leaf before; its
  * position is its centre, except the start and goal leaves, whose positions are
  * the start and goal points. The cost is the length of that polyline and the
- * heuristic the straight line to the goal, which never overestimates it.
+ * heuristic the straight line to the goal, which never overestimates it: every
+ * leaf's weight per metre is at least 1.
  */
 
 type XY = [number, number];
 
 export interface SearchLimits {
+  /**
+   * Cost per metre in a leaf, Infinity where the search may not go; absent, free
+   * leaves cost 1 and no other leaf is entered.
+   */
+  weight?(n: QuadNode): number;
   /** True once the search has used its work; it then stops. */
   exhausted(): boolean;
   /** Called every `every` expansions, so other work can run. */
@@ -85,6 +91,7 @@ export async function aStar(
   limits: SearchLimits
 ): Promise<SearchResult> {
   const pos = (n: QuadNode): XY => (n === from ? start : n === to ? goal : centre(n));
+  const { weight, enter } = weighing(limits);
   const g = new Map<number, number>([[from.id, 0]]);
   const back = new Map<number, { prev: QuadNode; portal: XY }>();
   const closed = new Set<number>();
@@ -107,14 +114,12 @@ export async function aStar(
     if (limits.exhausted()) {
       return { found: false, reason: "work", expanded };
     }
-    const gn = g.get(n.id) as number;
-    const p = pos(n);
-    for (const { node: m, portal } of tree.neighbours(n)) {
-      if (closed.has(m.id)) {
-        continue;
-      }
-      const gm = gn + dist(p, portal) + dist(portal, pos(m));
-      if (gm < (g.get(m.id) ?? Infinity)) {
+    for (const { node: m, portal } of tree.neighbours(n, enter)) {
+      const gm =
+        (g.get(n.id) as number) +
+        dist(pos(n), portal) * weight(n) +
+        dist(portal, pos(m)) * weight(m);
+      if (!closed.has(m.id) && gm < (g.get(m.id) ?? Infinity)) {
         g.set(m.id, gm);
         back.set(m.id, { prev: n, portal });
         open.push(m, gm + dist(pos(m), goal));
@@ -122,6 +127,15 @@ export async function aStar(
     }
   }
   return { found: false, reason: "unreachable", expanded };
+}
+
+/** The per-metre weight of a leaf and whether it may be entered at all. */
+function weighing(limits: SearchLimits): {
+  weight: (n: QuadNode) => number;
+  enter: (n: QuadNode) => boolean;
+} {
+  const weight = limits.weight ?? ((n: QuadNode) => (n.state === "free" ? 1 : Infinity));
+  return { weight, enter: (n) => Number.isFinite(weight(n)) };
 }
 
 function walkBack(

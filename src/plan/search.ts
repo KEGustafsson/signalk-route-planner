@@ -2,6 +2,10 @@ import type { LonLat } from "../foundation/geo";
 import { frameAt, haversine, midpoint } from "../foundation/geo";
 import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
+import type { PassRule } from "../search/passes";
+import { OK_ONLY, passes } from "../search/passes";
+import { crossable, fallbackWeight } from "../search/fallback";
+import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
@@ -14,7 +18,15 @@ import type { PlanOptions } from "./options";
  */
 
 export type SearchOutcome =
-  | { ok: true; coordinates: LonLat[]; direct: Verdict; squares: number; work: number }
+  | {
+      ok: true;
+      coordinates: LonLat[];
+      direct: Verdict;
+      squares: number;
+      work: number;
+      /** Set when no route passed and this is the least risky one: why none passed. */
+      fallback?: string;
+    }
   | {
       ok: false;
       reason: string;
@@ -77,34 +89,54 @@ interface Access {
   joined?: LonLat;
 }
 
+/** What a search may cross: strictly passing water, or for the fallback, charted water at a cost. */
+interface Mode {
+  enter(n: QuadNode): boolean;
+  /** True when a checked leg may join the start or goal to a square. */
+  joins(v: Verdict): boolean;
+  weight?(n: QuadNode): number;
+}
+
+const strictMode = (rule: PassRule): Mode => ({
+  enter: (n) => n.state === "free",
+  joins: (v) => passes(v, rule)
+});
+
+const FALLBACK: Mode = {
+  enter: (n) => Number.isFinite(fallbackWeight(n)),
+  joins: (v) => crossable(v),
+  weight: fallbackWeight
+};
+
 /**
- * The free square the search leaves from or arrives at for point `p`: the one
- * holding it, or the nearest free square within `accessMetres` whose centre a
- * leg from `p` (to `p`, for the goal) reaches with an `ok` check.
+ * The square the search leaves from or arrives at for point `p`: the one holding
+ * it, or the nearest within `accessMetres` whose centre a checked leg from `p` (to
+ * `p`, for the goal) joins.
  */
 function access(
   tree: QuadTree,
   session: Session,
   p: LonLat,
   goal: boolean,
-  opts: PlanOptions
+  opts: PlanOptions,
+  mode: Mode
 ): Access | string {
   const [ux, uy] = tree.units(p);
   const own = tree.leafAt(ux, uy);
-  if (own?.state === "free") {
+  if (own && mode.enter(own)) {
     return { leaf: own, at: [ux, uy] };
   }
   const r = opts.accessMetres / tree.shape.unit;
   const near = tree
     .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
-    .filter((n) => n.state === "free")
+    .filter((n) => mode.enter(n))
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
     .sort((a, b) => a.d - b.d)
     .slice(0, 8);
   for (const { n } of near) {
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
-    if ((goal ? checkLeg(session, cl, p) : checkLeg(session, p, cl)).status === "ok") {
+    if (mode.joins(goal ? checkLeg(session, cl, p) : checkLeg(session, p, cl))) {
       return { leaf: n, at: c, joined: p };
     }
   }
@@ -113,18 +145,93 @@ function access(
   return `no water the route check passes within ${opts.accessMetres} m of the ${what}${flags}`;
 }
 
+type Attempt = { path: LonLat[] } | { reason: string };
+
+/** One search from `from` to `to` in `mode`: the raw path, or why there is none. */
+async function attempt(
+  tree: QuadTree,
+  session: Session,
+  ends: [LonLat, LonLat],
+  opts: PlanOptions,
+  mode: Mode
+): Promise<Attempt> {
+  const start = access(tree, session, ends[0], false, opts, mode);
+  const goal = typeof start === "string" ? start : access(tree, session, ends[1], true, opts, mode);
+  if (typeof start === "string" || typeof goal === "string") {
+    return { reason: typeof start === "string" ? start : (goal as string) };
+  }
+  const searchWork = opts.maxWork * opts.searchShare;
+  const found =
+    start.leaf === goal.leaf
+      ? { found: true as const, points: [start.at, goal.at] }
+      : await aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
+          exhausted: () => session.work() >= searchWork,
+          pause: () => session.pause(),
+          every: 64,
+          weight: mode.weight
+        });
+  if (!found.found) {
+    return {
+      reason:
+        found.reason === "work"
+          ? WORK_LIMIT
+          : tree.unverified > 0
+            ? "no route the check passes connects the points; the search met water the check cannot verify (no chart coverage or unassessed survey), which a route may need"
+            : "no route the check passes connects the points: land, shoals or obstacles close every way"
+    };
+  }
+  return {
+    path: [
+      ...(start.joined ? [start.joined] : []),
+      ...found.points.map(([x, y]) => tree.lonLat(x, y)),
+      ...(goal.joined ? [goal.joined] : [])
+    ]
+  };
+}
+
+const WORK_LIMIT =
+  "the search reached its work limit; plan a shorter passage or add a waypoint between";
+
+/**
+ * A fallback shortcut that does not pass may replace path points i..j only when every
+ * piece of the path between them already crosses a square the check does not pass,
+ * the shortcut crosses no land or uncharted water, and it is no riskier than the
+ * riskiest of those squares: pulling straightens a risky stretch within itself and
+ * never draws passing water into it.
+ */
+function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
+  const risk = path.slice(1).map((b, k) => {
+    const a = path[k] as LonLat;
+    const [ax, ay] = tree.units(a);
+    const [bx, by] = tree.units(b);
+    const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
+    // A free square's piece is not risky, whatever its verdict's own risk.
+    return leaf?.state === "free" ? undefined : (leaf?.verdict?.risk ?? 0);
+  });
+  return (v, i, j) => {
+    const span = risk.slice(i, j);
+    return (
+      crossable(v) &&
+      span.every((r) => r !== undefined) &&
+      v.risk <= Math.max(...(span as number[]))
+    );
+  };
+}
+
 export async function searchRoute(
   session: Session,
   from: LonLat,
   to: LonLat,
-  opts: PlanOptions
+  opts: PlanOptions,
+  rule: PassRule = OK_ONLY,
+  fallback = false
 ): Promise<SearchOutcome> {
   const direct = checkLeg(session, from, to);
-  if (direct.status === "ok") {
+  if (passes(direct, rule)) {
     return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
   }
   const shape = shapeFor(from, to, session.halfWidth, opts);
-  const tree = typeof shape === "string" ? undefined : new QuadTree(shape, session);
+  const tree = typeof shape === "string" ? undefined : new QuadTree(shape, session, rule);
   const refuse = (reason: string): SearchOutcome => ({
     ok: false,
     reason,
@@ -136,37 +243,28 @@ export async function searchRoute(
   if (!tree) {
     return refuse(shape as string);
   }
-  const start = access(tree, session, from, false, opts);
-  const goal = typeof start === "string" ? start : access(tree, session, to, true, opts);
-  if (typeof start === "string" || typeof goal === "string") {
-    return refuse(typeof start === "string" ? start : (goal as string));
+  const strict = await attempt(tree, session, [from, to], opts, strictMode(rule));
+  const again =
+    "reason" in strict && fallback && strict.reason !== WORK_LIMIT
+      ? await attempt(tree, session, [from, to], opts, FALLBACK)
+      : undefined;
+  const found = again && "path" in again ? again : strict;
+  if (!("path" in found)) {
+    return refuse((strict as { reason: string }).reason);
   }
-  const searchWork = opts.maxWork * opts.searchShare;
-  const found =
-    start.leaf === goal.leaf
-      ? { found: true as const, points: [start.at, goal.at] }
-      : await aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-          exhausted: () => session.work() >= searchWork,
-          pause: () => session.pause(),
-          every: 64
-        });
-  if (!found.found) {
-    return refuse(
-      found.reason === "work"
-        ? "the search reached its work limit; plan a shorter passage or add a waypoint between"
-        : tree.unverified > 0
-          ? "no route the check passes connects the points; the search met water the check cannot verify (no chart coverage or unassessed survey), which a route may need"
-          : "no route the check passes connects the points: land, shoals or obstacles close every way"
-    );
-  }
-  const path = [
-    ...(start.joined ? [start.joined] : []),
-    ...found.points.map(([x, y]) => tree.lonLat(x, y)),
-    ...(goal.joined ? [goal.joined] : [])
-  ];
-  const coordinates = await pull(path, (a, b) => checkLeg(session, a, b), {
-    exhausted: () => session.work() >= opts.maxWork,
-    pause: () => session.pause()
-  });
-  return { ok: true, coordinates, direct, squares: tree.classified, work: session.work() };
+  const coordinates = await pull(
+    found.path,
+    (a, b) => checkLeg(session, a, b),
+    { exhausted: () => session.work() >= opts.maxWork, pause: () => session.pause() },
+    rule,
+    found === strict ? undefined : fallbackShortcut(tree, found.path)
+  );
+  return {
+    ok: true,
+    coordinates,
+    direct,
+    squares: tree.classified,
+    work: session.work(),
+    ...(found !== strict && { fallback: (strict as { reason: string }).reason })
+  };
 }

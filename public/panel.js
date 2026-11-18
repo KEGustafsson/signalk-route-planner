@@ -81,7 +81,11 @@ async function planSelected() {
       method: "POST",
       credentials: "same-origin",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(ends)
+      body: JSON.stringify({
+        ...ends,
+        ...(document.getElementById("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
+        ...(document.getElementById("fallback").checked && { fallback: true })
+      })
     });
     const body = await res.json().catch(() => ({}));
     const s = P.summary(res.status, body);

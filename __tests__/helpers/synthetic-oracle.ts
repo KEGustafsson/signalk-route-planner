@@ -26,10 +26,15 @@ export interface Circle {
 }
 
 export interface Chart {
+  /** Land: fails and is never crossed (flag LAND). */
   obstacles: Circle[];
+  /** Charted shallows: fail, but the fallback may cross them. */
+  shallows?: Circle[];
   unverified?: Circle[];
   /** Corridor half-width, metres. */
   halfWidth?: number;
+  /** Every chart is marked not for navigation: clear water is `unverified`, NOT_FOR_NAVIGATION. */
+  notForNavigation?: boolean;
 }
 
 export const at = (x: number, y: number): LonLat => FRAME.toLonLat(x, y);
@@ -50,25 +55,32 @@ function rectDist(px: number, py: number, x0: number, y0: number, x1: number, y1
   return Math.hypot(dx, dy);
 }
 
-function verdict(status: Status): Verdict {
-  return {
-    status,
-    risk: status === "fail" ? 0.9 : 0,
-    flags: status === "unverified" ? ["NO_COVERAGE"] : []
-  };
+/** What water within `near` of the corridor gets: land, shallows, unverified or clear. */
+function judge(chart: Chart, near: (c: Circle) => boolean): Verdict {
+  if (chart.obstacles.some(near)) {
+    return { status: "fail", risk: 0.9, flags: ["LAND"] };
+  }
+  if ((chart.shallows ?? []).some(near)) {
+    return { status: "fail", risk: 0.9, flags: [] };
+  }
+  if ((chart.unverified ?? []).some(near)) {
+    return { status: "unverified", risk: 0, flags: ["NO_COVERAGE"] };
+  }
+  return chart.notForNavigation
+    ? { status: "unverified", risk: 0, flags: ["NOT_FOR_NAVIGATION"] }
+    : { status: "ok", risk: 0, flags: [] };
 }
 
-/** The status of the leg a → b on `chart` with corridor half-width r. */
-export function legStatus(chart: Chart, a: LonLat, b: LonLat, r: number): Status {
+/** The verdict of the leg a → b on `chart` with corridor half-width r. */
+export function legVerdict(chart: Chart, a: LonLat, b: LonLat, r: number): Verdict {
   const pa = xy(a);
   const pb = xy(b);
-  if (chart.obstacles.some((c) => segDist(c.x, c.y, pa, pb) < c.r + r)) {
-    return "fail";
-  }
-  if ((chart.unverified ?? []).some((c) => segDist(c.x, c.y, pa, pb) < c.r + r)) {
-    return "unverified";
-  }
-  return "ok";
+  return judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r);
+}
+
+/** The status of the leg a → b on `chart`, ignoring a chart marked not for navigation. */
+export function legStatus(chart: Chart, a: LonLat, b: LonLat, r: number): Status {
+  return legVerdict({ ...chart, notForNavigation: false }, a, b, r).status;
 }
 
 export interface Synthetic extends PlanningApiV1 {
@@ -104,11 +116,7 @@ export function syntheticApi(
           const x1 = Math.max(...corners.map((c) => c[0]));
           const y0 = Math.min(...corners.map((c) => c[1]));
           const y1 = Math.max(...corners.map((c) => c[1]));
-          const hits = (cs: Circle[]) =>
-            cs.some((c) => rectDist(c.x, c.y, x0, y0, x1, y1) < c.r + r);
-          return verdict(
-            hits(chart.obstacles) ? "fail" : hits(chart.unverified ?? []) ? "unverified" : "ok"
-          );
+          return judge(chart, (c) => rectDist(c.x, c.y, x0, y0, x1, y1) < c.r + r);
         },
         segment(a, b) {
           // As signalk-underkeel: a leg's corridor over 25 km² is refused.
@@ -116,7 +124,7 @@ export function syntheticApi(
             throw new RangeError("leg corridor over 25 km²");
           }
           work += per;
-          return verdict(legStatus(chart, a, b, r));
+          return legVerdict(chart, a, b, r);
         },
         work: () => work,
         pause: () =>
@@ -137,7 +145,8 @@ export function syntheticApi(
       const coords = (body as { route: { coordinates: LonLat[] } }).route.coordinates;
       const legs = coords.slice(1).map((b, i) => {
         const a = coords[i] as LonLat;
-        const status = legStatus(chart, a, b, r);
+        const v = legVerdict(chart, a, b, r);
+        const status = v.status;
         return {
           index: i,
           status,

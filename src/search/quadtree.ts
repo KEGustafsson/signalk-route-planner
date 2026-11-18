@@ -1,12 +1,15 @@
 import type { Frame, LonLat } from "../foundation/geo";
 import type { Session, Status } from "../oracle/contract";
+import type { PassRule } from "./passes";
+import { OK_ONLY, passes } from "./passes";
 
 /**
  * The search region as a quadtree classified lazily through the planning API
  * (plan §4.1 step 2). Coordinates are integer units of `unit` metres from the
  * region's south-west corner, so the squares of one tree tile it exactly.
  *
- * A square whose box verdict is `ok` is free water: every leg inside it, with
+ * A square whose box verdict passes (`passes.ts`: `ok`, or an accepted
+ * `unverified`) is free water: every leg inside it, with
  * the corridor half-width around it, is inside the box the verdict covered.
  * Any other verdict splits the square, down to one unit; a one-unit square
  * that is not `ok` is blocked, and remembered as unverified when its verdict
@@ -23,7 +26,7 @@ export interface QuadNode {
   state: NodeState;
   children?: QuadNode[];
   /** The verdict that classified it; absent for squares split for size alone. */
-  verdict?: { status: Status; flags: string[] };
+  verdict?: { status: Status; flags: string[]; risk: number };
 }
 
 export interface TreeShape {
@@ -49,7 +52,8 @@ export class QuadTree {
 
   constructor(
     readonly shape: TreeShape,
-    private readonly session: Session
+    private readonly session: Session,
+    private readonly rule: PassRule = OK_ONLY
   ) {
     this.root = this.node(0, 0, shape.side);
   }
@@ -93,8 +97,8 @@ export class QuadTree {
     }
     const v = this.session.box(this.lonLat(n.x, n.y), this.lonLat(n.x + n.size, n.y + n.size));
     this.classified++;
-    n.verdict = { status: v.status, flags: v.flags };
-    if (v.status === "ok") {
+    n.verdict = { status: v.status, flags: v.flags, risk: v.risk };
+    if (passes(v, this.rule)) {
       n.state = "free";
     } else if (n.size > 1) {
       this.split(n);
@@ -139,8 +143,14 @@ export class QuadTree {
     return this.leaves((n) => cx >= n.x && cx < n.x + n.size && cy >= n.y && cy < n.y + n.size)[0];
   }
 
-  /** Free leaves sharing an edge of positive length with `n`, with the shared edge's midpoint. */
-  neighbours(n: QuadNode): { node: QuadNode; portal: [number, number] }[] {
+  /**
+   * Free leaves sharing an edge of positive length with `n`, with the shared edge's
+   * midpoint, and those meeting it at a corner only, with that corner.
+   */
+  neighbours(
+    n: QuadNode,
+    enter: (m: QuadNode) => boolean = isFree
+  ): { node: QuadNode; portal: [number, number] }[] {
     const out: { node: QuadNode; portal: [number, number] }[] = [];
     const { x, y, size } = n;
     const across = (lo: number, hi: number, a: number, b: number) =>
@@ -166,12 +176,58 @@ export class QuadTree {
     ];
     for (const [touches, portal] of sides) {
       for (const m of this.leaves(touches)) {
-        if (m.state === "free" && m !== n) {
+        if (enter(m) && m !== n) {
           out.push({ node: m, portal: portal(m) });
         }
       }
     }
+    return [...out, ...this.cornerNeighbours(n, enter)];
+  }
+
+  /**
+   * Free leaves that meet `n` at a corner only, entered through that corner. A
+   * diagonal channel one square wide is a chain of such squares. A path through the
+   * corner lies in the two squares, so every point within the corridor half-width of
+   * it lies in one of the two footprints their box verdicts cover.
+   */
+  private cornerNeighbours(
+    n: QuadNode,
+    enter: (m: QuadNode) => boolean
+  ): { node: QuadNode; portal: [number, number] }[] {
+    const out: { node: QuadNode; portal: [number, number] }[] = [];
+    for (const [dx, dy] of [
+      [1, 1],
+      [-1, 1],
+      [1, -1],
+      [-1, -1]
+    ] as const) {
+      const cx = dx > 0 ? n.x + n.size : n.x;
+      const cy = dy > 0 ? n.y + n.size : n.y;
+      const m = this.diagonal(cx, cy, dx, dy);
+      if (m && enter(m)) {
+        out.push({ node: m, portal: [cx, cy] });
+      }
+    }
     return out;
+  }
+
+  /** The leaf beyond corner (cx, cy) in direction (dx, dy), when it has that corner as its own. */
+  private diagonal(cx: number, cy: number, dx: 1 | -1, dy: 1 | -1): QuadNode | undefined {
+    const side = this.shape.side;
+    const px = cx + dx * 1e-6;
+    const py = cy + dy * 1e-6;
+    if (px < 0 || py < 0 || px > side || py > side) {
+      return undefined;
+    }
+    const m = this.leaves(
+      (q) => px >= q.x && px < q.x + q.size && py >= q.y && py < q.y + q.size
+    )[0];
+    if (!m) {
+      return undefined;
+    }
+    const cornerX = dx > 0 ? m.x === cx : m.x + m.size === cx;
+    const cornerY = dy > 0 ? m.y === cy : m.y + m.size === cy;
+    return cornerX && cornerY ? m : undefined;
   }
 }
 
@@ -179,6 +235,8 @@ export class QuadTree {
 function mid(a0: number, a1: number, b0: number, b1: number): number {
   return (Math.max(a0, b0) + Math.min(a1, b1)) / 2;
 }
+
+export const isFree = (n: QuadNode): boolean => n.state === "free";
 
 export function centre(n: QuadNode): [number, number] {
   return [n.x + n.size / 2, n.y + n.size / 2];

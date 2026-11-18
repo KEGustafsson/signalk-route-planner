@@ -171,8 +171,20 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    Its statuses are the answer.
 6. **Why not straight.** The direct line's check result is returned when it fails, naming the
    worst hazard: the binding constraint.
-7. **Bounded work.** The plan counts underkeel work units and stops at a limit sized for about
-   3 s on a Raspberry Pi 4, refusing with the reason rather than returning a partial route.
+7. **Data not for navigation.** With `accept: ["NOT_FOR_NAVIGATION"]` the search may plan through
+   water whose only check flag is that the source is not for navigation (Traficom WFS depth data)
+   and whose P(UKC < 0) is below the threshold. The route check still marks those legs
+   `unverified`.
+8. **Fallback.** With `fallback: true`, when no route passes, the search runs again over the same
+   squares and may cross charted water the check fails or cannot verify, at a cost per metre of
+   1 + 1000·P (+100 when unverified); land and water with no chart are never crossed. String
+   pulling straightens such a stretch only within itself. The reply carries `fallback` with the
+   reason no route passed, and the risky legs come back `fail`, `marginal` or `unverified` from
+   the route check, marked.
+9. **Diagonal channels.** Squares that meet only at a corner are joined through that corner: a
+   path through it lies in the two squares, so its corridor stays in their checked footprints.
+10. **Bounded work.** The plan counts underkeel work units and stops at a limit sized for about
+    3 s on a Raspberry Pi 4, refusing with the reason rather than returning a partial route.
 
 ### 4.2 R2: planning beyond the chart box
 

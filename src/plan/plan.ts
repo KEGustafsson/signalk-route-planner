@@ -20,6 +20,10 @@ export interface PlanInput {
   xteLimit?: number;
   probability?: number;
   draft?: number;
+  /** Flags the search may plan through (`search/passes.ts`); the route stays `unverified`. */
+  accept?: readonly string[];
+  /** When no route passes, return the least risky one through charted water (`search/fallback.ts`). */
+  fallback?: boolean;
 }
 
 interface CheckedLeg {
@@ -36,6 +40,59 @@ export function worstStatus(legs: readonly { status: Status }[]): Status {
 
 function directOf(v: Verdict): { status: Status; risk: number; flags: string[]; worst?: LonLat } {
   return { status: v.status, risk: v.risk, flags: v.flags, ...(v.worst && { worst: v.worst }) };
+}
+
+/** signalk-underkeel's route check of `coordinates` as the request would sail them. */
+function prove(
+  api: PlanningApiV1,
+  input: PlanInput,
+  coordinates: LonLat[],
+  signal: AbortSignal
+): Promise<Reply> {
+  return api.routeCheck(
+    {
+      route: { type: "LineString", coordinates },
+      departure: new Date(input.departure).toISOString(),
+      speed: input.speed,
+      ...(input.xteLimit !== undefined && { xteLimit: input.xteLimit }),
+      ...(input.probability !== undefined && { probability: input.probability }),
+      ...(input.draft !== undefined && { vessel: { draft: input.draft } })
+    },
+    signal
+  );
+}
+
+/** The search in a planning session over the trip's window. */
+function search(
+  api: PlanningApiV1,
+  input: PlanInput,
+  window: number,
+  signal: AbortSignal,
+  opts: PlanOptions
+) {
+  return api.session(
+    {
+      departure: input.departure,
+      until: input.departure + window,
+      speed: input.speed,
+      xteLimit: input.xteLimit,
+      probability: input.probability,
+      draft: input.draft
+    },
+    signal,
+    (s) =>
+      searchRoute(
+        s,
+        input.from,
+        input.to,
+        opts,
+        {
+          accept: input.accept ?? [],
+          probability: input.probability ?? api.defaults().probability
+        },
+        input.fallback === true
+      )
+  );
 }
 
 export async function plan(
@@ -58,23 +115,16 @@ export async function plan(
   const window = Math.ceil(
     Math.max(opts.minWindow, ((opts.windowFactor * d) / input.speed) * 1000)
   );
-  const session = await api.session(
-    {
-      departure: input.departure,
-      until: input.departure + window,
-      speed: input.speed,
-      xteLimit: input.xteLimit,
-      probability: input.probability,
-      draft: input.draft
-    },
-    signal,
-    (s) => searchRoute(s, input.from, input.to, opts)
-  );
+  const session = await search(api, input, window, signal, opts);
   if (!session.ok) {
     return { status: session.status, body: { errors: [session.error] } };
   }
   const found: SearchOutcome = session.value;
-  const base = { plannedAt: new Date(now).toISOString(), direct: directOf(found.direct) };
+  const base = {
+    plannedAt: new Date(now).toISOString(),
+    direct: directOf(found.direct),
+    ...(input.accept?.length && { accepted: input.accept })
+  };
   if (!found.ok) {
     return {
       status: 422,
@@ -86,17 +136,7 @@ export async function plan(
       }
     };
   }
-  const check = await api.routeCheck(
-    {
-      route: { type: "LineString", coordinates: found.coordinates },
-      departure: new Date(input.departure).toISOString(),
-      speed: input.speed,
-      ...(input.xteLimit !== undefined && { xteLimit: input.xteLimit }),
-      ...(input.probability !== undefined && { probability: input.probability }),
-      ...(input.draft !== undefined && { vessel: { draft: input.draft } })
-    },
-    signal
-  );
+  const check = await prove(api, input, found.coordinates, signal);
   if (check.status !== 200) {
     return check;
   }
@@ -110,7 +150,8 @@ export async function plan(
       status: worstStatus(legs),
       check: check.body,
       squares: found.squares,
-      work: found.work
+      work: found.work,
+      ...(found.fallback !== undefined && { fallback: found.fallback })
     }
   };
 }

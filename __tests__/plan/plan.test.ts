@@ -120,3 +120,35 @@ describe("plan", () => {
     expect(r.status).toBe(503);
   });
 });
+
+describe("charts not for navigation", () => {
+  const chart = { obstacles: [{ x: 2500, y: 0, r: 600 }], notForNavigation: true };
+
+  test("refused unless the request accepts them, so the planner is never silently lax", async () => {
+    const r = await plan(
+      syntheticApi(chart),
+      { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3 },
+      NEVER,
+      NOW
+    );
+    expect(r.status).toBe(422);
+  });
+
+  test("accepted: a route round the island, every leg unverified, never ok", async () => {
+    const r = await plan(
+      syntheticApi(chart),
+      { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3, accept: ["NOT_FOR_NAVIGATION"] },
+      NEVER,
+      NOW
+    );
+    expect(r.status).toBe(200);
+    const body = r.body as {
+      status: string;
+      accepted: string[];
+      check: { legs: { status: string }[] };
+    };
+    expect(body.status).toBe("unverified");
+    expect(body.accepted).toEqual(["NOT_FOR_NAVIGATION"]);
+    expect(body.check.legs.every((l) => l.status === "unverified")).toBe(true);
+  });
+});

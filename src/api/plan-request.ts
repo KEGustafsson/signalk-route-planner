@@ -1,4 +1,5 @@
 import type { LonLat } from "../foundation/geo";
+import { ACCEPTABLE_FLAGS } from "../search/passes";
 
 /** A `/plan` request, validated (plan §5). */
 export interface PlanRequest {
@@ -11,6 +12,10 @@ export interface PlanRequest {
   xteLimit?: number;
   probability?: number;
   draft?: number;
+  /** Flags the search may plan through; the route then comes back `unverified`. */
+  accept?: string[];
+  /** When no route passes, the least risky one through charted water, its legs marked. */
+  fallback?: boolean;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -54,6 +59,30 @@ function inRange(
   return v;
 }
 
+/** The search options `accept` and `fallback`, validated. */
+function searchOptions(
+  b: Record<string, unknown>,
+  errors: string[]
+): { accept?: string[]; fallback?: boolean } {
+  const out: { accept?: string[]; fallback?: boolean } = {};
+  if (b.accept !== undefined) {
+    const ok = (f: unknown) => (ACCEPTABLE_FLAGS as readonly unknown[]).includes(f);
+    if (Array.isArray(b.accept) && b.accept.every(ok)) {
+      out.accept = [...new Set(b.accept as string[])];
+    } else {
+      errors.push(`accept may list only ${ACCEPTABLE_FLAGS.join(", ")}`);
+    }
+  }
+  if (b.fallback !== undefined) {
+    if (typeof b.fallback === "boolean") {
+      out.fallback = b.fallback;
+    } else {
+      errors.push("fallback must be true or false");
+    }
+  }
+  return out;
+}
+
 export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { ok: false, errors: ["give from and to as [lon, lat]"] };
@@ -75,6 +104,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const xteLimit = inRange(b, "xteLimit", 0, 1000, " m", errors);
   const probability = inRange(b, "probability", 0, 0.5, "", errors, true);
   const draft = inRange(b, "draft", 0.01, 30, " m", errors);
+  const { accept, fallback } = searchOptions(b, errors);
   if (errors.length > 0 || !from || !to) {
     return { ok: false, errors };
   }
@@ -82,7 +112,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   Object.assign(
     value,
     Object.fromEntries(
-      Object.entries({ departure, speed, xteLimit, probability, draft }).filter(
+      Object.entries({ departure, speed, xteLimit, probability, draft, accept, fallback }).filter(
         ([, v]) => v !== undefined
       )
     )

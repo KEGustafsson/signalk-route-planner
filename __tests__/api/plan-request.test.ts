@@ -29,6 +29,15 @@ describe("plan request validation", () => {
         draft: 1.9
       }
     });
+    expect(
+      parsePlanRequest(
+        { from: [22, 60], to: [22.1, 60], accept: ["NOT_FOR_NAVIGATION", "NOT_FOR_NAVIGATION"] },
+        NOW
+      )
+    ).toEqual({
+      ok: true,
+      value: { from: [22, 60], to: [22.1, 60], accept: ["NOT_FOR_NAVIGATION"] }
+    });
     expect(parsePlanRequest({ from: [22, 60], to: [22.1, 60] }, NOW)).toEqual({
       ok: true,
       value: { from: [22, 60], to: [22.1, 60] }
@@ -49,7 +58,12 @@ describe("plan request validation", () => {
     [{ from: [22, 60], to: [22.1, 60], probability: 0 }, /probability must be over 0..0.5/],
     [{ from: [22, 60], to: [22.1, 60], probability: 0.6 }, /probability/],
     [{ from: [22, 60], to: [22.1, 60], draft: 31 }, /draft/],
-    [{ from: [22, 60], to: [22.1, 60], draft: Number.NaN }, /draft/]
+    [{ from: [22, 60], to: [22.1, 60], draft: Number.NaN }, /draft/],
+    [
+      { from: [22, 60], to: [22.1, 60], accept: ["NO_COVERAGE"] },
+      /accept may list only NOT_FOR_NAVIGATION/
+    ],
+    [{ from: [22, 60], to: [22.1, 60], accept: "NOT_FOR_NAVIGATION" }, /accept may list only/]
   ])("rejects %j", (body, message) => {
     const r = parsePlanRequest(body, NOW);
     expect(r.ok ? "" : r.errors.join("; ")).toMatch(message);
