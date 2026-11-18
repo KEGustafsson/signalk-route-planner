@@ -33,7 +33,7 @@ quality, so each case assumes a CATZOC.
 | Case                      | Assumed CATZOC | Result (2026-11-18)                                                     |
 | ------------------------- | -------------- | ----------------------------------------------------------------------- |
 | `turku-guest-harbours-b`  | B              | 19.9 nm, 40 legs: harbour stage, route, harbour stage                   |
-| `turku-guest-harbours-a1` | A1             | 19.2 nm, 49 legs: the route along the Rajakari–Turku fairway centreline |
+| `turku-guest-harbours-a1` | A1             | 19.2 nm, 44 legs: the route along the Rajakari–Turku fairway centreline |
 
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
@@ -44,11 +44,11 @@ quality, so each case assumes a CATZOC.
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
 start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
-| Case                        | Result (2026-11-18)                                                         |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `miami-fisher-island-basin` | 1.03 nm, 9 legs through Government Cut: 8 `ok`, 1 `marginal`                |
-| `miami-bayside`             | 3.68 nm, 32 legs; the last 0.6 nm is in unassessed water (CATZOC U), marked |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m     |
+| Case                        | Result (2026-11-18)                                                                  |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `miami-fisher-island-basin` | 1.03 nm, 10 legs through Government Cut: 8 `ok`, 2 `marginal`                        |
+| `miami-bayside`             | 3.68 nm, 30 legs; Fisherman's Channel and the basin are unassessed: 8 `fail`, marked |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m              |
 
 - Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at

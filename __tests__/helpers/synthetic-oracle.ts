@@ -31,6 +31,8 @@ export interface Chart {
   /** Charted shallows: fail, but the fallback may cross them. */
   shallows?: Circle[];
   unverified?: Circle[];
+  /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
+  closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
   halfWidth?: number;
   /** Every chart is marked not for navigation: clear water is `unverified`, NOT_FOR_NAVIGATION. */
@@ -59,6 +61,10 @@ function rectDist(px: number, py: number, x0: number, y0: number, x1: number, y1
 function judge(chart: Chart, near: (c: Circle) => boolean): Verdict {
   if (chart.obstacles.some(near)) {
     return { status: "fail", risk: 0.9, flags: ["LAND"] };
+  }
+  const closed = (chart.closed ?? []).find(near);
+  if (closed) {
+    return { status: "fail", risk: 0, flags: [closed.flag] };
   }
   if ((chart.shallows ?? []).some(near)) {
     return { status: "fail", risk: 0.9, flags: [] };

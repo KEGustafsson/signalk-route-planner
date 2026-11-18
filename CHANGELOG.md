@@ -17,7 +17,7 @@ All notable changes to signalk-route-planner are documented here.
 - `GET /status`, and a plugin status that names what the planner waits for.
 - `accept: ["NOT_FOR_NAVIGATION"]`: plan on depth data marked not for navigation, such as the
   Traficom WFS; every such leg stays `unverified`.
-- `fallback: true`: when no route passes, the least risky route through charted water, never over
+- `fallback: true`: when no route passes, the lowest risk-weighted route through charted water, never over
   land, with its risky legs marked `fail`, `marginal` or `unverified` by the route check.
 - The panel offers both as check boxes.
 - Harbour stage: an end in a harbour narrower than the corridor is planned out to open water at

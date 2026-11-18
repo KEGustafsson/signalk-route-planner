@@ -9,6 +9,7 @@ import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
 import { centre, MAX_BOX_KM2, QuadTree } from "../search/quadtree";
+import { stuckEnds } from "./handover";
 import type { PlanOptions } from "./options";
 
 /**
@@ -122,7 +123,7 @@ interface Access {
 }
 
 /** What a search may cross: strictly passing water, or for the fallback, charted water at a cost. */
-interface Mode {
+export interface Mode {
   enter(n: QuadNode): boolean;
   /** True when a checked leg may join the start or goal to a square. */
   joins(v: Verdict): boolean;
@@ -140,6 +141,9 @@ const FALLBACK: Mode = {
   weight: fallbackWeight
 };
 
+const WORK_LIMIT =
+  "the search reached its work limit; plan a shorter passage or add a waypoint between";
+
 /**
  * The square the search leaves from or arrives at for point `p`: the one holding
  * it, or the nearest within `accessMetres` whose centre a checked leg from `p` (to
@@ -152,6 +156,7 @@ function access(
   goal: boolean,
   opts: PlanOptions,
   mode: Mode,
+  exhausted: () => boolean,
   berth = 0
 ): Access | string {
   const [ux, uy] = tree.units(p);
@@ -161,7 +166,10 @@ function access(
   }
   const r = opts.accessMetres / tree.shape.unit;
   const near = tree
-    .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
+    .leaves(
+      (n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size,
+      exhausted
+    )
     .filter((n) => mode.enter(n))
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
     .filter(({ n }) => {
@@ -171,6 +179,9 @@ function access(
     .sort((a, b) => a.d - b.d)
     .slice(0, 8);
   for (const { n } of near) {
+    if (exhausted()) {
+      return WORK_LIMIT;
+    }
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
     if (mode.joins(goal ? checkLeg(session, cl, p) : checkLeg(session, p, cl))) {
@@ -188,6 +199,9 @@ function access(
       : undefined;
   if (stub) {
     return stub;
+  }
+  if (exhausted()) {
+    return WORK_LIMIT;
   }
   const what = goal ? "destination" : "start";
   const flags = own?.verdict?.flags.length ? ` (${own.verdict.flags.join(", ")})` : "";
@@ -292,20 +306,27 @@ async function attempt(
   mode: Mode,
   berth = 0
 ): Promise<Attempt> {
-  const start = access(tree, session, ends[0], false, opts, mode, berth);
-  const goal = access(tree, session, ends[1], true, opts, mode, berth);
+  const searchWork = opts.maxWork * opts.searchShare;
+  const exhausted = (): boolean => session.work() >= searchWork;
+  const start = access(tree, session, ends[0], false, opts, mode, exhausted, berth);
+  const goal =
+    start === WORK_LIMIT
+      ? start
+      : access(tree, session, ends[1], true, opts, mode, exhausted, berth);
+  if (start === WORK_LIMIT || goal === WORK_LIMIT) {
+    return { reason: WORK_LIMIT };
+  }
   if (typeof start === "string" || typeof goal === "string") {
     return {
       reason: typeof start === "string" ? start : (goal as string),
       stuck: { start: typeof start === "string", end: typeof goal === "string" }
     };
   }
-  const searchWork = opts.maxWork * opts.searchShare;
   const found =
     start.leaf === goal.leaf
       ? { found: true as const, points: [start.at, goal.at] }
       : await aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-          exhausted: () => session.work() >= searchWork,
+          exhausted,
           pause: () => session.pause(),
           every: 64,
           weight: mode.weight
@@ -321,73 +342,6 @@ async function attempt(
     };
   }
   return pathOf(tree, [start, goal], ends, found.points);
-}
-
-const WORK_LIMIT =
-  "the search reached its work limit; plan a shorter passage or add a waypoint between";
-
-/**
- * Squares near `p`, within `harbourMetres`, that `mode` may enter, as their centres: where a
- * harbour stage from an end the corridor cannot reach may hand over. Of those not much farther
- * than the nearest, the ones most on the way come first, by the distance from `p` plus the
- * distance on to the other end, `other`, so the route does not double back from the nearest.
- */
-function handovers(
-  tree: QuadTree,
-  p: LonLat,
-  other: LonLat,
-  opts: PlanOptions,
-  mode: Mode & { exhausted: () => boolean }
-): LonLat[] | "work" {
-  const [ux, uy] = tree.units(p);
-  const r = opts.harbourMetres / tree.shape.unit;
-  const leaves = tree.leaves(
-    (n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size,
-    mode.exhausted
-  );
-  // The enumeration stops at the search's share of the work, and the search with it.
-  if (mode.exhausted()) {
-    return "work";
-  }
-  return leaves
-    .filter((n) => mode.enter(n))
-    .map((n) => {
-      const c = centre(n);
-      const cl = tree.lonLat(c[0], c[1]);
-      return { cl, d: haversine(p, cl), on: haversine(p, cl) + haversine(cl, other) };
-    })
-    .filter((x) => x.d <= opts.harbourMetres)
-    .sort((a, b) => a.d - b.d)
-    .filter((x, _, all) => x.d <= nearby((all[0] as { d: number }).d))
-    .sort((a, b) => a.on - b.on)
-    .slice(0, 6)
-    .map((x) => x.cl);
-}
-
-/** Handovers not much farther than the nearest: a harbour stage costs about its region's area. */
-const nearby = (nearest: number): number => Math.max(1.5 * nearest, nearest + 300);
-
-/** Handover candidates for each end a failed attempt could not join, when there are any. */
-function stuckEnds(
-  tree: QuadTree,
-  ends: [LonLat, LonLat],
-  failed: { start: boolean; end: boolean } | undefined,
-  opts: PlanOptions,
-  mode: Mode & { exhausted: () => boolean }
-): Stuck | "work" | undefined {
-  if (!failed || opts.harbourMetres <= 0) {
-    return undefined;
-  }
-  const start = failed.start ? handovers(tree, ends[0], ends[1], opts, mode) : [];
-  const end = failed.end ? handovers(tree, ends[1], ends[0], opts, mode) : [];
-  if (start === "work" || end === "work") {
-    return "work";
-  }
-  // A harbour stage needs somewhere to hand over at every end the search could not join.
-  if ((failed.start && start.length === 0) || (failed.end && end.length === 0)) {
-    return undefined;
-  }
-  return { ...(failed.start && { start }), ...(failed.end && { end }) };
 }
 
 type Searched =
@@ -415,6 +369,10 @@ async function searchTree(
       : undefined;
   if (again && "path" in again) {
     return { ...again, shortcut: fallbackShortcut(tree, again.path), fallback: strict.reason };
+  }
+  // The fallback stopped at the work limit: say so, not why the strict search found no way.
+  if (again?.reason === WORK_LIMIT) {
+    return { reason: WORK_LIMIT };
   }
   const exhausted = () => session.work() >= opts.maxWork * opts.searchShare;
   const near =
@@ -469,7 +427,8 @@ export async function searchRoute(
     rule,
     found.shortcut
   );
-  if (coordinates === "work") {
+  // The last shortcut checked may have taken the work past the limit.
+  if (coordinates === "work" || session.work() >= opts.maxWork) {
     return refuse(WORK_LIMIT);
   }
   return {

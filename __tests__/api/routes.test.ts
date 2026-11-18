@@ -115,12 +115,14 @@ describe("REST routes", () => {
   });
 
   test("an oversize streamed body is refused without closing the socket", async () => {
-    const req = new PassThrough();
+    // autoDestroy off: the stream would destroy itself once drained, whatever the handler does.
+    const req = new PassThrough({ autoDestroy: false });
     const read = readJsonBody(req as unknown as Request);
     req.write(Buffer.alloc(MAX_BODY_BYTES + 1, 32));
     req.end(Buffer.from("{}"));
     await expect(read).rejects.toThrow("request body too large");
     expect(req.destroyed).toBe(false);
+    req.destroy();
   });
 
   test("a streamed body within the cap is parsed", async () => {
