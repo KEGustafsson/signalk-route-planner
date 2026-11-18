@@ -114,7 +114,12 @@ export async function aStar(
     if (limits.exhausted()) {
       return { found: false, reason: "work", expanded };
     }
-    for (const { node: m, portal } of tree.neighbours(n, enter)) {
+    // Classifying the neighbours stops at the work limit; a partial list is not searched on.
+    const next = tree.neighbours(n, enter, limits.exhausted);
+    if (limits.exhausted()) {
+      return { found: false, reason: "work", expanded };
+    }
+    for (const { node: m, portal } of next) {
       const gm =
         (g.get(n.id) as number) +
         dist(pos(n), portal) * weight(n) +
