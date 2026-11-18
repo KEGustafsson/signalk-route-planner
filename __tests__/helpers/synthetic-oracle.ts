@@ -33,6 +33,10 @@ export interface Chart {
   unverified?: Circle[];
   /** Water the check passes with a warning: marginal, at P(UKC < 0) 0.005. */
   marginal?: Circle[];
+  /** Shallows that pass once the water level is at least `needs` metres: a tide gate. */
+  tidal?: (Circle & { needs: number })[];
+  /** The water level at time t, metres; 0 when absent. */
+  tide?: (t: number) => number;
   /** Corridor half-width, metres. */
   halfWidth?: number;
   /** Every chart is marked not for navigation: clear water is `unverified`, NOT_FOR_NAVIGATION. */
@@ -58,9 +62,24 @@ function rectDist(px: number, py: number, x0: number, y0: number, x1: number, y1
 }
 
 /** What water within `near` of the corridor gets: land, shallows, unverified or clear. */
-function judge(chart: Chart, near: (c: Circle) => boolean): Verdict {
+/** The lowest water level over [start, end], sampled each minute and at the end. */
+function lowest(chart: Chart, w?: { start: number; end: number }): number {
+  if (!chart.tide || !w) {
+    return chart.tide?.(0) ?? 0;
+  }
+  let h = chart.tide(w.end);
+  for (let t = w.start; t < w.end; t += 60_000) {
+    h = Math.min(h, chart.tide(t));
+  }
+  return h;
+}
+
+function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
   if (chart.obstacles.some(near)) {
     return { status: "fail", risk: 0.9, flags: ["LAND"] };
+  }
+  if ((chart.tidal ?? []).some((c) => near(c) && level < c.needs)) {
+    return { status: "fail", risk: 0.9, flags: [] };
   }
   if ((chart.shallows ?? []).some(near)) {
     return { status: "fail", risk: 0.9, flags: [] };
@@ -77,10 +96,10 @@ function judge(chart: Chart, near: (c: Circle) => boolean): Verdict {
 }
 
 /** The verdict of the leg a → b on `chart` with corridor half-width r. */
-export function legVerdict(chart: Chart, a: LonLat, b: LonLat, r: number): Verdict {
+export function legVerdict(chart: Chart, a: LonLat, b: LonLat, r: number, level = 0): Verdict {
   const pa = xy(a);
   const pb = xy(b);
-  return judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r);
+  return judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r, level);
 }
 
 /** The status of the leg a → b on `chart`, ignoring a chart marked not for navigation. */
@@ -114,10 +133,12 @@ export function syntheticApi(
     async session(params, signal, job) {
       api.sessions.push(params);
       const r = widthFor(params.xteLimit);
+      // As signalk-underkeel: a verdict holds at the lowest water of its window.
+      const whole = { start: params.departure, end: params.until };
       let work = 0;
       const session: Session = {
         halfWidth: r,
-        box(sw, ne) {
+        box(sw, ne, w) {
           work += per;
           api.boxes++;
           const corners = [sw, ne, [sw[0], ne[1]] as LonLat, [ne[0], sw[1]] as LonLat].map(xy);
@@ -125,15 +146,16 @@ export function syntheticApi(
           const x1 = Math.max(...corners.map((c) => c[0]));
           const y0 = Math.min(...corners.map((c) => c[1]));
           const y1 = Math.max(...corners.map((c) => c[1]));
-          return judge(chart, (c) => rectDist(c.x, c.y, x0, y0, x1, y1) < c.r + r);
+          const level = lowest(chart, w ?? whole);
+          return judge(chart, (c) => rectDist(c.x, c.y, x0, y0, x1, y1) < c.r + r, level);
         },
-        segment(a, b) {
+        segment(a, b, w) {
           // As signalk-underkeel: a leg's corridor over 25 km² is refused.
           if (((haversine(a, b) + 2 * r) * 2 * r) / 1e6 > 25) {
             throw new RangeError("leg corridor over 25 km²");
           }
           work += per;
-          return legVerdict(chart, a, b, r);
+          return legVerdict(chart, a, b, r, lowest(chart, w ?? whole));
         },
         work: () => work,
         pause: () =>
@@ -151,12 +173,22 @@ export function syntheticApi(
       }
     },
     routeCheck(body) {
-      const req = body as { route: { coordinates: LonLat[] }; xteLimit?: number };
+      const req = body as {
+        route: { coordinates: LonLat[] };
+        xteLimit?: number;
+        departure?: string;
+        speed?: number;
+      };
       const coords = req.route.coordinates;
       const r = widthFor(req.xteLimit);
+      const speed = req.speed ?? 3;
+      let at = req.departure ? Date.parse(req.departure) : 0;
       const legs = coords.slice(1).map((b, i) => {
         const a = coords[i] as LonLat;
-        const v = legVerdict(chart, a, b, r);
+        // Each leg at the water level while the boat is on it.
+        const start = at;
+        at += (haversine(a, b) / speed) * 1000;
+        const v = legVerdict(chart, a, b, r, lowest(chart, { start, end: at }));
         const status = v.status;
         return {
           index: i,

@@ -56,7 +56,8 @@ export function apiFor(clock: Clock, running: () => AbortSignal | undefined): Ap
           probability: req.probability,
           draft: req.draft,
           accept: req.accept,
-          fallback: req.fallback
+          fallback: req.fallback,
+          latestDeparture: req.latestDeparture
         },
         AbortSignal.any([client, stop]),
         clock.now()

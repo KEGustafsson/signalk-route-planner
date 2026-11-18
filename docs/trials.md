@@ -53,6 +53,11 @@ start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 | `miami-bayside`             | 3.58 nm; Fisherman's Channel and the Bayside basin are unassessed, marked | 16.9 M |
 | `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m   |  1.5 M |
 
+`miami-meloy-channel-tide` plans into Meloy Channel with a modelled tide (0.0–0.7 m above
+MLLW) and up to 12 h to wait. The gate finds the route's last leg touches a 0 m band at the bank,
+which no state of the water level clears, and refuses naming that leg: the gate does not trade a
+wait for a leg the tide cannot open.
+
 - Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at
   chart datum. The refusal is the right answer; a shallower draft or a tide gate (R3) would

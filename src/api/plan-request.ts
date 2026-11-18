@@ -16,11 +16,44 @@ export interface PlanRequest {
   accept?: string[];
   /** When no route passes, the least risky one through charted water, its legs marked. */
   fallback?: boolean;
+  /** Epoch ms: the latest the boat may wait to leave for the tide (`plan/gate.ts`). */
+  latestDeparture?: number;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: string[] };
 
 const YEAR = 365 * 24 * 3_600_000;
+
+/** The longest a plan may wait for the tide: a day covers two tides everywhere. */
+export const MAX_WAIT_MS = 24 * 3_600_000;
+
+/** `departure` and `latestDeparture`, ISO 8601, each checked. */
+function times(
+  b: Record<string, unknown>,
+  now: number,
+  errors: string[]
+): { departure?: number; latestDeparture?: number } {
+  const iso = (v: unknown): number => (typeof v === "string" ? Date.parse(v) : NaN);
+  let departure: number | undefined;
+  if (b.departure !== undefined) {
+    const t = iso(b.departure);
+    if (!Number.isFinite(t) || Math.abs(t - now) > YEAR) {
+      errors.push("departure must be an ISO 8601 time within a year of now");
+    } else {
+      departure = t;
+    }
+  }
+  if (b.latestDeparture === undefined) {
+    return { departure };
+  }
+  const from = departure ?? now;
+  const t = iso(b.latestDeparture);
+  if (!Number.isFinite(t) || t < from || t > from + MAX_WAIT_MS) {
+    errors.push("latestDeparture must be an ISO 8601 time from the departure to 24 h after it");
+    return { departure };
+  }
+  return { departure, latestDeparture: t };
+}
 
 function point(v: unknown, name: string, errors: string[]): LonLat | undefined {
   if (
@@ -91,15 +124,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const errors: string[] = [];
   const from = point(b.from, "from", errors);
   const to = point(b.to, "to", errors);
-  let departure: number | undefined;
-  if (b.departure !== undefined) {
-    const t = typeof b.departure === "string" ? Date.parse(b.departure) : NaN;
-    if (!Number.isFinite(t) || Math.abs(t - now) > YEAR) {
-      errors.push("departure must be an ISO 8601 time within a year of now");
-    } else {
-      departure = t;
-    }
-  }
+  const { departure, latestDeparture } = times(b, now, errors);
   const speed = inRange(b, "speed", 0.1, 30, " m/s", errors);
   const xteLimit = inRange(b, "xteLimit", 0, 1000, " m", errors);
   const probability = inRange(b, "probability", 0, 0.5, "", errors, true);
@@ -112,9 +137,16 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   Object.assign(
     value,
     Object.fromEntries(
-      Object.entries({ departure, speed, xteLimit, probability, draft, accept, fallback }).filter(
-        ([, v]) => v !== undefined
-      )
+      Object.entries({
+        departure,
+        latestDeparture,
+        speed,
+        xteLimit,
+        probability,
+        draft,
+        accept,
+        fallback
+      }).filter(([, v]) => v !== undefined)
     )
   );
   return { ok: true, value };

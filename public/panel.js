@@ -62,6 +62,11 @@ function showLegs(legs) {
   table.hidden = legs.length === 0;
 }
 
+/** The latest departure, `hours` from now, as the request field; none for 0. */
+function latest(hours) {
+  return hours > 0 ? { latestDeparture: new Date(Date.now() + hours * 3_600_000).toISOString() } : {};
+}
+
 async function planSelected() {
   const routeId = select.value;
   if (!routeId) {
@@ -84,7 +89,8 @@ async function planSelected() {
       body: JSON.stringify({
         ...ends,
         ...(document.getElementById("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
-        ...(document.getElementById("fallback").checked && { fallback: true })
+        ...(document.getElementById("fallback").checked && { fallback: true }),
+        ...latest(Number(document.getElementById("wait").value))
       })
     });
     const body = await res.json().catch(() => ({}));

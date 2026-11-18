@@ -8,7 +8,9 @@ import { DEFAULT_PLAN } from "./options";
 import type { CheckedLeg, Proof } from "./proof";
 import { joined, prove } from "./proof";
 import type { Part } from "./stages";
+import type { Staged } from "./stages";
 import { stages } from "./stages";
+import { timeDeparture } from "./gate";
 
 /**
  * One plan (plan §4.1): the search in planning sessions (`stages.ts`), then the proof:
@@ -28,6 +30,11 @@ export interface PlanInput {
   accept?: readonly string[];
   /** When no route passes, return the least risky one through charted water (`search/fallback.ts`). */
   fallback?: boolean;
+  /**
+   * The latest departure the boat may wait for, epoch ms: when the route passes only at some
+   * states of the tide, the plan names the earliest departure up to this that passes (`gate.ts`).
+   */
+  latestDeparture?: number;
 }
 
 const RANK: Record<Status, number> = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
@@ -84,23 +91,22 @@ function offered(
   };
 }
 
-export async function plan(
+/** One plan at `input.departure`, its verdicts holding for departures up to `latest`. */
+interface Planned {
+  reply: Reply;
+  base: object;
+  rule: PassRule;
+  found?: Extract<Staged, { ok: true }>;
+}
+
+async function planAt(
   api: PlanningApiV1,
   input: PlanInput,
   signal: AbortSignal,
   now: number,
-  opts: PlanOptions = DEFAULT_PLAN
-): Promise<Reply> {
+  opts: PlanOptions
+): Promise<Planned> {
   const d = haversine(input.from, input.to);
-  if (d > opts.maxDistance) {
-    return {
-      status: 400,
-      body: { errors: [`from and to are ${Math.round(d)} m apart; at most ${opts.maxDistance} m`] }
-    };
-  }
-  if (d < 1) {
-    return { status: 400, body: { errors: ["from and to are the same point"] } };
-  }
   const window = Math.ceil(
     Math.max(opts.minWindow, ((opts.windowFactor * d) / input.speed) * 1000)
   );
@@ -110,7 +116,8 @@ export async function plan(
   };
   const params = {
     departure: input.departure,
-    until: input.departure + window,
+    // Every departure the boat may wait for, and the trip after the last of them.
+    until: Math.max(input.departure, input.latestDeparture ?? input.departure) + window,
     speed: input.speed,
     xteLimit: input.xteLimit,
     probability: input.probability,
@@ -119,7 +126,7 @@ export async function plan(
   const st = { api, params, signal, opts, rule, fallback: input.fallback === true };
   const found = await stages(st, input.from, input.to, input.xteLimit);
   if ("error" in found) {
-    return { status: found.status, body: { errors: [found.error] } };
+    return { reply: { status: found.status, body: { errors: [found.error] } }, base: {}, rule };
   }
   const base = {
     plannedAt: new Date(now).toISOString(),
@@ -128,16 +135,25 @@ export async function plan(
   };
   if (!found.ok) {
     const r = found.refusal;
-    return {
-      status: 422,
-      body: {
-        ...base,
-        reason: r.reason,
-        ...(r.unverified > 0 && { unverifiedSquares: r.unverified }),
-        work: found.work
-      }
+    const body = {
+      ...base,
+      reason: r.reason,
+      ...(r.unverified > 0 && { unverifiedSquares: r.unverified }),
+      work: found.work
     };
+    return { reply: { status: 422, body }, base, rule };
   }
+  return { reply: await proved(api, input, signal, { base, rule, found }), base, rule, found };
+}
+
+/** The route check of `found` at `input.departure`, and the reply it makes. */
+async function proved(
+  api: PlanningApiV1,
+  input: PlanInput,
+  signal: AbortSignal,
+  p: { base: object; rule: PassRule; found: Extract<Staged, { ok: true }> }
+): Promise<Reply> {
+  const { base, rule, found } = p;
   const proof = await prove(api, input, found.parts, signal);
   if (!("legs" in proof)) {
     return proof;
@@ -158,4 +174,86 @@ export async function plan(
     };
   }
   return { status: 200, body: offered(base, found.parts, proof, found) };
+}
+
+/** True when a reply offers a route that passes as planned, with no leg left to the tide. */
+const passesAsPlanned = (r: Reply): boolean =>
+  r.status === 200 && (r.body as { fallback?: string }).fallback === undefined;
+
+/**
+ * The tide gate (plan §4.3): the plan, or the fallback's route when none passes, timed to the
+ * earliest departure up to `latestDeparture` at which the route check passes every leg.
+ */
+async function gated(
+  api: PlanningApiV1,
+  input: PlanInput & { latestDeparture: number },
+  signal: AbortSignal,
+  now: number,
+  opts: PlanOptions,
+  first: Planned
+): Promise<Reply> {
+  const candidate =
+    first.found ?? (await planAt(api, { ...input, fallback: true }, signal, now, opts)).found;
+  if (!candidate) {
+    return first.reply;
+  }
+  const g = { ...input, latest: input.latestDeparture };
+  const budget = Math.max(0, opts.maxWork - candidate.work);
+  const timed = await timeDeparture(api, g, candidate.parts, { rule: first.rule, signal, budget });
+  const note = (reason: string): Reply => ({
+    ...first.reply,
+    body: { ...(first.reply.body as object), gate: { reason } }
+  });
+  if (!timed.ok) {
+    return note(timed.reason);
+  }
+  // Timed, the parts are held to the strict rule: no leg is left to the fallback.
+  const parts = candidate.parts.map(({ fallback: _, ...p }) => p);
+  const found = { ...candidate, parts };
+  const at = { ...input, departure: timed.departure };
+  const r = await proved(api, at, signal, { base: first.base, rule: first.rule, found });
+  if (r.status !== 200) {
+    return note(
+      `the route check does not pass the route leaving at ${new Date(timed.departure).toISOString()}`
+    );
+  }
+  const body = r.body as object;
+  return {
+    status: 200,
+    body: {
+      ...body,
+      departure: new Date(timed.departure).toISOString(),
+      gate: {
+        requested: new Date(input.departure).toISOString(),
+        departure: new Date(timed.departure).toISOString(),
+        waitMinutes: Math.round((timed.departure - input.departure) / 60_000),
+        legs: timed.gated
+      }
+    }
+  };
+}
+
+export async function plan(
+  api: PlanningApiV1,
+  input: PlanInput,
+  signal: AbortSignal,
+  now: number,
+  opts: PlanOptions = DEFAULT_PLAN
+): Promise<Reply> {
+  const d = haversine(input.from, input.to);
+  if (d > opts.maxDistance) {
+    return {
+      status: 400,
+      body: { errors: [`from and to are ${Math.round(d)} m apart; at most ${opts.maxDistance} m`] }
+    };
+  }
+  if (d < 1) {
+    return { status: 400, body: { errors: ["from and to are the same point"] } };
+  }
+  const first = await planAt(api, input, signal, now, opts);
+  const latest = input.latestDeparture;
+  if (latest === undefined || latest <= input.departure || passesAsPlanned(first.reply)) {
+    return first.reply;
+  }
+  return gated(api, { ...input, latestDeparture: latest }, signal, now, opts, first);
 }

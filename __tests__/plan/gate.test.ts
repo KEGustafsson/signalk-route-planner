@@ -1,0 +1,121 @@
+import type { LonLat } from "../../src/foundation/geo";
+import { parsePlanRequest } from "../../src/api/plan-request";
+import { plan } from "../../src/plan/plan";
+import type { Chart } from "../helpers/synthetic-oracle";
+import { at, legStatus, syntheticApi } from "../helpers/synthetic-oracle";
+
+/**
+ * Tide gates (plan §4.3): a route that passes only at some states of the tide is offered
+ * leaving at the earliest departure, up to the request's latest, at which the route check
+ * passes every leg as the boat reaches it.
+ */
+
+const NEVER = new AbortController().signal;
+const NOW = Date.parse("2026-11-18T07:00:00Z");
+const HOUR = 3_600_000;
+
+/** A wall across x = 2500 past the region's edges, its one gap a bar that needs 1 m of water. */
+function barred(tide: (t: number) => number): Chart {
+  const wall = Array.from({ length: 81 }, (_, i) => ({
+    x: 2500,
+    y: -8000 + i * 200,
+    r: 110
+  })).filter((c) => Math.abs(c.y - 1500) > 300);
+  return { obstacles: wall, tidal: [{ x: 2500, y: 1500, r: 450, needs: 1 }], tide };
+}
+
+/** Falling from 1 m at NOW: below 1 m for six hours, then above it for six. */
+const falling = (t: number): number => 1 - 1.2 * Math.sin((2 * Math.PI * (t - NOW)) / (12 * HOUR));
+
+interface Body {
+  status: string;
+  departure?: string;
+  route: { coordinates: LonLat[] };
+  check: { legs: { status: string }[] };
+  gate?: {
+    requested?: string;
+    departure?: string;
+    waitMinutes?: number;
+    legs?: number[];
+    reason?: string;
+  };
+  fallback?: string;
+  reason?: string;
+}
+
+async function planned(chart: Chart, latest?: number) {
+  const r = await plan(
+    syntheticApi(chart),
+    {
+      from: at(0, 0),
+      to: at(5000, 0),
+      departure: NOW,
+      speed: 3,
+      ...(latest !== undefined && { latestDeparture: latest })
+    },
+    NEVER,
+    NOW
+  );
+  return { r, body: r.body as Body };
+}
+
+describe("tide gates", () => {
+  test("without a latest departure, a bar the falling tide closes refuses the plan", async () => {
+    const { r } = await planned(barred(falling));
+    expect(r.status).toBe(422);
+  });
+
+  test("with one, the plan leaves at the earliest departure the tide lets over the bar", async () => {
+    const chart = barred(falling);
+    const { r, body } = await planned(chart, NOW + 12 * HOUR);
+    expect(r.status).toBe(200);
+    expect(body.fallback).toBeUndefined();
+    const leave = Date.parse(body.departure as string);
+    // Over the bar once the tide is back above 1 m, six hours on. Every 15-minute window the
+    // gated leg overlaps must pass at its own lowest water, so the departure falls within a
+    // slot or two of that, never before the tide allows.
+    expect(leave).toBeGreaterThan(NOW + 5 * HOUR);
+    expect(leave).toBeLessThanOrEqual(NOW + 6.5 * HOUR);
+    expect(body.gate).toMatchObject({
+      requested: new Date(NOW).toISOString(),
+      departure: body.departure,
+      waitMinutes: Math.round((leave - NOW) / 60_000)
+    });
+    expect(body.gate?.legs?.length).toBeGreaterThan(0);
+    // Through the gap, and every leg passes as the route check sees it then.
+    const ys = body.route.coordinates.map((p) => p[1]);
+    expect(Math.max(...ys)).toBeGreaterThan(at(0, 1000)[1]);
+    expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
+    // At the lowest tide the route crosses the bar, so only the timing makes it pass.
+    const c = body.route.coordinates;
+    const low = c.slice(1).some((b, i) => legStatus(chart, c[i] as LonLat, b, 40) !== "ok");
+    expect(low).toBe(true);
+  });
+
+  test("when no departure up to the latest passes, the refusal says why", async () => {
+    const { r, body } = await planned(barred(falling), NOW + 2 * HOUR);
+    expect(r.status).toBe(422);
+    expect(body.gate?.reason).toMatch(/no departure up to .* passes leg/);
+  });
+
+  test("a route that passes at the departure is offered as it is, with no gate", async () => {
+    const high = (): number => 2;
+    const { r, body } = await planned(barred(high), NOW + 12 * HOUR);
+    expect(r.status).toBe(200);
+    expect(body.gate).toBeUndefined();
+    expect(body.departure).toBeUndefined();
+  });
+
+  test("a latest departure before the departure, or more than a day after it, is refused", () => {
+    const base = { from: [22, 60], to: [22.1, 60.1], departure: new Date(NOW).toISOString() };
+    for (const latest of [NOW - HOUR, NOW + 25 * HOUR]) {
+      const p = parsePlanRequest({ ...base, latestDeparture: new Date(latest).toISOString() }, NOW);
+      expect(p.ok).toBe(false);
+    }
+    const ok = parsePlanRequest(
+      { ...base, latestDeparture: new Date(NOW + 6 * HOUR).toISOString() },
+      NOW
+    );
+    expect(ok.ok && ok.value.latestDeparture).toBe(NOW + 6 * HOUR);
+  });
+});
