@@ -1,0 +1,75 @@
+# Safe-Water Route Planner
+
+A Signal K server plugin and Freeboard-SK extension that plans the shortest route through water
+deep enough for the boat, between the start and destination of a route you draw. Every leg of a
+plan is checked by [Under-Keel Awareness](https://github.com/KEGustafsson/signalk-underkeel)
+(signalk-underkeel) the same way its `/route-check` checks a route: a corridor of the cross-track
+limit plus a planning buffer, scored by P(UKC < 0) from the chart's survey quality, the water
+level forecast, draft, squat and waves.
+
+**Advisory only.** A plan is a suggestion written into your route as an unsaved change. Check
+every leg on an official chart before you sail it. The plugin never sends autopilot or steering
+commands.
+
+## Requirements
+
+- Signal K server 2 with Freeboard-SK and its Plotter Extensions support.
+- signalk-underkeel 0.7.0 or later, installed, enabled and with its chart index built. The
+  planner uses its charts, water level and vessel; it builds no chart index of its own.
+
+Without signalk-underkeel the plugin status reads "Waiting: signalk-underkeel 0.7.0 or later is
+not running" and `/plan` answers 503 with that reason.
+
+## Use
+
+1. In Freeboard, draw a route from where you are to where you want to go. Two points are enough.
+2. Open **Route planner** from the map toolbar, pick the route and press **Plan through safe
+   water**.
+3. The route's points are replaced by the plan as an unsaved change, with each leg's status and
+   P(UKC < 0) in the panel. The route's first and last points keep their names. Save the route,
+   or undo the change, in Freeboard's route editor.
+
+When no route passes the check, the panel says why: land or shoals close every way, the only way
+through is water the check cannot verify (no chart coverage or an unassessed survey), the start
+or destination is not in water the check passes, or the search reached its work limit.
+
+## How a plan is made
+
+1. The straight line between start and destination is checked first; when it passes, it is the
+   plan.
+2. Otherwise the region around the two points is divided into squares, coarse in open water and
+   finer near land and shoals. A square is free water when every point in it, with the corridor
+   around it, passes the check over the whole trip's time window.
+3. A\* finds the shortest path through free squares, and string pulling straightens it into as
+   few legs as pass the check.
+4. signalk-underkeel's route check checks the final route at its departure, each leg at its own
+   arrival time. The statuses you see are that check's.
+
+`docs/DEVELOPMENT-PLAN.md` describes the design and the milestones that follow: planning past
+the chart box, waiting for the tide, risk-weighted alternatives, air draft under bridges and
+seamanship rules.
+
+## REST API
+
+Base `/plugins/signalk-route-planner/v1`, open to logged-in readonly users.
+
+| Route         | Answer                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------- |
+| `GET /status` | `{ state: "ready", provider }` or `{ state: "off", reason }`                                  |
+| `POST /plan`  | 200 with the planned `route`, its `length`, `status` and the route check; 422 with a `reason` |
+
+A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departure` (ISO 8601),
+`speed` (m/s), `xteLimit` (m), `probability` and `draft` (m); unset options take
+signalk-underkeel's route-check settings. Start and destination may be at most 60 km apart.
+
+## Documentation map
+
+| Document                    | Contents                                          |
+| --------------------------- | ------------------------------------------------- |
+| `docs/DEVELOPMENT-PLAN.md`  | design, safety invariants, algorithms, milestones |
+| `docs/release-checklist.md` | the checks to run before a release                |
+| `AGENTS.md`                 | how to work in this repository                    |
+
+## Licence
+
+EUPL-1.2, as signalk-underkeel.

@@ -1,0 +1,13 @@
+{
+  "//": "ts-jest config for the test run, transpile-only via isolatedModules. `check:ts:tests` type-checks the tests with it; allowJs gives the browser modules under public/ that tests import their inferred types.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "isolatedModules": true,
+    "rootDir": ".",
+    "types": ["node", "jest"],
+    "allowJs": true
+  },
+  "include": ["src/**/*.ts", "__tests__/**/*.ts"],
+  "exclude": ["node_modules", "public", "lib"]
+}

@@ -1,0 +1,153 @@
+name: CI
+
+# Gates every push and PR on type-check, lint, tests, coverage, build and
+# release truth, so merges are blocked automatically rather than by hand.
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+  # Weekly blocking dependency audit (see the audit-blocking job). A scheduled
+  # gate catches newly-published advisories in existing dependencies without
+  # letting registry/network flakiness block day-to-day PR merges.
+  schedule:
+    - cron: "0 6 * * 1"
+
+# Cancel superseded runs for the same ref so rapid pushes don't pile up
+# redundant CI. The scheduled audit uses a distinct group key so it is never
+# cancelled by branch activity.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'schedule' && 'schedule' || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Matrix starts at the supported floor (package.json engines: >=22,
+        # matching signalk-server).
+        # 24 (current) is included for forward coverage.
+        node-version: [22, 24]
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # CI only reads — don't leave the GITHUB_TOKEN in .git/config
+          # during the job.
+          persist-credentials: false
+
+      - name: Check for package-lock.json
+        id: lockfile
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: ${{ steps.lockfile.outputs.exists == 'true' && 'npm' || '' }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ "${{ steps.lockfile.outputs.exists }}" = "true" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      # Built first: the release truth check reads the compiled lib/.
+      - name: Build
+        run: npm run build
+
+      # Single required gate: type-check + lint + full test suite.
+      # Tests run against src/ via ts-jest.
+      - name: Verify (check:ts + lint + test)
+        run: npm run verify
+        env:
+          # AGENTS.md: npm test stays under 120 s; the budget reporter fails the run past it.
+          PLANNER_TEST_BUDGET_S: "120"
+
+      # Enforce the coverageThreshold configured in package.json. Gated on a
+      # single Node version so coverage runs once per workflow, not 3x.
+      - name: Coverage gate
+        if: matrix.node-version == 22
+        run: npm run test:coverage
+
+      - name: Release documentation and package truth
+        run: npm run check:release-docs
+
+  # REPORTING ONLY — this job never gates a merge, hence continue-on-error at
+  # the job level. The real gates are the npm-audit test in the main suite
+  # (shipped deps, per PR) and the weekly `audit-blocking` job. This job adds
+  # visibility for the DEV tree, whose advisories must not block a merge.
+  audit:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      # continue-on-error keeps the full-tree step below reachable — `npm
+      # audit` exits non-zero on ANY advisory.
+      # Shipped: runtime dependencies plus signalk-plotterext-bus, a
+      # devDependency vendored into public/vendor/ that --omit=dev skips.
+      - name: Audit shipped dependencies (informational)
+        continue-on-error: true
+        run: npm run audit:shipped
+
+      - name: Audit full dependency tree (informational)
+        continue-on-error: true
+        run: npm audit
+
+  # Blocking dependency audit, runs ONLY on the weekly schedule. Fails the run
+  # on any high/critical advisory in what the package ships: the runtime tree
+  # and the vendored signalk-plotterext-bus client.
+  audit-blocking:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit shipped dependencies (high/critical, blocking)
+        run: npm run audit:shipped -- --audit-level=high

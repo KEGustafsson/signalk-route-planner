@@ -1,0 +1,41 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Route planner</title>
+    <link rel="stylesheet" href="theme.css" />
+    <style>
+      body { margin: 0; padding: 10px 12px; font: 14px/1.4 system-ui, sans-serif; color: var(--ink); background: var(--page); }
+      .advisory { font-size: 12px; padding: 6px 8px; border-radius: 4px; color: var(--note-ink); background: var(--note); border: 1px solid var(--note-line); }
+      label { display: block; margin-top: 10px; color: var(--muted); font-size: 12px; }
+      select { width: 100%; min-height: 32px; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--field); border-radius: 6px; }
+      button { margin-top: 8px; min-height: 32px; padding: 0 12px; font: inherit; color: var(--on-accent); background: var(--accent); border: 0; border-radius: 6px; cursor: pointer; }
+      button:disabled { opacity: 0.5; cursor: default; }
+      button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      #result { margin-top: 10px; }
+      table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
+      td, th { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); }
+      th { color: var(--muted); font-weight: 600; }
+      .ok { color: var(--ok); } .marginal { color: var(--warn); } .fail { color: var(--todo); } .unverified { color: var(--unverified); }
+      .muted { color: var(--muted); font-size: 12px; }
+    </style>
+    <script src="theme.js"></script>
+    <script src="planner-shared.js"></script>
+    <script type="module" src="panel.js"></script>
+  </head>
+  <body>
+    <div class="advisory">
+      Advisory only. The planned route is checked against your charts by Under-Keel Awareness; it
+      is a suggestion. Check every leg on an official chart before you sail it.
+    </div>
+    <label for="route">Route: its first point is the start, its last the destination</label>
+    <select id="route"></select>
+    <button id="plan" type="button">Plan through safe water</button>
+    <div id="result" role="status"></div>
+    <table id="legs" hidden>
+      <thead><tr><th>Leg</th><th>Length</th><th>Status</th><th>Risk</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p class="muted">The plan replaces the route's points as an unsaved change. Save it, or undo it, in the route editor.</p>
+  </body>
+</html>
