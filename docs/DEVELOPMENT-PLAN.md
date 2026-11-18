@@ -146,8 +146,11 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    and whose P(UKC < 0) is below the threshold. The route check still marks those legs
    `unverified`.
 8. **Fallback.** With `fallback: true`, when no route passes, the search runs again over the same
-   squares and may cross charted water the check fails or cannot verify, at a cost per metre of
-   1 + 1000·P (+100 when unverified); land and water with no chart are never crossed. String
+   squares and may cross charted water the check fails or cannot verify, at a cost per metre
+   that grows with P(UKC < 0), with a further penalty when unverified, so the route trades
+   distance for risk (`RISK_WEIGHT` and `UNVERIFIED_WEIGHT` in `src/search/fallback.ts`). It
+   crosses only verdicts whose flags say how the depth was charted; land, water with no chart,
+   squares never queried and any other flag, such as a hard rule's, stay closed. String
    pulling straightens such a stretch only within itself. The reply carries `fallback` with the
    reason no route passed, and the risky legs come back `fail`, `marginal` or `unverified` from
    the route check, marked.
@@ -157,8 +160,9 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     limit sized for about 3 s on a Raspberry Pi 4, refusing with the reason rather than returning
     a partial route.
 11. **Boxes the API takes.** A box's longitude span widens away from the frame's origin latitude,
-    so each box is measured at its own latitude and split while it is over 24 km² with its
-    buffer. A region across the 180° meridian or over a pole is refused.
+    so each box is measured at its own latitude and split while it, with its buffer, is over
+    the API's box limit (`MAX_BOX_KM2` in `src/search/quadtree.ts`), so no query is refused. A
+    region across the 180° meridian or over a pole is refused.
 12. **Harbour stage.** A guest harbour, a river berth or a marina is often narrower than the
     request's corridor, so the search cannot join that end. It then names the free water within
     `harbourMetres` (3 km) of the end, and a harbour stage plans the end out to it at
@@ -312,15 +316,15 @@ the shores the search meets. R2 cuts those by asking about fewer of them:
 - the strict search crosses marginal water at a cost instead of failing and handing the whole
   route to the fallback;
 - an end the search cannot join goes to its harbour stage before any whole-route fallback,
-  whose least-risk search reaches across the whole region.
+  whose risk-weighted search reaches across the whole region.
 
 | Field trial (`docs/trials.md`)   | Before R2 |  After |
 | -------------------------------- | --------: | -----: |
-| Turku → Nauvo, CATZOC B          |    18.4 M |  4.8 M |
-| Turku → Nauvo, CATZOC A1         |    16.5 M |  3.2 M |
-| Miami: sea → Fisher Island basin |    1.13 M | 0.48 M |
-| Miami: sea → Bayside             |    17.0 M | 16.9 M |
-| Miami: sea → Miami Beach Marina  |    39.3 M |  1.5 M |
+| Turku → Nauvo, CATZOC B          |    18.4 M |  4.7 M |
+| Turku → Nauvo, CATZOC A1         |    16.5 M |  3.3 M |
+| Miami: sea → Fisher Island basin |    1.13 M | 0.66 M |
+| Miami: sea → Bayside             |    17.0 M | 17.1 M |
+| Miami: sea → Miami Beach Marina  |    39.3 M |  1.6 M |
 
 Still open: a 20 nm passage through the archipelago is three to four times the budget, and a
 fallback route across risky water (Bayside, through unassessed water) reaches across its whole

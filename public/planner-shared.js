@@ -84,7 +84,7 @@
               (b.berths.length === 1 ? "it" : "them") +
               " by eye"
             : "") +
-          (b.fallback ? ". No route passes the check: this is the least risky one, " + b.fallback : "")
+          (b.fallback ? ". No route passes the check: this is the lowest risk-weighted route, " + b.fallback : "")
       };
     }
     if (status === 422) {

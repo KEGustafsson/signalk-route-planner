@@ -1,11 +1,12 @@
 import fc from "fast-check";
 import type { LonLat } from "../../src/foundation/geo";
 import { plan } from "../../src/plan/plan";
+import { crossable } from "../../src/search/fallback";
 import type { Chart, Circle } from "../helpers/synthetic-oracle";
 import { at, legVerdict, syntheticApi } from "../helpers/synthetic-oracle";
 
 /**
- * The fallback (plan §4.1 step 8): when no route passes, the least risky route
+ * The fallback (plan §4.1 step 8): when no route passes, the lowest risk-weighted route
  * through charted water, never over land, with every leg's status the route
  * check's, so the legs over shallows come back `fail`, marked.
  */
@@ -65,6 +66,27 @@ describe("fallback", () => {
 
   test("on, but the wall is land end to end: still refused, never over land", async () => {
     expect((await run(wall("land"), true)).status).toBe(422);
+  });
+
+  test("on, but the gap is an entry-prohibited area: refused, the hard rule is not traded", async () => {
+    const chart = wall();
+    chart.closed = [{ x: 2500, y: 0, r: 300, flag: "ENTRY_PROHIBITED" }];
+    expect((await run(chart, true)).status).toBe(422);
+  });
+
+  test("the fallback crosses only flags it knows; anything else stays closed", () => {
+    for (const flag of ["UNASSESSED", "NOT_FOR_NAVIGATION", "DREDGED", "WATER_LEVEL_FALLBACK"]) {
+      expect(crossable({ flags: [flag] })).toBe(true);
+    }
+    for (const flag of [
+      "LAND",
+      "NO_COVERAGE",
+      "BOX_TOO_LARGE",
+      "TOO_LONG_FOR_ONE_LEG",
+      "ENTRY_PROHIBITED"
+    ]) {
+      expect(crossable({ flags: ["UNASSESSED", flag] })).toBe(false);
+    }
   });
 
   test("on, with open water round the shallows: the strict route, no fallback", async () => {

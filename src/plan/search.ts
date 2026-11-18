@@ -25,7 +25,7 @@ export type SearchOutcome =
       direct: Verdict;
       squares: number;
       work: number;
-      /** Set when no route passed and this is the least risky one: why none passed. */
+      /** Set when no route passed and this is the lowest risk-weighted route: why none passed. */
       fallback?: string;
       /** Where a berth leg (`berthMetres`) leaves the start or reaches the destination. */
       berths?: Berths;
@@ -151,6 +151,9 @@ const FALLBACK: Mode = {
   weight: fallbackWeight
 };
 
+const WORK_LIMIT =
+  "the search reached its work limit; plan a shorter passage or add a waypoint between";
+
 /**
  * The square the search leaves from or arrives at for point `p`: the one holding
  * it, or the nearest within `accessMetres` whose centre a checked leg from `p` (to
@@ -163,6 +166,7 @@ function access(
   goal: boolean,
   opts: PlanOptions,
   mode: Mode,
+  exhausted: () => boolean,
   berth = 0
 ): Access | string {
   const [ux, uy] = tree.units(p);
@@ -175,12 +179,16 @@ function access(
     const c = centre(n);
     return haversine(p, tree.lonLat(c[0], c[1])) <= opts.accessMetres;
   };
-  // Best first: only squares nearer than the eighth candidate are classified.
+  // Best first: only squares nearer than the eighth candidate are classified, and the
+  // query stops at the search's share of the work.
   const near = tree
-    .nearest(ux, uy, r, (n) => mode.enter(n) && within(n), 8)
+    .nearest(ux, uy, r, (n) => mode.enter(n) && within(n), 8, exhausted)
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
     .sort((a, b) => a.d - b.d);
   for (const { n } of near) {
+    if (exhausted()) {
+      return WORK_LIMIT;
+    }
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
     if (mode.joins(goal ? checkLeg(session, cl, p) : checkLeg(session, p, cl))) {
@@ -198,6 +206,9 @@ function access(
       : undefined;
   if (stub) {
     return stub;
+  }
+  if (exhausted()) {
+    return WORK_LIMIT;
   }
   const what = goal ? "destination" : "start";
   const flags = own?.verdict?.flags.length ? ` (${own.verdict.flags.join(", ")})` : "";
@@ -302,20 +313,27 @@ async function attempt(
   mode: Mode,
   berth = 0
 ): Promise<Attempt> {
-  const start = access(tree, session, ends[0], false, opts, mode, berth);
-  const goal = access(tree, session, ends[1], true, opts, mode, berth);
+  const searchWork = opts.maxWork * opts.searchShare;
+  const exhausted = (): boolean => session.work() >= searchWork;
+  const start = access(tree, session, ends[0], false, opts, mode, exhausted, berth);
+  const goal =
+    start === WORK_LIMIT
+      ? start
+      : access(tree, session, ends[1], true, opts, mode, exhausted, berth);
+  if (start === WORK_LIMIT || goal === WORK_LIMIT) {
+    return { reason: WORK_LIMIT };
+  }
   if (typeof start === "string" || typeof goal === "string") {
     return {
       reason: typeof start === "string" ? start : (goal as string),
       stuck: { start: typeof start === "string", end: typeof goal === "string" }
     };
   }
-  const searchWork = opts.maxWork * opts.searchShare;
   const found =
     start.leaf === goal.leaf
       ? { found: true as const, points: [start.at, goal.at] }
       : await aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-          exhausted: () => session.work() >= searchWork,
+          exhausted,
           pause: () => session.pause(),
           every: 64,
           weight: mode.weight,
@@ -333,9 +351,6 @@ async function attempt(
   }
   return pathOf(tree, [start, goal], ends, found.points);
 }
-
-const WORK_LIMIT =
-  "the search reached its work limit; plan a shorter passage or add a waypoint between";
 
 type Searched =
   | { path: LonLat[]; berths: Berths; shortcut?: Shortcut; fallback?: string }
@@ -382,6 +397,10 @@ async function searchTree(
       shortcut: riskyShortcut(tree, again.path, crossable),
       fallback: strict.reason
     };
+  }
+  // The fallback stopped at the work limit: say so, not why the strict search found no way.
+  if (again?.reason === WORK_LIMIT) {
+    return { reason: WORK_LIMIT };
   }
   const near = again
     ? stuckEnds(tree, ends, again.stuck, opts, { ...FALLBACK, exhausted })
@@ -435,7 +454,8 @@ export async function searchRoute(
     rule,
     found.shortcut
   );
-  if (coordinates === "work") {
+  // The last shortcut checked may have taken the work past the limit.
+  if (coordinates === "work" || session.work() >= opts.maxWork) {
     return refuse(WORK_LIMIT);
   }
   return {

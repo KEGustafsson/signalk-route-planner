@@ -37,6 +37,8 @@ export interface Chart {
   tidal?: (Circle & { needs: number })[];
   /** The water level at time t, metres; 0 when absent. */
   tide?: (t: number) => number;
+  /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
+  closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
   halfWidth?: number;
   /** Every chart is marked not for navigation: clear water is `unverified`, NOT_FOR_NAVIGATION. */
@@ -80,6 +82,10 @@ function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
   }
   if ((chart.tidal ?? []).some((c) => near(c) && level < c.needs)) {
     return { status: "fail", risk: 0.9, flags: [] };
+  }
+  const closed = (chart.closed ?? []).find(near);
+  if (closed) {
+    return { status: "fail", risk: 0, flags: [closed.flag] };
   }
   if ((chart.shallows ?? []).some(near)) {
     return { status: "fail", risk: 0.9, flags: [] };
