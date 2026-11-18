@@ -21,6 +21,9 @@ Every case is planned for a 1.8 m draft, at 3 m/s, with the water at chart datum
 the results do not depend on the tide or the day. The work limit is raised: the trials measure
 what the search finds, and R2 brings the work into the Raspberry Pi budget.
 
+Each case also caps its work (`workAtMost`), in underkeel work units; the plan's budget is
+1.2 M (`docs/DEVELOPMENT-PLAN.md` §6). `npm run trial -- --profile` shows where the work went.
+
 Run the trials for every change to the search or the plan. When a change moves a result for a
 good reason, update the expectation and the table below in the same pull request.
 
@@ -30,10 +33,10 @@ Data: the Traficom INSPIRE WFS (`DepthArea_A`, `Sounding_P`) through signalk-und
 client. It is not for navigation, so every leg is at best `unverified`. It carries no survey
 quality, so each case assumes a CATZOC.
 
-| Case                      | Assumed CATZOC | Result (2026-11-18)                                                     |
-| ------------------------- | -------------- | ----------------------------------------------------------------------- |
-| `turku-guest-harbours-b`  | B              | 19.9 nm, 40 legs: harbour stage, route, harbour stage                   |
-| `turku-guest-harbours-a1` | A1             | 19.2 nm, 49 legs: the route along the Rajakari–Turku fairway centreline |
+| Case                      | Assumed CATZOC | Result (2026-11-18)                                                     |  Work |
+| ------------------------- | -------------- | ----------------------------------------------------------------------- | ----: |
+| `turku-guest-harbours-b`  | B              | 20.4 nm, 51 legs: harbour stage, route, harbour stage                   | 4.8 M |
+| `turku-guest-harbours-a1` | A1             | 19.6 nm, 45 legs: the route along the Rajakari–Turku fairway centreline | 3.2 M |
 
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
@@ -44,11 +47,11 @@ quality, so each case assumes a CATZOC.
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
 start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
-| Case                        | Result (2026-11-18)                                                         |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `miami-fisher-island-basin` | 1.03 nm, 9 legs through Government Cut: 8 `ok`, 1 `marginal`                |
-| `miami-bayside`             | 3.68 nm, 32 legs; the last 0.6 nm is in unassessed water (CATZOC U), marked |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m     |
+| Case                        | Result (2026-11-18)                                                       |   Work |
+| --------------------------- | ------------------------------------------------------------------------- | -----: |
+| `miami-fisher-island-basin` | 1.02 nm, 10 legs through Government Cut: 8 `ok`, 2 `marginal`             | 0.48 M |
+| `miami-bayside`             | 3.58 nm; Fisherman's Channel and the Bayside basin are unassessed, marked | 16.9 M |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m   |  1.5 M |
 
 - Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at

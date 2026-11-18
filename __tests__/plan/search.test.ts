@@ -69,6 +69,32 @@ describe("static search", () => {
     expect(Math.max(...ys)).toBeGreaterThan(at(0, 1000)[1]);
   });
 
+  test("a gap the check passes only as marginal is crossed by a strict search, at a cost", async () => {
+    // A wall past the region's edges, with one gap 780 m wide, all of it marginal water.
+    const wall = Array.from({ length: 81 }, (_, i) => ({
+      x: 2500,
+      y: -8000 + i * 200,
+      r: 110
+    })).filter((c) => Math.abs(c.y - 1500) > 300);
+    // A strict plan accepts a marginal leg.
+    const chart = { obstacles: wall, marginal: [{ x: 2500, y: 1500, r: 450 }] };
+    const { outcome } = await search(chart, at(0, 0), at(5000, 0));
+    expect(outcome.ok).toBe(true);
+    const legs = outcome.ok ? outcome.coordinates : [];
+    const statuses = legs.slice(1).map((b, i) => legStatus(chart, legs[i] as LonLat, b, 40));
+    expect(statuses.every((st) => st === "ok" || st === "marginal")).toBe(true);
+    expect(statuses).toContain("marginal");
+    // With a passing gap as well, the route takes it and stays out of the marginal water.
+    const wider = {
+      obstacles: wall.filter((c) => Math.abs(c.y + 1500) > 300),
+      marginal: chart.marginal
+    };
+    const both = await search(wider, at(0, 0), at(5000, 0));
+    const c = both.outcome.ok ? both.outcome.coordinates : [];
+    const marked = c.slice(1).map((b, i) => legStatus(wider, c[i] as LonLat, b, 40));
+    expect(both.outcome.ok && marked.every((st) => st === "ok")).toBe(true);
+  });
+
   test("closed off: refused with the reason, never a route", async () => {
     const ring = Array.from({ length: 48 }, (_, i) => {
       const t = (i / 48) * 2 * Math.PI;

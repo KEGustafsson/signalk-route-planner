@@ -6,7 +6,7 @@ import { QuadTree } from "../../src/search/quadtree";
 /** The quadtree's adjacency, on a chart where only chosen unit squares are free. */
 
 function treeWith(free: (x: number, y: number) => boolean) {
-  const holder: { tree?: QuadTree } = {};
+  const holder: { tree?: QuadTree; boxes: number } = { boxes: 0 };
   const verdict = (ok: boolean): Verdict => ({
     status: ok ? "ok" : "fail",
     risk: ok ? 0 : 1,
@@ -15,6 +15,7 @@ function treeWith(free: (x: number, y: number) => boolean) {
   const session: Session = {
     halfWidth: 0,
     box(sw, ne) {
+      holder.boxes++;
       const t = holder.tree as QuadTree;
       const [x0, y0] = t.units(sw);
       const [x1, y1] = t.units(ne);
@@ -31,7 +32,7 @@ function treeWith(free: (x: number, y: number) => boolean) {
     session
   );
   holder.tree = tree;
-  return tree;
+  return Object.assign(tree, { boxesAsked: () => holder.boxes });
 }
 
 const limits = { exhausted: () => false, pause: () => Promise.resolve(), every: 64 };
@@ -68,5 +69,35 @@ describe("quadtree adjacency", () => {
     const ids = tree.neighbours(n as never).map((m) => m.node.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids.length).toBe(2);
+  });
+});
+
+describe("nearest free squares", () => {
+  test("best first: the nearest accepted squares, without classifying the whole disc", () => {
+    const tree = treeWith((x, y) => (x === 1 && y === 6) || (x === 5 && y === 5));
+    const near = tree.nearest(0.5, 0.5, 8, (n) => n.state === "free", 1);
+    expect(near.map((n) => [n.x, n.y])).toEqual([[1, 6]]);
+    // Resolving every square of the 8 × 8 region asks 1 + 4 + 16 + 64 = 85 boxes.
+    expect(tree.boxesAsked()).toBeLessThan(85);
+    // Nothing within the radius: none, and nothing beyond it is asked about.
+    const none = treeWith(() => false);
+    expect(none.nearest(0.5, 0.5, 2, (n) => n.state === "free", 1)).toEqual([]);
+    expect(none.boxesAsked()).toBeLessThan(85);
+  });
+});
+
+describe("weighted A*", () => {
+  test("with a heuristic weight the path still joins start and goal through free squares", async () => {
+    const tree = treeWith((x, y) => x === 0 || y === 7 || x === 7);
+    const from = tree.leafAt(0.5, 0.5);
+    const to = tree.leafAt(7.5, 0.5);
+    const r = await aStar(tree, from as never, [0.5, 0.5], to as never, [7.5, 0.5], {
+      ...limits,
+      greed: 1.5
+    });
+    expect(r.found).toBe(true);
+    const points = r.found ? r.points : [];
+    // Up the west side, along the top and down the east: every point on a free square's edge.
+    expect(points.every(([x, y]) => x <= 1 || y >= 7 || x >= 7)).toBe(true);
   });
 });

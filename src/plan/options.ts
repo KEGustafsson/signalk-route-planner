@@ -4,6 +4,11 @@ export interface PlanOptions {
   maxWork: number;
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
+  /**
+   * A*'s heuristic weight (weighted A*): the search's path costs at most this many times
+   * the cheapest before string pulling, for far fewer squares classified. 1 is plain A*.
+   */
+  greed: number;
   /** The region's side may be at most this many smallest squares (a power of two). */
   maxSideUnits: number;
   /** Smallest square, metres, at least; also at least half the corridor half-width. */
@@ -39,6 +44,7 @@ export interface PlanOptions {
 export const DEFAULT_PLAN: PlanOptions = {
   maxWork: 1_200_000,
   searchShare: 0.8,
+  greed: 1.25,
   maxSideUnits: 4096,
   minCell: 10,
   maxLeafMetres: 4000,

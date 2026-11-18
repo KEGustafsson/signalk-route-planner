@@ -4,7 +4,7 @@ import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
-import { crossable, fallbackWeight } from "../search/fallback";
+import { crossable, fallbackWeight, strictWeight } from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
@@ -85,7 +85,16 @@ export function shapeFor(
   opts: PlanOptions
 ): TreeShape | string {
   const d = haversine(from, to);
-  const half = d / 2 + Math.max(d / 2, opts.minMargin);
+  return regionShape(midpoint(from, to), d / 2 + Math.max(d / 2, opts.minMargin), halfWidth, opts);
+}
+
+/** The quadtree's shape for the square of half side `half` metres around `middle`, or why there is none. */
+export function regionShape(
+  middle: LonLat,
+  half: number,
+  halfWidth: number,
+  opts: PlanOptions
+): TreeShape | string {
   let unit = Math.max(opts.minCell, halfWidth / 2);
   while (pow2((2 * half) / unit) > opts.maxSideUnits) {
     unit *= 2;
@@ -97,7 +106,7 @@ export function shapeFor(
   }
   const maxLeaf = 2 ** Math.floor(Math.log2(leafMetres / unit));
   const extent = (side * unit) / 2;
-  const frame = frameAt(midpoint(from, to));
+  const frame = frameAt(middle);
   // Planning API v1 boxes are west–east corner pairs: none may cross the 180° meridian.
   if (frame.toLonLat(-extent, 0)[0] > frame.toLonLat(extent, 0)[0]) {
     return "the planning region crosses the 180° meridian, which the planning API does not take";
@@ -130,8 +139,9 @@ interface Mode {
 }
 
 const strictMode = (rule: PassRule): Mode => ({
-  enter: (n) => n.state === "free",
-  joins: (v) => passes(v, rule)
+  enter: (n) => Number.isFinite(strictWeight(n)),
+  joins: (v) => passes(v, rule) || v.status === "marginal",
+  weight: strictWeight
 });
 
 const FALLBACK: Mode = {
@@ -160,16 +170,15 @@ function access(
     return { leaf: own, at: [ux, uy] };
   }
   const r = opts.accessMetres / tree.shape.unit;
+  const within = (n: QuadNode): boolean => {
+    const c = centre(n);
+    return haversine(p, tree.lonLat(c[0], c[1])) <= opts.accessMetres;
+  };
+  // Best first: only squares nearer than the eighth candidate are classified.
   const near = tree
-    .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
-    .filter((n) => mode.enter(n))
+    .nearest(ux, uy, r, (n) => mode.enter(n) && within(n), 8)
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
-    .filter(({ n }) => {
-      const c = centre(n);
-      return haversine(p, tree.lonLat(c[0], c[1])) <= opts.accessMetres;
-    })
-    .sort((a, b) => a.d - b.d)
-    .slice(0, 8);
+    .sort((a, b) => a.d - b.d);
   for (const { n } of near) {
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
@@ -266,7 +275,8 @@ async function attempt(
           exhausted: () => session.work() >= searchWork,
           pause: () => session.pause(),
           every: 64,
-          weight: mode.weight
+          weight: mode.weight,
+          greed: opts.greed
         });
   if (!found.found) {
     return {
@@ -297,13 +307,17 @@ const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
 
 /**
- * A fallback shortcut that does not pass may replace path points i..j only when every
- * piece of the path between them already crosses a square the check does not pass,
- * the shortcut crosses no land or uncharted water, and it is no riskier than the
- * riskiest of those squares: pulling straightens a risky stretch within itself and
- * never draws passing water into it.
+ * A shortcut that does not pass may replace path points i..j only when every piece of
+ * the path between them already crosses a square the check does not pass, `allowed`
+ * takes the shortcut's verdict (the fallback: no land or uncharted water; the strict
+ * search: marginal), and it is no riskier than the riskiest of those squares: pulling
+ * straightens a risky stretch within itself and never draws passing water into it.
  */
-function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
+function riskyShortcut(
+  tree: QuadTree,
+  path: readonly LonLat[],
+  allowed: (v: Verdict) => boolean
+): Shortcut {
   const risk = path.slice(1).map((b, k) => {
     const a = path[k] as LonLat;
     const [ax, ay] = tree.units(a);
@@ -316,6 +330,7 @@ function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
     const span = risk.slice(i, j);
     return (
       crossable(v) &&
+      allowed(v) &&
       span.every((r) => r !== undefined) &&
       v.risk <= Math.max(...(span as number[]))
     );
@@ -337,9 +352,9 @@ function handovers(
 ): LonLat[] {
   const [ux, uy] = tree.units(p);
   const r = opts.harbourMetres / tree.shape.unit;
+  // Best first, as `access`: only squares nearer than the candidates are classified.
   return tree
-    .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
-    .filter((n) => mode.enter(n))
+    .nearest(ux, uy, r, (n) => mode.enter(n), 24)
     .map((n) => {
       const c = centre(n);
       const cl = tree.lonLat(c[0], c[1]);
@@ -393,18 +408,29 @@ async function searchTree(
 ): Promise<Searched> {
   const strict = await attempt(tree, session, ends, opts, strictMode(how.rule), how.berth);
   if ("path" in strict) {
-    return strict;
+    return {
+      ...strict,
+      shortcut: riskyShortcut(tree, strict.path, (v) => v.status === "marginal")
+    };
+  }
+  // Refused only at an end: the harbour stage plans that end in its own small region, so
+  // the route stays strict and no fallback floods the whole region (plan §4.1).
+  const handover = stuckEnds(tree, ends, strict.stuck, opts, strictMode(how.rule));
+  if (handover) {
+    return { reason: strict.reason, stuck: handover };
   }
   const again =
     how.fallback && strict.reason !== WORK_LIMIT
       ? await attempt(tree, session, ends, opts, FALLBACK, how.berth)
       : undefined;
   if (again && "path" in again) {
-    return { ...again, shortcut: fallbackShortcut(tree, again.path), fallback: strict.reason };
+    return {
+      ...again,
+      shortcut: riskyShortcut(tree, again.path, crossable),
+      fallback: strict.reason
+    };
   }
-  const near =
-    stuckEnds(tree, ends, strict.stuck, opts, strictMode(how.rule)) ??
-    (again ? stuckEnds(tree, ends, again.stuck, opts, FALLBACK) : undefined);
+  const near = again ? stuckEnds(tree, ends, again.stuck, opts, FALLBACK) : undefined;
   return { reason: strict.reason, ...(near && { stuck: near }) };
 }
 

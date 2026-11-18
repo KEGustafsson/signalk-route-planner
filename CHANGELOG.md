@@ -23,5 +23,10 @@ All notable changes to signalk-route-planner are documented here.
 - Harbour stage: an end in a harbour narrower than the corridor is planned out to open water at
   a 10 m corridor, each part proved at its own corridor; a point alongside a quay leaves by a
   berth leg, marked in the reply and the panel.
+- Less work per plan (field trials: Turku 18.4 M → 4.8 M work units, Miami Beach Marina 39 M →
+  1.5 M): ends and harbour handovers join the nearest squares best first, A\* classifies a square
+  only when it reaches it and weights its heuristic by 1.25, the strict search crosses marginal
+  water at a cost, and an end the search cannot join goes to its harbour stage before any
+  whole-route fallback.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.

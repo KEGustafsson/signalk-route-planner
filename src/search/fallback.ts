@@ -29,8 +29,24 @@ export function fallbackWeight(n: QuadNode): number {
     return 1;
   }
   const v = n.verdict;
-  if ((n.state !== "blocked" && n.state !== "unverified") || !v || !crossable(v)) {
+  if (
+    (n.state !== "blocked" && n.state !== "unverified" && n.state !== "marginal") ||
+    !v ||
+    !crossable(v)
+  ) {
     return Infinity;
   }
   return 1 + RISK_WEIGHT * v.risk + (v.status === "unverified" ? UNVERIFIED_WEIGHT : 0);
+}
+
+/**
+ * Per-metre cost of a leaf in the strict search: free water 1; a smallest square the check
+ * marks marginal, which a strict plan accepts, at the same risk cost as the fallback, so the
+ * route crosses as little of it as it can; Infinity elsewhere.
+ */
+export function strictWeight(n: QuadNode): number {
+  if (n.state === "free") {
+    return 1;
+  }
+  return n.state === "marginal" && n.verdict ? 1 + RISK_WEIGHT * n.verdict.risk : Infinity;
 }
