@@ -20,7 +20,7 @@ export interface Part {
   coordinates: LonLat[];
   /** The cross-track limit the part was searched at and is proved at; absent: the default. */
   xteLimit?: number;
-  /** Set when no route passed and this part is the least risky one: why none passed. */
+  /** Set when no route passed and this part is the lowest risk-weighted route: why none passed. */
   fallback?: string;
   /** The inner point of the part's berth leg, from or to the end point. */
   berth?: LonLat;

@@ -25,7 +25,7 @@ export type SearchOutcome =
       direct: Verdict;
       squares: number;
       work: number;
-      /** Set when no route passed and this is the least risky one: why none passed. */
+      /** Set when no route passed and this is the lowest risk-weighted route: why none passed. */
       fallback?: string;
       /** Where a berth leg (`berthMetres`) leaves the start or reaches the destination. */
       berths?: Berths;
