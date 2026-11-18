@@ -1,6 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { PlanningApiV1, Reply, Status, Verdict } from "../oracle/contract";
+import { crossable } from "../search/fallback";
 import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
@@ -26,7 +27,7 @@ export interface PlanInput {
   draft?: number;
   /** Flags the search may plan through (`search/passes.ts`); the route stays `unverified`. */
   accept?: readonly string[];
-  /** When no route passes, return the least risky one through charted water (`search/fallback.ts`). */
+  /** When no route passes, return the lowest risk-weighted route through charted water (`search/fallback.ts`). */
   fallback?: boolean;
 }
 
@@ -42,17 +43,31 @@ function directOf(v: Verdict): { status: Status; risk: number; flags: string[]; 
 }
 
 /**
- * Legs of a part searched without `fallback` that the route check does not pass at the
- * departure (or marks marginal). A berth leg touches its quay by design and is not counted.
+ * Why the proved legs are not offered, if they are not. The search's legs passed over the
+ * trip window; the proof checks each at its own arrival. A part searched without
+ * `fallback` is offered only when every leg still passes (or is marginal); a fallback
+ * part is offered with its risky legs marked, as the request asked, but never over water
+ * the fallback may not cross (land, no chart, a hard rule). A berth leg touches its quay
+ * by design and is not counted.
  */
-function refusedLegs(proof: Proof, parts: readonly Part[], rule: PassRule): number {
-  return proof.parts.reduce((n, span, k) => {
-    if (parts[k]?.fallback !== undefined) {
-      return n;
+function refusal(proof: Proof, parts: readonly Part[], rule: PassRule): string | undefined {
+  let strict = 0;
+  let closed = 0;
+  proof.parts.forEach((span, k) => {
+    const own = proof.legs.slice(span.legs[0], span.legs[1] + 1).filter((l) => !l.berth);
+    if (parts[k]?.fallback === undefined) {
+      strict += own.filter((l) => l.status !== "marginal" && !passes(l, rule)).length;
+    } else {
+      closed += own.filter((l) => !crossable(l)).length;
     }
-    const own = proof.legs.slice(span.legs[0], span.legs[1] + 1);
-    return n + own.filter((l) => !l.berth && l.status !== "marginal" && !passes(l, rule)).length;
-  }, 0);
+  });
+  const n = proof.legs.length;
+  if (strict > 0) {
+    return `the route check does not pass ${strict} of the ${n} planned legs at the departure`;
+  }
+  return closed > 0
+    ? `${closed} of the ${n} legs of a fallback part cross water no route may cross at the departure`
+    : undefined;
 }
 
 function berthsOf(legs: readonly CheckedLeg[]) {
@@ -142,16 +157,13 @@ export async function plan(
   if (!("legs" in proof)) {
     return proof;
   }
-  // The search's legs passed over the trip window; the proof checks each at its own
-  // arrival. A strict plan is offered only when every leg still passes (or is marginal);
-  // a fallback plan is offered with its risky legs marked, as the request asked.
-  const refused = refusedLegs(proof, found.parts, rule);
-  if (refused > 0) {
+  const refused = refusal(proof, found.parts, rule);
+  if (refused) {
     return {
       status: 422,
       body: {
         ...base,
-        reason: `the route check does not pass ${refused} of the ${proof.legs.length} planned legs at the departure`,
+        reason: refused,
         check: { ...proof.first, legs: proof.legs, parts: proof.parts },
         work: found.work
       }

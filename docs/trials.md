@@ -35,8 +35,8 @@ quality, so each case assumes a CATZOC.
 
 | Case                      | Assumed CATZOC | Result (2026-11-18)                                                     |  Work |
 | ------------------------- | -------------- | ----------------------------------------------------------------------- | ----: |
-| `turku-guest-harbours-b`  | B              | 20.4 nm, 51 legs: harbour stage, route, harbour stage                   | 4.8 M |
-| `turku-guest-harbours-a1` | A1             | 19.6 nm, 45 legs: the route along the Rajakari–Turku fairway centreline | 3.2 M |
+| `turku-guest-harbours-b`  | B              | 20.3 nm, 53 legs: harbour stage, route, harbour stage                   | 4.7 M |
+| `turku-guest-harbours-a1` | A1             | 19.5 nm, 46 legs: the route along the Rajakari–Turku fairway centreline | 3.3 M |
 
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
@@ -49,9 +49,9 @@ start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
 | Case                        | Result (2026-11-18)                                                       |   Work |
 | --------------------------- | ------------------------------------------------------------------------- | -----: |
-| `miami-fisher-island-basin` | 1.02 nm, 10 legs through Government Cut: 8 `ok`, 2 `marginal`             | 0.48 M |
-| `miami-bayside`             | 3.58 nm; Fisherman's Channel and the Bayside basin are unassessed, marked | 16.9 M |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m   |  1.5 M |
+| `miami-fisher-island-basin` | 1.02 nm, 10 legs through Government Cut: 8 `ok`, 2 `marginal`             | 0.66 M |
+| `miami-bayside`             | 3.58 nm; Fisherman's Channel and the Bayside basin are unassessed, marked | 17.1 M |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m   |  1.6 M |
 
 - Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at
