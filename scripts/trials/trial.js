@@ -188,6 +188,10 @@ function geojson(reply) {
 async function main() {
   const { areas, cases } = JSON.parse(fs.readFileSync(path.join(__dirname, "trials.json"), "utf8"));
   const pick = process.argv.slice(2);
+  const unknown = pick.filter((sel) => !cases.some((c) => c.name === sel || c.area === sel));
+  if (unknown.length > 0) {
+    throw new Error(`no trial case or area named ${unknown.join(", ")}`);
+  }
   const run = cases.filter(
     (c) => pick.length === 0 || pick.includes(c.name) || pick.includes(c.area)
   );

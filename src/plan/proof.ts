@@ -41,8 +41,12 @@ export interface Proof {
   first: Record<string, unknown>;
 }
 
+/** The same point: within 1e-9° (0.1 mm), well under any chart's precision. */
 const same = (a: LonLat | undefined, b: LonLat | undefined): boolean =>
-  a !== undefined && b !== undefined && a[0] === b[0] && a[1] === b[1];
+  a !== undefined &&
+  b !== undefined &&
+  Math.abs(a[0] - b[0]) < 1e-9 &&
+  Math.abs(a[1] - b[1]) < 1e-9;
 
 const pathLength = (c: readonly LonLat[]): number =>
   c.slice(1).reduce((s, p, i) => s + haversine(c[i] as LonLat, p), 0);

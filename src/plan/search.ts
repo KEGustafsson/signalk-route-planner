@@ -4,7 +4,7 @@ import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
-import { crossable, fallbackWeight } from "../search/fallback";
+import { crossable, fallbackShortcut, fallbackWeight } from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
@@ -238,8 +238,50 @@ function berthJoin(
   return undefined;
 }
 
+/**
+ * The search's points with its first and last replaced by the given ends, when the search
+ * starts or ends at them: the frame's round trip moves them in the last bits, and a part that
+ * hands over must meet the next at the very same coordinate.
+ */
+function exactEnds(points: LonLat[], first?: LonLat, last?: LonLat): LonLat[] {
+  const out = [...points];
+  if (first && out.length > 0) {
+    out[0] = first;
+  }
+  if (last && out.length > 0) {
+    out[out.length - 1] = last;
+  }
+  return out;
+}
+
 type Attempt =
   { path: LonLat[]; berths: Berths } | { reason: string; stuck?: { start: boolean; end: boolean } };
+
+/** The path through the search's points, with the joined ends and their berth legs. */
+function pathOf(
+  tree: QuadTree,
+  [start, goal]: [Access, Access],
+  ends: [LonLat, LonLat],
+  points: [number, number][]
+): { path: LonLat[]; berths: Berths } {
+  return {
+    path: [
+      ...(start.joined ? [start.joined] : []),
+      ...(start.berth ? [start.berth] : []),
+      ...exactEnds(
+        points.map(([x, y]) => tree.lonLat(x, y)),
+        start.joined ? undefined : ends[0],
+        goal.joined ? undefined : ends[1]
+      ),
+      ...(goal.berth ? [goal.berth] : []),
+      ...(goal.joined ? [goal.joined] : [])
+    ],
+    berths: {
+      ...(start.berth && { start: start.berth }),
+      ...(goal.berth && { end: goal.berth })
+    }
+  };
+}
 
 /** One search from `from` to `to` in `mode`: the raw path, or why there is none. */
 async function attempt(
@@ -278,49 +320,11 @@ async function attempt(
             : "no route the check passes connects the points: land, shoals or obstacles close every way"
     };
   }
-  return {
-    path: [
-      ...(start.joined ? [start.joined] : []),
-      ...(start.berth ? [start.berth] : []),
-      ...found.points.map(([x, y]) => tree.lonLat(x, y)),
-      ...(goal.berth ? [goal.berth] : []),
-      ...(goal.joined ? [goal.joined] : [])
-    ],
-    berths: {
-      ...(start.berth && { start: start.berth }),
-      ...(goal.berth && { end: goal.berth })
-    }
-  };
+  return pathOf(tree, [start, goal], ends, found.points);
 }
 
 const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
-
-/**
- * A fallback shortcut that does not pass may replace path points i..j only when every
- * piece of the path between them already crosses a square the check does not pass,
- * the shortcut crosses no land or uncharted water, and it is no riskier than the
- * riskiest of those squares: pulling straightens a risky stretch within itself and
- * never draws passing water into it.
- */
-function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
-  const risk = path.slice(1).map((b, k) => {
-    const a = path[k] as LonLat;
-    const [ax, ay] = tree.units(a);
-    const [bx, by] = tree.units(b);
-    const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
-    // A free square's piece is not risky, whatever its verdict's own risk.
-    return leaf?.state === "free" ? undefined : (leaf?.verdict?.risk ?? 0);
-  });
-  return (v, i, j) => {
-    const span = risk.slice(i, j);
-    return (
-      crossable(v) &&
-      span.every((r) => r !== undefined) &&
-      v.risk <= Math.max(...(span as number[]))
-    );
-  };
-}
 
 /**
  * Squares near `p`, within `harbourMetres`, that `mode` may enter, as their centres: where a
@@ -333,12 +337,19 @@ function handovers(
   p: LonLat,
   other: LonLat,
   opts: PlanOptions,
-  mode: Mode
-): LonLat[] {
+  mode: Mode & { exhausted: () => boolean }
+): LonLat[] | "work" {
   const [ux, uy] = tree.units(p);
   const r = opts.harbourMetres / tree.shape.unit;
-  return tree
-    .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
+  const leaves = tree.leaves(
+    (n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size,
+    mode.exhausted
+  );
+  // The enumeration stops at the search's share of the work, and the search with it.
+  if (mode.exhausted()) {
+    return "work";
+  }
+  return leaves
     .filter((n) => mode.enter(n))
     .map((n) => {
       const c = centre(n);
@@ -362,13 +373,16 @@ function stuckEnds(
   ends: [LonLat, LonLat],
   failed: { start: boolean; end: boolean } | undefined,
   opts: PlanOptions,
-  mode: Mode
-): Stuck | undefined {
+  mode: Mode & { exhausted: () => boolean }
+): Stuck | "work" | undefined {
   if (!failed || opts.harbourMetres <= 0) {
     return undefined;
   }
   const start = failed.start ? handovers(tree, ends[0], ends[1], opts, mode) : [];
   const end = failed.end ? handovers(tree, ends[1], ends[0], opts, mode) : [];
+  if (start === "work" || end === "work") {
+    return "work";
+  }
   // A harbour stage needs somewhere to hand over at every end the search could not join.
   if ((failed.start && start.length === 0) || (failed.end && end.length === 0)) {
     return undefined;
@@ -402,9 +416,13 @@ async function searchTree(
   if (again && "path" in again) {
     return { ...again, shortcut: fallbackShortcut(tree, again.path), fallback: strict.reason };
   }
+  const exhausted = () => session.work() >= opts.maxWork * opts.searchShare;
   const near =
-    stuckEnds(tree, ends, strict.stuck, opts, strictMode(how.rule)) ??
-    (again ? stuckEnds(tree, ends, again.stuck, opts, FALLBACK) : undefined);
+    stuckEnds(tree, ends, strict.stuck, opts, { ...strictMode(how.rule), exhausted }) ??
+    (again ? stuckEnds(tree, ends, again.stuck, opts, { ...FALLBACK, exhausted }) : undefined);
+  if (near === "work") {
+    return { reason: WORK_LIMIT };
+  }
   return { reason: strict.reason, ...(near && { stuck: near }) };
 }
 
