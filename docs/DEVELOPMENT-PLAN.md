@@ -154,6 +154,21 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
 11. **Boxes the API takes.** A box's longitude span widens away from the frame's origin latitude,
     so each box is measured at its own latitude and split while it is over 24 km² with its
     buffer. A region across the 180° meridian or over a pole is refused.
+12. **Harbour stage.** A guest harbour, a river berth or a marina is often narrower than the
+    request's corridor, so the search cannot join that end. It then names the free water within
+    `harbourMetres` (3 km) of the end, and a harbour stage plans the end out to it at
+    `harbourXte` (0 m: the planning API's 10 m buffer alone), in a session of its own. Handovers
+    not much farther than the nearest (1.5×, or 300 m more) are tried most-on-the-way first, so
+    the route does not double back from the nearest free water. The main search then runs
+    between the handover points. Each part is proved by its own route check at its own corridor,
+    from the time the boat reaches it, and every leg names its part and corridor.
+13. **Berth legs.** Alongside a quay, even the harbour corridor touches the quay. The harbour
+    stage then joins the end by the shortest stub, at most `berthMetres` (40 m), beyond which a
+    checked leg joins, found by bisection. The berth leg is returned as its own leg with the
+    route check's status (usually `fail`, `LAND`) and `berth: true`; the reply's `underway`
+    status covers every other leg, and `status` stays the worst of all. A strict plan is not
+    refused for its berth legs. The planner cannot check a berth leg, so the panel says to steer
+    it by eye.
 
 ### 4.2 R2: planning beyond the chart box
 
@@ -231,7 +246,14 @@ Reply 200:
   },
   "length": 14250, // metres
   "status": "ok", // worst leg status
-  "check": { "legs": [/* underkeel route-check legs */] }, // the route check's reply
+  // Underkeel's route-check legs, numbered through, each with its `part` ("harbour" or
+  // "route"), `xteLimit` and, for a berth leg, `berth: true`; `parts` spans them.
+  "check": {
+    "legs": [/* … */],
+    "parts": [{ "part": "harbour", "end": "start", "xteLimit": 0, "legs": [0, 4] }]
+  },
+  "underway": "ok", // with berth legs: the worst status of the other legs
+  "berths": [{ "end": "start", "leg": 0, "length": 12 }],
   "direct": { "status": "fail", "worst": [22.21, 60.24] }, // the straight line's check
   "work": 182340
 }
@@ -245,9 +267,10 @@ is missing or the index is not ready.
 
 Raspberry Pi 4 is the reference. One plan may do 1 200 000 underkeel work units (about 3 s on a
 Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop). A\* stops at 80 % of that and string
-pulling at the whole. The proof is underkeel's route check, bounded by `/route-check`'s own
-limits; its work is not counted in the plan's. Work is counted, never timed, so a request gives
-the same answer on any machine.
+pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
+draw on that one budget, each with what the stages before it left. The proof is underkeel's
+route check, bounded by `/route-check`'s own limits; its work is not counted in the plan's. Work
+is counted, never timed, so a request gives the same answer on any machine.
 
 ## 7. Testing
 
@@ -257,6 +280,11 @@ the same answer on any machine.
   with a deeper draft (a larger obstacle set) never returns a route the shallower one rejected;
   no route crosses an unverified area while reported `ok`.
 - A contract test in `signalk-underkeel` checks the API it registers against `PlanningApiV1`.
+- **Field trials** (`docs/trials.md`): `npm run trial` plans the cases in
+  `scripts/trials/trials.json` on real chart data, Turku to Nauvo on the Traficom WFS and
+  Miami from sea on NOAA ENC cells, and checks each against its recorded expectation. They need
+  network and a built signalk-underkeel, so they are not part of `npm test`; run them for every
+  search or plan change.
 - **Test runtime.** `npm test` stays hermetic and under 120 s, as in underkeel: tests run in
   `__tests__/helpers/node-realm-environment.js`, a test makes at most 5 000 `expect()` calls
   (`__tests__/helpers/assertion-budget.ts`), and CI fails the run past 120 s

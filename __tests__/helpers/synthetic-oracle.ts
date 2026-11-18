@@ -93,7 +93,10 @@ export function syntheticApi(
   chart: Chart,
   over: Partial<PlanningApiV1> & { workPerQuery?: number } = {}
 ): Synthetic {
-  const r = chart.halfWidth ?? 40;
+  // As signalk-underkeel: the corridor half-width is the cross-track limit plus the 10 m
+  // planning buffer; without one, the chart's own (40 m by default).
+  const widthFor = (xteLimit: number | undefined): number =>
+    xteLimit !== undefined ? xteLimit + 10 : (chart.halfWidth ?? 40);
   const per = over.workPerQuery ?? 100;
   const api: Synthetic = {
     version: 1,
@@ -105,6 +108,7 @@ export function syntheticApi(
     defaults: () => ({ speed: 3, xteLimit: 30, probability: 0.01, planningBuffer: 10 }),
     async session(params, signal, job) {
       api.sessions.push(params);
+      const r = widthFor(params.xteLimit);
       let work = 0;
       const session: Session = {
         halfWidth: r,
@@ -142,7 +146,9 @@ export function syntheticApi(
       }
     },
     routeCheck(body) {
-      const coords = (body as { route: { coordinates: LonLat[] } }).route.coordinates;
+      const req = body as { route: { coordinates: LonLat[] }; xteLimit?: number };
+      const coords = req.route.coordinates;
+      const r = widthFor(req.xteLimit);
       const legs = coords.slice(1).map((b, i) => {
         const a = coords[i] as LonLat;
         const v = legVerdict(chart, a, b, r);

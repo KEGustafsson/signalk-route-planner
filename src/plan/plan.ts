@@ -5,12 +5,14 @@ import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
 import { DEFAULT_PLAN } from "./options";
-import type { SearchOutcome } from "./search";
-import { searchRoute } from "./search";
+import type { CheckedLeg, Proof } from "./proof";
+import { joined, prove } from "./proof";
+import type { Part } from "./stages";
+import { stages } from "./stages";
 
 /**
- * One plan (plan §4.1): the search inside a planning session, then the proof:
- * signalk-underkeel's route check of the route at its departure. The leg
+ * One plan (plan §4.1): the search in planning sessions (`stages.ts`), then the proof:
+ * signalk-underkeel's route check of each part at its departure (`proof.ts`). The leg
  * statuses in the reply are the route check's (invariant 1).
  */
 
@@ -28,13 +30,6 @@ export interface PlanInput {
   fallback?: boolean;
 }
 
-interface CheckedLeg {
-  status: Status;
-  length: number;
-  risk: number;
-  flags: string[];
-}
-
 const RANK: Record<Status, number> = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
 
 /** The worst leg status of a checked route. */
@@ -46,47 +41,47 @@ function directOf(v: Verdict): { status: Status; risk: number; flags: string[]; 
   return { status: v.status, risk: v.risk, flags: v.flags, ...(v.worst && { worst: v.worst }) };
 }
 
-/** signalk-underkeel's route check of `coordinates` as the request would sail them. */
-function prove(
-  api: PlanningApiV1,
-  input: PlanInput,
-  coordinates: LonLat[],
-  signal: AbortSignal
-): Promise<Reply> {
-  return api.routeCheck(
-    {
-      route: { type: "LineString", coordinates },
-      departure: new Date(input.departure).toISOString(),
-      speed: input.speed,
-      ...(input.xteLimit !== undefined && { xteLimit: input.xteLimit }),
-      ...(input.probability !== undefined && { probability: input.probability }),
-      ...(input.draft !== undefined && { vessel: { draft: input.draft } })
-    },
-    signal
-  );
+/**
+ * Legs of a part searched without `fallback` that the route check does not pass at the
+ * departure (or marks marginal). A berth leg touches its quay by design and is not counted.
+ */
+function refusedLegs(proof: Proof, parts: readonly Part[], rule: PassRule): number {
+  return proof.parts.reduce((n, span, k) => {
+    if (parts[k]?.fallback !== undefined) {
+      return n;
+    }
+    const own = proof.legs.slice(span.legs[0], span.legs[1] + 1);
+    return n + own.filter((l) => !l.berth && l.status !== "marginal" && !passes(l, rule)).length;
+  }, 0);
 }
 
-/** The search in a planning session over the trip's window. */
-function search(
-  api: PlanningApiV1,
-  input: PlanInput,
-  window: number,
-  signal: AbortSignal,
-  opts: PlanOptions,
-  rule: PassRule
+function berthsOf(legs: readonly CheckedLeg[]) {
+  return legs
+    .filter((l) => l.berth)
+    .map((l) => ({ end: l.index === 0 ? "start" : "end", leg: l.index, length: l.length }));
+}
+
+/** The 200 reply: the route, its legs as the route check gave them, and how it was found. */
+function offered(
+  base: object,
+  parts: readonly Part[],
+  proof: Proof,
+  found: { squares: number; work: number }
 ) {
-  return api.session(
-    {
-      departure: input.departure,
-      until: input.departure + window,
-      speed: input.speed,
-      xteLimit: input.xteLimit,
-      probability: input.probability,
-      draft: input.draft
-    },
-    signal,
-    (s) => searchRoute(s, input.from, input.to, opts, rule, input.fallback === true)
-  );
+  const legs = proof.legs;
+  const berths = berthsOf(legs);
+  const fallback = parts.find((p) => p.fallback !== undefined)?.fallback;
+  return {
+    ...base,
+    route: { type: "LineString", coordinates: joined(parts) },
+    length: legs.reduce((s, l) => s + l.length, 0),
+    status: worstStatus(legs),
+    ...(berths.length > 0 && { underway: worstStatus(legs.filter((l) => !l.berth)), berths }),
+    check: { ...proof.first, legs, parts: proof.parts },
+    squares: found.squares,
+    work: found.work,
+    ...(fallback !== undefined && { fallback })
+  };
 }
 
 export async function plan(
@@ -113,61 +108,54 @@ export async function plan(
     accept: input.accept ?? [],
     probability: input.probability ?? api.defaults().probability
   };
-  const session = await search(api, input, window, signal, opts, rule);
-  if (!session.ok) {
-    return { status: session.status, body: { errors: [session.error] } };
+  const params = {
+    departure: input.departure,
+    until: input.departure + window,
+    speed: input.speed,
+    xteLimit: input.xteLimit,
+    probability: input.probability,
+    draft: input.draft
+  };
+  const st = { api, params, signal, opts, rule, fallback: input.fallback === true };
+  const found = await stages(st, input.from, input.to, input.xteLimit);
+  if ("error" in found) {
+    return { status: found.status, body: { errors: [found.error] } };
   }
-  const found: SearchOutcome = session.value;
   const base = {
     plannedAt: new Date(now).toISOString(),
     direct: directOf(found.direct),
     ...(input.accept?.length && { accepted: input.accept })
   };
   if (!found.ok) {
+    const r = found.refusal;
     return {
       status: 422,
       body: {
         ...base,
-        reason: found.reason,
-        ...(found.unverified > 0 && { unverifiedSquares: found.unverified }),
+        reason: r.reason,
+        ...(r.unverified > 0 && { unverifiedSquares: r.unverified }),
         work: found.work
       }
     };
   }
-  const check = await prove(api, input, found.coordinates, signal);
-  if (check.status !== 200) {
-    return check;
+  const proof = await prove(api, input, found.parts, signal);
+  if (!("legs" in proof)) {
+    return proof;
   }
-  const legs = (check.body as { legs: CheckedLeg[] }).legs;
   // The search's legs passed over the trip window; the proof checks each at its own
   // arrival. A strict plan is offered only when every leg still passes (or is marginal);
   // a fallback plan is offered with its risky legs marked, as the request asked.
-  const refused =
-    found.fallback === undefined
-      ? legs.filter((l) => l.status !== "marginal" && !passes(l, rule)).length
-      : 0;
+  const refused = refusedLegs(proof, found.parts, rule);
   if (refused > 0) {
     return {
       status: 422,
       body: {
         ...base,
-        reason: `the route check does not pass ${refused} of the ${legs.length} planned legs at the departure`,
-        check: check.body,
+        reason: `the route check does not pass ${refused} of the ${proof.legs.length} planned legs at the departure`,
+        check: { ...proof.first, legs: proof.legs, parts: proof.parts },
         work: found.work
       }
     };
   }
-  return {
-    status: 200,
-    body: {
-      ...base,
-      route: { type: "LineString", coordinates: found.coordinates },
-      length: legs.reduce((s, l) => s + l.length, 0),
-      status: worstStatus(legs),
-      check: check.body,
-      squares: found.squares,
-      work: found.work,
-      ...(found.fallback !== undefined && { fallback: found.fallback })
-    }
-  };
+  return { status: 200, body: offered(base, found.parts, proof, found) };
 }

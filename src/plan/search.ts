@@ -26,6 +26,8 @@ export type SearchOutcome =
       work: number;
       /** Set when no route passed and this is the least risky one: why none passed. */
       fallback?: string;
+      /** Where a berth leg (`berthMetres`) leaves the start or reaches the destination. */
+      berths?: Berths;
     }
   | {
       ok: false;
@@ -35,7 +37,24 @@ export type SearchOutcome =
       /** One-unit squares the check could not verify that the search met. */
       unverified: number;
       work: number;
+      /**
+       * Set when the start or destination could not be joined: free water near each such
+       * end, nearest first, where a harbour stage may hand over (plan §4.1, harbour stage).
+       */
+      stuck?: Stuck;
     };
+
+/** The berth leg's inner point at the start or the destination. */
+export interface Berths {
+  start?: LonLat;
+  end?: LonLat;
+}
+
+/** Handover candidates for each end that could not be joined. */
+export interface Stuck {
+  start?: LonLat[];
+  end?: LonLat[];
+}
 
 /** A box with its corridor buffer at the frame's origin stays under MAX_BOX_KM2. */
 const MAX_BOX_SIDE = Math.sqrt(MAX_BOX_KM2 * 1e6);
@@ -98,6 +117,8 @@ interface Access {
   at: [number, number];
   /** The start or goal point itself, when it joins the leaf by a checked leg. */
   joined?: LonLat;
+  /** Where the berth leg from `joined` ends, when only a berth leg reaches it. */
+  berth?: LonLat;
 }
 
 /** What a search may cross: strictly passing water, or for the fallback, charted water at a cost. */
@@ -130,7 +151,8 @@ function access(
   p: LonLat,
   goal: boolean,
   opts: PlanOptions,
-  mode: Mode
+  mode: Mode,
+  berth = 0
 ): Access | string {
   const [ux, uy] = tree.units(p);
   const own = tree.leafAt(ux, uy);
@@ -155,12 +177,69 @@ function access(
       return { leaf: n, at: c, joined: p };
     }
   }
+  const stub =
+    berth > 0
+      ? berthJoin(
+          tree,
+          session,
+          { p, goal, berth, mode },
+          near.map((x) => x.n)
+        )
+      : undefined;
+  if (stub) {
+    return stub;
+  }
   const what = goal ? "destination" : "start";
   const flags = own?.verdict?.flags.length ? ` (${own.verdict.flags.join(", ")})` : "";
   return `no water the route check passes within ${opts.accessMetres} m of the ${what}${flags}`;
 }
 
-type Attempt = { path: LonLat[] } | { reason: string };
+/** The point `d` metres from `p` toward `q`; short distances, so linear in degrees. */
+function toward(p: LonLat, q: LonLat, d: number): LonLat {
+  const t = Math.min(1, d / Math.max(haversine(p, q), 1e-9));
+  return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+}
+
+/**
+ * A berth leg (plan §4.1): when no checked leg joins `p` because the quay or pier it lies
+ * at is inside the corridor, the shortest stub from `p` toward a square's centre, at most
+ * `berth` metres, beyond which a checked leg joins. The stub itself is not checked by the
+ * search; the route check marks it.
+ */
+function berthJoin(
+  tree: QuadTree,
+  session: Session,
+  end: { p: LonLat; goal: boolean; berth: number; mode: Mode },
+  near: QuadNode[]
+): Access | undefined {
+  const { p, goal, berth, mode } = end;
+  for (const n of near) {
+    const c = centre(n);
+    const cl = tree.lonLat(c[0], c[1]);
+    const joinsAt = (d: number): boolean => {
+      const q = toward(p, cl, d);
+      return mode.joins(goal ? checkLeg(session, cl, q) : checkLeg(session, q, cl));
+    };
+    let hi = Math.min(berth, 0.9 * haversine(p, cl));
+    if (hi <= 0 || !joinsAt(hi)) {
+      continue;
+    }
+    let lo = 0;
+    for (let k = 0; k < 5; k++) {
+      const mid = (lo + hi) / 2;
+      if (joinsAt(mid)) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+    return { leaf: n, at: c, joined: p, berth: toward(p, cl, hi) };
+  }
+  return undefined;
+}
+
+type Attempt =
+  { path: LonLat[]; berths: Berths } | { reason: string; stuck?: { start: boolean; end: boolean } };
 
 /** One search from `from` to `to` in `mode`: the raw path, or why there is none. */
 async function attempt(
@@ -168,12 +247,16 @@ async function attempt(
   session: Session,
   ends: [LonLat, LonLat],
   opts: PlanOptions,
-  mode: Mode
+  mode: Mode,
+  berth = 0
 ): Promise<Attempt> {
-  const start = access(tree, session, ends[0], false, opts, mode);
-  const goal = typeof start === "string" ? start : access(tree, session, ends[1], true, opts, mode);
+  const start = access(tree, session, ends[0], false, opts, mode, berth);
+  const goal = access(tree, session, ends[1], true, opts, mode, berth);
   if (typeof start === "string" || typeof goal === "string") {
-    return { reason: typeof start === "string" ? start : (goal as string) };
+    return {
+      reason: typeof start === "string" ? start : (goal as string),
+      stuck: { start: typeof start === "string", end: typeof goal === "string" }
+    };
   }
   const searchWork = opts.maxWork * opts.searchShare;
   const found =
@@ -198,9 +281,15 @@ async function attempt(
   return {
     path: [
       ...(start.joined ? [start.joined] : []),
+      ...(start.berth ? [start.berth] : []),
       ...found.points.map(([x, y]) => tree.lonLat(x, y)),
+      ...(goal.berth ? [goal.berth] : []),
       ...(goal.joined ? [goal.joined] : [])
-    ]
+    ],
+    berths: {
+      ...(start.berth && { start: start.berth }),
+      ...(goal.berth && { end: goal.berth })
+    }
   };
 }
 
@@ -233,13 +322,105 @@ function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
   };
 }
 
+/**
+ * Squares near `p`, within `harbourMetres`, that `mode` may enter, as their centres: where a
+ * harbour stage from an end the corridor cannot reach may hand over. Of those not much farther
+ * than the nearest, the ones most on the way come first, by the distance from `p` plus the
+ * distance on to the other end, `other`, so the route does not double back from the nearest.
+ */
+function handovers(
+  tree: QuadTree,
+  p: LonLat,
+  other: LonLat,
+  opts: PlanOptions,
+  mode: Mode
+): LonLat[] {
+  const [ux, uy] = tree.units(p);
+  const r = opts.harbourMetres / tree.shape.unit;
+  return tree
+    .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
+    .filter((n) => mode.enter(n))
+    .map((n) => {
+      const c = centre(n);
+      const cl = tree.lonLat(c[0], c[1]);
+      return { cl, d: haversine(p, cl), on: haversine(p, cl) + haversine(cl, other) };
+    })
+    .filter((x) => x.d <= opts.harbourMetres)
+    .sort((a, b) => a.d - b.d)
+    .filter((x, _, all) => x.d <= nearby((all[0] as { d: number }).d))
+    .sort((a, b) => a.on - b.on)
+    .slice(0, 6)
+    .map((x) => x.cl);
+}
+
+/** Handovers not much farther than the nearest: a harbour stage costs about its region's area. */
+const nearby = (nearest: number): number => Math.max(1.5 * nearest, nearest + 300);
+
+/** Handover candidates for each end a failed attempt could not join, when there are any. */
+function stuckEnds(
+  tree: QuadTree,
+  ends: [LonLat, LonLat],
+  failed: { start: boolean; end: boolean } | undefined,
+  opts: PlanOptions,
+  mode: Mode
+): Stuck | undefined {
+  if (!failed || opts.harbourMetres <= 0) {
+    return undefined;
+  }
+  const start = failed.start ? handovers(tree, ends[0], ends[1], opts, mode) : [];
+  const end = failed.end ? handovers(tree, ends[1], ends[0], opts, mode) : [];
+  // A harbour stage needs somewhere to hand over at every end the search could not join.
+  if ((failed.start && start.length === 0) || (failed.end && end.length === 0)) {
+    return undefined;
+  }
+  return { ...(failed.start && { start }), ...(failed.end && { end }) };
+}
+
+type Searched =
+  | { path: LonLat[]; berths: Berths; shortcut?: Shortcut; fallback?: string }
+  | { reason: string; stuck?: Stuck };
+
+/**
+ * The strict attempt, then with `fallback` the fallback over the same squares. A refusal at an
+ * end names the free water near it: strictly passing, else what the fallback may cross.
+ */
+async function searchTree(
+  tree: QuadTree,
+  session: Session,
+  ends: [LonLat, LonLat],
+  opts: PlanOptions,
+  how: { rule: PassRule; fallback: boolean; berth: number }
+): Promise<Searched> {
+  const strict = await attempt(tree, session, ends, opts, strictMode(how.rule), how.berth);
+  if ("path" in strict) {
+    return strict;
+  }
+  const again =
+    how.fallback && strict.reason !== WORK_LIMIT
+      ? await attempt(tree, session, ends, opts, FALLBACK, how.berth)
+      : undefined;
+  if (again && "path" in again) {
+    return { ...again, shortcut: fallbackShortcut(tree, again.path), fallback: strict.reason };
+  }
+  const near =
+    stuckEnds(tree, ends, strict.stuck, opts, strictMode(how.rule)) ??
+    (again ? stuckEnds(tree, ends, again.stuck, opts, FALLBACK) : undefined);
+  return { reason: strict.reason, ...(near && { stuck: near }) };
+}
+
+/**
+ * The search between `from` and `to`. `berth` > 0 lets each end join by a berth leg of at
+ * most that many metres (the harbour stage); `opts.harbourMetres` > 0 makes a refusal at an
+ * end name the free water near it (`stuck`).
+ */
 export async function searchRoute(
   session: Session,
   from: LonLat,
   to: LonLat,
   opts: PlanOptions,
   rule: PassRule = OK_ONLY,
-  fallback = false
+  fallback = false,
+  berth = 0
 ): Promise<SearchOutcome> {
   const direct = checkLeg(session, from, to);
   if (passes(direct, rule)) {
@@ -247,32 +428,28 @@ export async function searchRoute(
   }
   const shape = shapeFor(from, to, session.halfWidth, opts);
   const tree = typeof shape === "string" ? undefined : new QuadTree(shape, session, rule);
-  const refuse = (reason: string): SearchOutcome => ({
+  const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,
     reason,
     direct,
     squares: tree?.classified ?? 0,
     unverified: tree?.unverified ?? 0,
-    work: session.work()
+    work: session.work(),
+    ...(stuck && { stuck })
   });
   if (!tree) {
     return refuse(shape as string);
   }
-  const strict = await attempt(tree, session, [from, to], opts, strictMode(rule));
-  const again =
-    "reason" in strict && fallback && strict.reason !== WORK_LIMIT
-      ? await attempt(tree, session, [from, to], opts, FALLBACK)
-      : undefined;
-  const found = again && "path" in again ? again : strict;
-  if (!("path" in found)) {
-    return refuse((strict as { reason: string }).reason);
+  const found = await searchTree(tree, session, [from, to], opts, { rule, fallback, berth });
+  if ("reason" in found) {
+    return refuse(found.reason, found.stuck);
   }
   const coordinates = await pull(
     found.path,
     (a, b) => checkLeg(session, a, b),
     { exhausted: () => session.work() >= opts.maxWork, pause: () => session.pause() },
     rule,
-    found === strict ? undefined : fallbackShortcut(tree, found.path)
+    found.shortcut
   );
   if (coordinates === "work") {
     return refuse(WORK_LIMIT);
@@ -283,6 +460,7 @@ export async function searchRoute(
     direct,
     squares: tree.classified,
     work: session.work(),
-    ...(found !== strict && { fallback: (strict as { reason: string }).reason })
+    ...(found.fallback !== undefined && { fallback: found.fallback }),
+    ...((found.berths.start || found.berths.end) && { berths: found.berths })
   };
 }

@@ -46,7 +46,7 @@ function showLegs(legs) {
       for (const [text, cls] of [
         [String(i + 1), ""],
         [P.nm(l.length), ""],
-        [l.status, l.status],
+        [P.legLabel(l), l.status],
         [(l.risk * 100).toFixed(2) + " %", ""]
       ]) {
         const td = document.createElement("td");
