@@ -166,11 +166,13 @@ export class QuadTree {
 
   /**
    * Free leaves sharing an edge of positive length with `n`, with the shared edge's
-   * midpoint, and those meeting it at a corner only, with that corner.
+   * midpoint, and those meeting it at a corner only, with that corner. Once `stop` holds, no
+   * further square is classified: the caller must not take the list as complete.
    */
   neighbours(
     n: QuadNode,
-    enter: (m: QuadNode) => boolean = isFree
+    enter: (m: QuadNode) => boolean = isFree,
+    stop: () => boolean = () => false
   ): { node: QuadNode; portal: [number, number] }[] {
     const out: { node: QuadNode; portal: [number, number] }[] = [];
     const { x, y, size } = n;
@@ -196,13 +198,13 @@ export class QuadTree {
       ]
     ];
     for (const [touches, portal] of sides) {
-      for (const m of this.leaves(touches)) {
+      for (const m of this.leaves(touches, stop)) {
         if (enter(m) && m !== n) {
           out.push({ node: m, portal: portal(m) });
         }
       }
     }
-    return [...out, ...this.cornerNeighbours(n, enter)];
+    return [...out, ...this.cornerNeighbours(n, enter, stop)];
   }
 
   /**
@@ -213,7 +215,8 @@ export class QuadTree {
    */
   private cornerNeighbours(
     n: QuadNode,
-    enter: (m: QuadNode) => boolean
+    enter: (m: QuadNode) => boolean,
+    stop: () => boolean
   ): { node: QuadNode; portal: [number, number] }[] {
     const out: { node: QuadNode; portal: [number, number] }[] = [];
     for (const [dx, dy] of [
@@ -224,7 +227,7 @@ export class QuadTree {
     ] as const) {
       const cx = dx > 0 ? n.x + n.size : n.x;
       const cy = dy > 0 ? n.y + n.size : n.y;
-      const m = this.diagonal(cx, cy, dx, dy);
+      const m = this.diagonal(cx, cy, dx, dy, stop);
       if (m && enter(m)) {
         out.push({ node: m, portal: [cx, cy] });
       }
@@ -233,7 +236,13 @@ export class QuadTree {
   }
 
   /** The leaf beyond corner (cx, cy) in direction (dx, dy), when it has that corner as its own. */
-  private diagonal(cx: number, cy: number, dx: 1 | -1, dy: 1 | -1): QuadNode | undefined {
+  private diagonal(
+    cx: number,
+    cy: number,
+    dx: 1 | -1,
+    dy: 1 | -1,
+    stop: () => boolean
+  ): QuadNode | undefined {
     const side = this.shape.side;
     const px = cx + dx * 1e-6;
     const py = cy + dy * 1e-6;
@@ -241,7 +250,8 @@ export class QuadTree {
       return undefined;
     }
     const m = this.leaves(
-      (q) => px >= q.x && px < q.x + q.size && py >= q.y && py < q.y + q.size
+      (q) => px >= q.x && px < q.x + q.size && py >= q.y && py < q.y + q.size,
+      stop
     )[0];
     if (!m) {
       return undefined;
