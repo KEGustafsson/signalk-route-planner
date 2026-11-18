@@ -118,6 +118,15 @@ describe("static search", () => {
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.reason).toMatch(/work limit/);
   });
+
+  test("finding a way out of a start on land stops at the work limit too", async () => {
+    // Land round the start: the access window is classified square by square.
+    const chart = { obstacles: [{ x: 0, y: 0, r: 900 }] };
+    const opts = { ...DEFAULT_PLAN, accessMetres: 1000, maxWork: 3000 };
+    const { outcome } = await search(chart, at(0, 0), at(5000, 0), opts);
+    expect(!outcome.ok && outcome.reason).toMatch(/work limit/);
+    expect(outcome.work).toBeLessThan(opts.maxWork);
+  });
 });
 
 describe("tree shape", () => {

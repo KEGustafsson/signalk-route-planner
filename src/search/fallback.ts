@@ -2,11 +2,12 @@ import type { Verdict } from "../oracle/contract";
 import type { QuadNode } from "./quadtree";
 
 /**
- * The fallback search (plan §4.1 step 8): when no route passes, the least risky
- * route through charted water. A square the check fails or cannot verify may be
- * crossed, at a cost per metre that grows with its P(UKC < 0), so the route crosses
- * as little of it as the chart allows; land and water with no chart at all are
- * never crossed. The route check still decides every leg's status, so the legs over
+ * The fallback search (plan §4.1 step 8): when no route passes, the lowest
+ * risk-weighted route through charted water. A square the check fails or cannot verify
+ * may be crossed, at a cost per metre that grows with its P(UKC < 0), so the route
+ * trades distance for risk; land, water with no chart and water the chart was never
+ * asked about are never crossed, and neither is a square whose verdict carries a flag
+ * this list does not know, so a hard rule underkeel reports later stays closed. The route check still decides every leg's status, so the legs over
  * such water come back `fail`, `marginal` or `unverified`, marked as they are.
  */
 
@@ -15,12 +16,25 @@ export const RISK_WEIGHT = 1000;
 /** Per-metre cost of crossing a square the check cannot verify, on top of its risk. */
 export const UNVERIFIED_WEIGHT = 100;
 
-/** Flags that close water to the fallback too: land, and no chart at all. */
-const CLOSED = ["LAND", "NO_COVERAGE"];
+/**
+ * The only flags the fallback crosses: they say how the depth was charted or how the
+ * water level was taken, not that the water is closed. Any other flag closes the square:
+ * `LAND`, `NO_COVERAGE`, `BOX_TOO_LARGE` (never queried), `TOO_LONG_FOR_ONE_LEG` (never
+ * checked) and any flag not listed here, such as an entry-prohibited area or a traffic
+ * lane crossed the wrong way (AGENTS.md invariant 4).
+ */
+const CROSSABLE = new Set([
+  "SWEPT",
+  "UNASSESSED",
+  "DREDGED",
+  "LIVECHART_ADJUSTED",
+  "NOT_FOR_NAVIGATION",
+  "WATER_LEVEL_FALLBACK"
+]);
 
 /** True when the fallback may cross water with this verdict. */
 export function crossable(v: Pick<Verdict, "flags">): boolean {
-  return !v.flags.some((f) => CLOSED.includes(f));
+  return v.flags.every((f) => CROSSABLE.has(f));
 }
 
 /** Per-metre cost of a leaf in the fallback search; Infinity where it may not go. */

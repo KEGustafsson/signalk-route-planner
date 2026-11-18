@@ -52,7 +52,7 @@ describe("panel model", () => {
         fallback: "no route the check passes connects the points"
       }).text
     ).toBe(
-      "Planned 1.0 nm in 1 leg: fail (see the legs below). No route passes the check: this is the least risky one, no route the check passes connects the points"
+      "Planned 1.0 nm in 1 leg: fail (see the legs below). No route passes the check: this is the lowest risk-weighted route, no route the check passes connects the points"
     );
     expect(P.summary(422, { reason: "land, shoals or obstacles close every way" })).toEqual({
       kind: "fail",

@@ -58,7 +58,7 @@
           ": " +
           b.status +
           (b.status === "ok" ? "" : " (see the legs below)") +
-          (b.fallback ? ". No route passes the check: this is the least risky one, " + b.fallback : "")
+          (b.fallback ? ". No route passes the check: this is the lowest risk-weighted route, " + b.fallback : "")
       };
     }
     if (status === 422) {

@@ -14,7 +14,7 @@ export interface PlanRequest {
   draft?: number;
   /** Flags the search may plan through; the route then comes back `unverified`. */
   accept?: string[];
-  /** When no route passes, the least risky one through charted water, its legs marked. */
+  /** When no route passes, the lowest risk-weighted route through charted water, its legs marked. */
   fallback?: boolean;
 }
 

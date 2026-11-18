@@ -132,12 +132,13 @@ export class QuadTree {
 
   /**
    * The leaves whose squares meet `touches`, classified as needed; a split
-   * square is entered only when `touches` holds for it.
+   * square is entered only when `touches` holds for it. Once `stop` holds, no
+   * further square is classified and the leaves found so far are returned.
    */
-  leaves(touches: (n: QuadNode) => boolean): QuadNode[] {
+  leaves(touches: (n: QuadNode) => boolean, stop: () => boolean = () => false): QuadNode[] {
     const out: QuadNode[] = [];
     const stack = [this.root];
-    while (stack.length > 0) {
+    while (stack.length > 0 && !stop()) {
       const n = stack.pop() as QuadNode;
       if (!touches(n)) {
         continue;

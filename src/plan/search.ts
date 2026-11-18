@@ -24,7 +24,7 @@ export type SearchOutcome =
       direct: Verdict;
       squares: number;
       work: number;
-      /** Set when no route passed and this is the least risky one: why none passed. */
+      /** Set when no route passed and this is the lowest risk-weighted route: why none passed. */
       fallback?: string;
     }
   | {
@@ -119,6 +119,9 @@ const FALLBACK: Mode = {
   weight: fallbackWeight
 };
 
+const WORK_LIMIT =
+  "the search reached its work limit; plan a shorter passage or add a waypoint between";
+
 /**
  * The square the search leaves from or arrives at for point `p`: the one holding
  * it, or the nearest within `accessMetres` whose centre a checked leg from `p` (to
@@ -130,7 +133,8 @@ function access(
   p: LonLat,
   goal: boolean,
   opts: PlanOptions,
-  mode: Mode
+  mode: Mode,
+  exhausted: () => boolean
 ): Access | string {
   const [ux, uy] = tree.units(p);
   const own = tree.leafAt(ux, uy);
@@ -139,7 +143,10 @@ function access(
   }
   const r = opts.accessMetres / tree.shape.unit;
   const near = tree
-    .leaves((n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size)
+    .leaves(
+      (n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size,
+      exhausted
+    )
     .filter((n) => mode.enter(n))
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
     .filter(({ n }) => {
@@ -149,11 +156,17 @@ function access(
     .sort((a, b) => a.d - b.d)
     .slice(0, 8);
   for (const { n } of near) {
+    if (exhausted()) {
+      return WORK_LIMIT;
+    }
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
     if (mode.joins(goal ? checkLeg(session, cl, p) : checkLeg(session, p, cl))) {
       return { leaf: n, at: c, joined: p };
     }
+  }
+  if (exhausted()) {
+    return WORK_LIMIT;
   }
   const what = goal ? "destination" : "start";
   const flags = own?.verdict?.flags.length ? ` (${own.verdict.flags.join(", ")})` : "";
@@ -170,17 +183,19 @@ async function attempt(
   opts: PlanOptions,
   mode: Mode
 ): Promise<Attempt> {
-  const start = access(tree, session, ends[0], false, opts, mode);
-  const goal = typeof start === "string" ? start : access(tree, session, ends[1], true, opts, mode);
+  const searchWork = opts.maxWork * opts.searchShare;
+  const exhausted = (): boolean => session.work() >= searchWork;
+  const start = access(tree, session, ends[0], false, opts, mode, exhausted);
+  const goal =
+    typeof start === "string" ? start : access(tree, session, ends[1], true, opts, mode, exhausted);
   if (typeof start === "string" || typeof goal === "string") {
     return { reason: typeof start === "string" ? start : (goal as string) };
   }
-  const searchWork = opts.maxWork * opts.searchShare;
   const found =
     start.leaf === goal.leaf
       ? { found: true as const, points: [start.at, goal.at] }
       : await aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-          exhausted: () => session.work() >= searchWork,
+          exhausted,
           pause: () => session.pause(),
           every: 64,
           weight: mode.weight
@@ -204,13 +219,11 @@ async function attempt(
   };
 }
 
-const WORK_LIMIT =
-  "the search reached its work limit; plan a shorter passage or add a waypoint between";
-
 /**
  * A fallback shortcut that does not pass may replace path points i..j only when every
  * piece of the path between them already crosses a square the check does not pass,
- * the shortcut crosses no land or uncharted water, and it is no riskier than the
+ * the shortcut crosses only water the fallback may cross (so never a leg too long to
+ * check, land or uncharted water), and it is no riskier than the
  * riskiest of those squares: pulling straightens a risky stretch within itself and
  * never draws passing water into it.
  */
@@ -231,6 +244,27 @@ function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
       v.risk <= Math.max(...(span as number[]))
     );
   };
+}
+
+/**
+ * The strict search, then, when asked and the strict one found no way short of the work
+ * limit, the fallback: its path with the strict reason, or its own reason, which may be
+ * the work limit.
+ */
+async function strictThenFallback(
+  tree: QuadTree,
+  session: Session,
+  ends: [LonLat, LonLat],
+  opts: PlanOptions,
+  rule: PassRule,
+  fallback: boolean
+): Promise<{ path: LonLat[]; fallback?: string } | { reason: string }> {
+  const strict = await attempt(tree, session, ends, opts, strictMode(rule));
+  if ("path" in strict || !fallback || strict.reason === WORK_LIMIT) {
+    return strict;
+  }
+  const again = await attempt(tree, session, ends, opts, FALLBACK);
+  return "path" in again ? { path: again.path, fallback: strict.reason } : again;
 }
 
 export async function searchRoute(
@@ -258,23 +292,19 @@ export async function searchRoute(
   if (!tree) {
     return refuse(shape as string);
   }
-  const strict = await attempt(tree, session, [from, to], opts, strictMode(rule));
-  const again =
-    "reason" in strict && fallback && strict.reason !== WORK_LIMIT
-      ? await attempt(tree, session, [from, to], opts, FALLBACK)
-      : undefined;
-  const found = again && "path" in again ? again : strict;
+  const found = await strictThenFallback(tree, session, [from, to], opts, rule, fallback);
   if (!("path" in found)) {
-    return refuse((strict as { reason: string }).reason);
+    return refuse(found.reason);
   }
   const coordinates = await pull(
     found.path,
     (a, b) => checkLeg(session, a, b),
     { exhausted: () => session.work() >= opts.maxWork, pause: () => session.pause() },
     rule,
-    found === strict ? undefined : fallbackShortcut(tree, found.path)
+    found.fallback === undefined ? undefined : fallbackShortcut(tree, found.path)
   );
-  if (coordinates === "work") {
+  // The last shortcut checked may have taken the work past the limit.
+  if (coordinates === "work" || session.work() >= opts.maxWork) {
     return refuse(WORK_LIMIT);
   }
   return {
@@ -283,6 +313,6 @@ export async function searchRoute(
     direct,
     squares: tree.classified,
     work: session.work(),
-    ...(found !== strict && { fallback: (strict as { reason: string }).reason })
+    ...(found.fallback !== undefined && { fallback: found.fallback })
   };
 }

@@ -141,8 +141,11 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    and whose P(UKC < 0) is below the threshold. The route check still marks those legs
    `unverified`.
 8. **Fallback.** With `fallback: true`, when no route passes, the search runs again over the same
-   squares and may cross charted water the check fails or cannot verify, at a cost per metre of
-   1 + 1000·P (+100 when unverified); land and water with no chart are never crossed. String
+   squares and may cross charted water the check fails or cannot verify, at a cost per metre
+   that grows with P(UKC < 0), with a further penalty when unverified, so the route trades
+   distance for risk (`RISK_WEIGHT` and `UNVERIFIED_WEIGHT` in `src/search/fallback.ts`). It
+   crosses only verdicts whose flags say how the depth was charted; land, water with no chart,
+   squares never queried and any other flag, such as a hard rule's, stay closed. String
    pulling straightens such a stretch only within itself. The reply carries `fallback` with the
    reason no route passed, and the risky legs come back `fail`, `marginal` or `unverified` from
    the route check, marked.
@@ -152,8 +155,8 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     limit sized for about 3 s on a Raspberry Pi 4, refusing with the reason rather than returning
     a partial route.
 11. **Boxes the API takes.** A box's longitude span widens away from the frame's origin latitude,
-    so each box is measured at its own latitude and split while it is over 24 km² with its
-    buffer. A region across the 180° meridian or over a pole is refused.
+    so each box is measured at its own latitude and split while it, with its buffer, is over
+    the API's box limit (`MAX_BOX_KM2` in `src/search/quadtree.ts`), so no query is refused. A region across the 180° meridian or over a pole is refused.
 
 ### 4.2 R2: planning beyond the chart box
 

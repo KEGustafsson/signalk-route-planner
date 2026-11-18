@@ -1,6 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { PlanningApiV1, Reply, Status, Verdict } from "../oracle/contract";
+import { crossable } from "../search/fallback";
 import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
@@ -24,7 +25,7 @@ export interface PlanInput {
   draft?: number;
   /** Flags the search may plan through (`search/passes.ts`); the route stays `unverified`. */
   accept?: readonly string[];
-  /** When no route passes, return the least risky one through charted water (`search/fallback.ts`). */
+  /** When no route passes, return the lowest risk-weighted route through charted water (`search/fallback.ts`). */
   fallback?: boolean;
 }
 
@@ -89,6 +90,25 @@ function search(
   );
 }
 
+/**
+ * Why the proved legs are not offered, if they are not. The search's legs passed over
+ * the trip window; the proof checks each at its own arrival. A strict plan is offered
+ * only when every leg still passes (or is marginal); a fallback plan is offered with its
+ * risky legs marked, as the request asked, but never over water the fallback may not
+ * cross (land, no chart, a hard rule).
+ */
+function refusal(legs: readonly CheckedLeg[], rule: PassRule, strict: boolean): string | undefined {
+  const n = legs.filter((l) =>
+    strict ? l.status !== "marginal" && !passes(l, rule) : !crossable(l)
+  ).length;
+  if (n === 0) {
+    return undefined;
+  }
+  return strict
+    ? `the route check does not pass ${n} of the ${legs.length} planned legs at the departure`
+    : `${n} of the ${legs.length} fallback legs cross water no route may cross at the departure`;
+}
+
 export async function plan(
   api: PlanningApiV1,
   input: PlanInput,
@@ -139,19 +159,13 @@ export async function plan(
     return check;
   }
   const legs = (check.body as { legs: CheckedLeg[] }).legs;
-  // The search's legs passed over the trip window; the proof checks each at its own
-  // arrival. A strict plan is offered only when every leg still passes (or is marginal);
-  // a fallback plan is offered with its risky legs marked, as the request asked.
-  const refused =
-    found.fallback === undefined
-      ? legs.filter((l) => l.status !== "marginal" && !passes(l, rule)).length
-      : 0;
-  if (refused > 0) {
+  const refused = refusal(legs, rule, found.fallback === undefined);
+  if (refused) {
     return {
       status: 422,
       body: {
         ...base,
-        reason: `the route check does not pass ${refused} of the ${legs.length} planned legs at the departure`,
+        reason: refused,
         check: check.body,
         work: found.work
       }
