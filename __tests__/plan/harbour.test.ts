@@ -2,6 +2,7 @@ import type { LonLat } from "../../src/foundation/geo";
 import { haversine } from "../../src/foundation/geo";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
+import { joined } from "../../src/plan/proof";
 import type { Circle } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
@@ -150,5 +151,40 @@ describe("harbour stage", () => {
     expect(departures[0]).toBe(new Date(NOW).toISOString());
     const second = Date.parse(departures[1] as string);
     expect(Math.abs(second - (NOW + (routeMetres / 3) * 1000))).toBeLessThan(2000);
+  });
+
+  test("each handover point appears once: the route has one point more than its legs", async () => {
+    for (const [from, to] of [
+      [at(20, 0), at(3000, 0)],
+      [at(3000, 0), at(20, 0)],
+      [at(300, 18), at(3000, 0)]
+    ] as [LonLat, LonLat][]) {
+      const r = await plan(
+        syntheticApi({ obstacles: inlet() }),
+        { from, to, departure: NOW, speed: 3, xteLimit: 30 },
+        NEVER,
+        NOW
+      );
+      const body = r.body as Body;
+      expect(body.route.coordinates).toHaveLength(body.check.legs.length + 1);
+      expect(body.route.coordinates[0]).toEqual(from);
+      expect(body.route.coordinates[body.route.coordinates.length - 1]).toEqual(to);
+    }
+    // Two parts meeting at a point their frames moved in the last bits join there once.
+    const a: LonLat = [22, 60];
+    const b: LonLat = [22.01, 60.01];
+    const c: LonLat = [22.02, 60.02];
+    const parts = [
+      { kind: "harbour" as const, coordinates: [a, b] },
+      { kind: "route" as const, coordinates: [[b[0] + 1e-13, b[1] - 1e-13] as LonLat, c] }
+    ];
+    expect(joined(parts)).toHaveLength(3);
+  });
+
+  test("the search for handovers stops at the search's share of the work", async () => {
+    const { r, body, api } = await planFrom(at(20, 0), { ...DEFAULT_PLAN, maxWork: 3000 });
+    expect(r.status).toBe(422);
+    expect(body.reason).toMatch(/work limit/);
+    expect(api.sessions).toHaveLength(1);
   });
 });

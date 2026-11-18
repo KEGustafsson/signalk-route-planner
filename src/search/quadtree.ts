@@ -138,12 +138,17 @@ export class QuadTree {
    * The leaves whose squares meet `touches`, classified as needed; a split
    * square is entered only when `touches` holds for it. With `classify` false no
    * chart query is made: a square not yet classified comes back `unknown`, once it
-   * is no larger than `maxLeaf` (larger ones split without asking).
+   * is no larger than `maxLeaf` (larger ones split without asking). Once `stop` holds,
+   * no further square is classified and the leaves found so far are returned.
    */
-  leaves(touches: (n: QuadNode) => boolean, classify = true): QuadNode[] {
+  leaves(
+    touches: (n: QuadNode) => boolean,
+    classify = true,
+    stop: () => boolean = () => false
+  ): QuadNode[] {
     const out: QuadNode[] = [];
     const stack = [this.root];
-    while (stack.length > 0) {
+    while (stack.length > 0 && !stop()) {
       const n = stack.pop() as QuadNode;
       if (!touches(n)) {
         continue;
@@ -164,14 +169,15 @@ export class QuadTree {
    * Up to `k` leaves that `accept` takes, nearest the unit point (ux, uy) by the
    * distance to their squares, within `radius` units. Best first: a square is
    * classified only when nothing nearer is left, so the query costs the squares
-   * nearer than the k-th leaf it returns, not the whole disc.
+   * nearer than the k-th leaf it returns, not the whole disc. It stops once `stop` holds.
    */
   nearest(
     ux: number,
     uy: number,
     radius: number,
     accept: (n: QuadNode) => boolean,
-    k: number
+    k: number,
+    stop: () => boolean = () => false
   ): QuadNode[] {
     const away = (n: QuadNode): number =>
       Math.hypot(
@@ -181,7 +187,7 @@ export class QuadTree {
     const open = new Heap<QuadNode>();
     open.push(this.root, away(this.root));
     const out: QuadNode[] = [];
-    while (open.size > 0 && out.length < k && open.peekKey() <= radius) {
+    while (open.size > 0 && out.length < k && open.peekKey() <= radius && !stop()) {
       const n = open.pop();
       this.resolve(n);
       if (n.state === "split") {

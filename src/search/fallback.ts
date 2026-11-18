@@ -1,5 +1,7 @@
+import type { LonLat } from "../foundation/geo";
 import type { Verdict } from "../oracle/contract";
-import type { QuadNode } from "./quadtree";
+import type { Shortcut } from "./pull";
+import type { QuadNode, QuadTree } from "./quadtree";
 
 /**
  * The fallback search (plan §4.1 step 8): when no route passes, the least risky
@@ -49,4 +51,35 @@ export function strictWeight(n: QuadNode): number {
     return 1;
   }
   return n.state === "marginal" && n.verdict ? 1 + RISK_WEIGHT * n.verdict.risk : Infinity;
+}
+
+/**
+ * A shortcut that does not pass may replace path points i..j only when every piece of
+ * the path between them already crosses a square the check does not pass, `allowed`
+ * takes the shortcut's verdict (the fallback: no land or uncharted water; the strict
+ * search: marginal), and it is no riskier than the riskiest of those squares: pulling
+ * straightens a risky stretch within itself and never draws passing water into it.
+ */
+export function riskyShortcut(
+  tree: QuadTree,
+  path: readonly LonLat[],
+  allowed: (v: Verdict) => boolean
+): Shortcut {
+  const risk = path.slice(1).map((b, k) => {
+    const a = path[k] as LonLat;
+    const [ax, ay] = tree.units(a);
+    const [bx, by] = tree.units(b);
+    const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
+    // A free square's piece is not risky, whatever its verdict's own risk.
+    return leaf?.state === "free" ? undefined : (leaf?.verdict?.risk ?? 0);
+  });
+  return (v, i, j) => {
+    const span = risk.slice(i, j);
+    return (
+      crossable(v) &&
+      allowed(v) &&
+      span.every((r) => r !== undefined) &&
+      v.risk <= Math.max(...(span as number[]))
+    );
+  };
 }
