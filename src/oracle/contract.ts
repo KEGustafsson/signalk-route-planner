@@ -84,6 +84,11 @@ export interface Survey {
    * does. Row-major, row 0 the southernmost, column 0 the westernmost.
    */
   readonly depth: Float32Array;
+  /**
+   * The shallowest charted depth touching each cell, in the same order: a cell whose shallowest
+   * takes a draft is deep enough all over. Absent from a provider before signalk-underkeel 0.8.0.
+   */
+  readonly shallowest?: Float32Array;
 }
 
 export type SurveyResult =

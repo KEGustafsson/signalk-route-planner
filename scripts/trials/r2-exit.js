@@ -156,15 +156,34 @@ async function main() {
     () => boxes
   );
   const log = [];
+  // The survey is kept in WORK and used again by the next run: it takes minutes to download.
+  const saved = path.join(WORK, "survey.json");
+  const survey = async (region, cellMetres, signal) => {
+    if (fs.existsSync(saved)) {
+      const g = JSON.parse(fs.readFileSync(saved, "utf8"));
+      const grid = (a) => Float32Array.from(a, (v) => v ?? NaN);
+      return { ok: true, value: { ...g, depth: grid(g.depth), shallowest: grid(g.shallowest) } };
+    }
+    const r = await base.survey(region, cellMetres, signal);
+    if (r.ok) {
+      const { depth, shallowest } = r.value;
+      const plain = { ...r.value, depth: Array.from(depth), shallowest: Array.from(shallowest) };
+      fs.writeFileSync(saved, JSON.stringify(plain));
+    }
+    return r;
+  };
   const api = {
     ...base,
-    survey: timed(log, "survey", base.survey),
+    survey: timed(log, "survey", survey),
     prepare: timed(log, "prepare", base.prepare)
   };
   let corridor;
   const prepare = api.prepare;
   api.prepare = (region, signal, parts) => {
     corridor = parts ?? corridor;
+    if (parts) {
+      fs.writeFileSync(path.join(WORK, "corridor.json"), JSON.stringify(parts));
+    }
     return prepare(region, signal, parts);
   };
   const stop = new AbortController();

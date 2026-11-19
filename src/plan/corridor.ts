@@ -36,6 +36,13 @@ export const CORRIDOR_HALF = (CORRIDOR_WIDTHS[0] as CorridorWidth).half;
 const BAND = 1000;
 /** An end is joined to the nearest cell that takes the draft within this, metres. */
 const SNAP = 1500;
+/**
+ * A step into a cell whose deepest alone takes the draft costs this many times one into a cell
+ * deep enough all over: the coarse route keeps to sure water and goes through a cell that may
+ * hold a shoal or an island only where no sure way is much shorter, so it seldom links two deep
+ * areas across land the survey's cells blur.
+ */
+export const MAYBE_COST = 3;
 /** signalk-underkeel takes at most this many boxes. */
 const MAX_PARTS = 400;
 
@@ -144,8 +151,9 @@ const STEPS: readonly [number, number, number][] = [
 ];
 
 /**
- * The shortest 8-connected path of cells taking `draft` from the cell nearest `from` to the one
- * nearest `to`, as cell indexes; undefined when the survey joins them by none.
+ * The cheapest 8-connected path of cells taking `draft` from the cell nearest `from` to the one
+ * nearest `to`, a cell whose shallowest does not take it costing MAYBE_COST times, as cell
+ * indexes; undefined when the survey joins them by none.
  */
 export function coarseRoute(
   g: Survey,
@@ -178,8 +186,9 @@ export function coarseRoute(
     for (const [dc, dr, step] of STEPS) {
       const [nc, nr] = [c + dc, r + dr];
       const j = nr * g.cols + nc;
-      const next = (cost[i] as number) + step;
       const inGrid = nc >= 0 && nr >= 0 && nc < g.cols && nr < g.rows;
+      const sure = g.shallowest === undefined || (g.shallowest[j] as number) >= draft;
+      const next = (cost[i] as number) + step * (sure ? 1 : MAYBE_COST);
       if (inGrid && (g.depth[j] as number) >= draft && next < (cost[j] as number)) {
         cost[j] = next;
         came[j] = i;

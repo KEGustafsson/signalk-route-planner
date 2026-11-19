@@ -81,6 +81,26 @@ describe("coarse route", () => {
     expect((path ?? []).every((i) => (g.depth[i] as number) >= 2)).toBe(true);
   });
 
+  test("keeps to cells deep enough all over before a shorter way through ones that may not be", () => {
+    // A wide band of cells whose deepest takes the draft and whose shallowest does not (shoals
+    // the cells blur), across the way, and sure water round its north end.
+    const base = grid(200, 100, () => 5);
+    const shallowest = new Float32Array(base.depth.length).fill(5);
+    for (let r = 0; r < 40; r++) {
+      for (let c = 80; c <= 130; c++) {
+        shallowest[r * 200 + c] = 0.5;
+      }
+    }
+    const from = centre(base, 70, 20);
+    const to = centre(base, 140, 20);
+    const rows = (p: number[] | undefined) => (p ?? []).map((i) => Math.floor(i / 200));
+    expect(
+      Math.max(...rows(coarseRoute({ ...base, shallowest }, from, to, 2)))
+    ).toBeGreaterThanOrEqual(40);
+    // Without the shallowest, straight across.
+    expect(Math.max(...rows(coarseRoute(base, from, to, 2)))).toBeLessThan(25);
+  });
+
   test("none when the draft is deeper than the survey joins the ends by", () => {
     expect(coarseRoute(g, centre(g, 20, 20), centre(g, 180, 20), 6)).toBeUndefined();
     const closed = grid(200, 100, (c) => (c === 100 ? Number.NaN : 5));
