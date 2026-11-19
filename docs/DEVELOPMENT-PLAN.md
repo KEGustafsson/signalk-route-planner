@@ -214,9 +214,24 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
   nothing; a region larger than underkeel builds on the machine, even the least, is 413 with its
   reason. How large that is is underkeel's policy.
 
-**Still open:** a 50 nm diagonal trip's box is far beyond what a small machine builds. It needs a planning box along
-the trip's corridor rather than its bounding box, and the search held to that corridor, before
-R2's exit criterion (§8) is met.
+- A trip too long for even its least region is planned in a corridor (`src/plan/corridor.ts`),
+  when underkeel serves `survey` and `corridor` (its plan §4.11). The planner asks for the depth
+  survey of the trip's box grown by a quarter of the trip (3 to 15 km), in cells of 100 m or
+  coarser: the deepest charted depth touching each. On it, A* finds the shortest 8-connected
+  coarse route over cells that take the draft (the request's, else `COARSE_DRAFT`), each end
+  joined to the nearest such cell within 1.5 km. The corridor is the coarse route with 1.5 km
+  each side and 3.5 km around each end for the harbour stage, cut into the runs of 1 km bands
+  (taller bands past 400 boxes), and `prepare` builds those boxes alone. The survey is
+  optimistic, a cell taking the draft wherever any area touching it does, so the coarse route
+  only says where to look: the search and the route check on the corridor's index decide, and
+  past the corridor the chart reads no coverage. A corridor build serves its own trip alone. A
+  survey that fails, or joins the ends by none, leaves the least region's 413 as the reply.
+- R2's exit trial (`npm run trial:r2`, `docs/trials.md`) plans Turku to Utö, 50 nm, on
+  underkeel's own planning boxes, survey and build processes in a 1 GB memory limit.
+
+**Still open:** 50 nm is past `DEFAULT_PLAN.maxDistance` (60 km) and its work budget; the trial
+raises both, as the other trials raise the work. The search's region is still the square around
+the midpoint, not the corridor's box.
 
 ### 4.3 R3: time-dependent search and tide gates
 

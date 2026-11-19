@@ -27,6 +27,12 @@ waits for that build, which can take minutes on a Raspberry Pi: the panel says s
 by itself while the build runs. Without `prepare` the planner plans on the chart box alone, and
 legs past it come back `unverified`.
 
+A trip too long for any planning box the machine builds is planned in a corridor, when
+signalk-underkeel 0.8.0 or later also serves `survey` and `corridor` (with its Traficom WFS depth
+source). The planner finds a coarse route on underkeel's depth survey of the trip's region, and
+underkeel builds a planning box of a band a few kilometres wide along it. Past the band the chart
+reads no coverage. The survey and the band are downloaded first, which takes minutes.
+
 ## Use
 
 1. In Freeboard, draw a route from where you are to where you want to go. Two points are enough.

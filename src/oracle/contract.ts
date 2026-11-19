@@ -71,6 +71,24 @@ export interface Prepared {
 export type PrepareResult =
   { ok: true; value: Prepared } | { ok: false; status: number; error: string };
 
+/** A coarse depth grid over a region (`survey`): for choosing a corridor, never a verdict. */
+export interface Survey {
+  /** The grid's extent: the region rounded out to whole cells. */
+  readonly bbox: Bbox;
+  readonly cols: number;
+  readonly rows: number;
+  /** Cell side, metres: north–south, and east–west at the grid's middle latitude. */
+  readonly cellMetres: number;
+  /**
+   * The deepest charted depth touching each cell, metres below chart datum; NaN where none
+   * does. Row-major, row 0 the southernmost, column 0 the westernmost.
+   */
+  readonly depth: Float32Array;
+}
+
+export type SurveyResult =
+  { ok: true; value: Survey } | { ok: false; status: number; error: string };
+
 export interface PlanningApiV1 {
   readonly version: 1;
   readonly provider: string;
@@ -89,7 +107,26 @@ export interface PlanningApiV1 {
    * With `features` listing "prepare": an index for `region`, the chart box around the vessel
    * when it covers it, else a planning box built for it, which can take minutes.
    */
-  prepare?(region: Bbox, signal: AbortSignal): Promise<PrepareResult>;
+  prepare?(region: Bbox, signal: AbortSignal, corridor?: readonly Bbox[]): Promise<PrepareResult>;
+  /**
+   * With `features` listing "survey": the depth survey of `region`, cells about `cellMetres`
+   * on a side or coarser, made tile by tile, so it reaches far past any planning box. With
+   * "corridor", `prepare` takes the boxes within `region` a corridor is cut into and builds
+   * them alone; past them the index reads no coverage.
+   */
+  survey?(region: Bbox, cellMetres: number, signal: AbortSignal): Promise<SurveyResult>;
+}
+
+/** Whether `api` serves `survey` and corridors, for a trip past what a planning box holds. */
+export function canSurvey(
+  api: PlanningApiV1
+): api is PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare" | "survey">> {
+  return (
+    canPrepare(api) &&
+    api.features?.includes("survey") === true &&
+    api.features.includes("corridor") &&
+    typeof api.survey === "function"
+  );
 }
 
 /** Whether `api` serves `prepare` (signalk-underkeel's planning boxes). */
