@@ -107,39 +107,46 @@ async function passWindows(
       ...(g.probability !== undefined && { probability: g.probability }),
       ...(g.draft !== undefined && { draft: g.draft })
     };
+    // The session's work, taken when its job ends however it ends: a job the abort stops
+    // mid-way has done work too.
+    let spent = 0;
     const r = await api.session(params, ctx.signal, async (s) => {
-      const spent = (): boolean => work + s.work() >= ctx.budget;
-      for (const [i, leg] of legs.entries()) {
-        if (leg.xteLimit !== width) {
-          continue;
-        }
-        // Every query is within the budget, the full-horizon one included.
-        if (spent()) {
-          return { stop: WORK, work: s.work() };
-        }
-        if (through(s.segment(leg.a, leg.b, horizon), ctx.rule, leg)) {
-          continue;
-        }
-        const open: boolean[] = [];
-        for (let k = 0; k < slots; k++) {
-          if (spent()) {
-            return { stop: WORK, work: s.work() };
+      try {
+        const over = (): boolean => work + s.work() >= ctx.budget;
+        for (const [i, leg] of legs.entries()) {
+          if (leg.xteLimit !== width) {
+            continue;
           }
-          const start = horizon.start + k * SLOT_MS;
-          const v = s.segment(leg.a, leg.b, { start, end: start + SLOT_MS });
-          open.push(through(v, ctx.rule, leg));
-          await s.pause();
+          // Every query is within the budget, the full-horizon one included.
+          if (over()) {
+            return WORK;
+          }
+          if (through(s.segment(leg.a, leg.b, horizon), ctx.rule, leg)) {
+            continue;
+          }
+          const open: boolean[] = [];
+          for (let k = 0; k < slots; k++) {
+            if (over()) {
+              return WORK;
+            }
+            const start = horizon.start + k * SLOT_MS;
+            const v = s.segment(leg.a, leg.b, { start, end: start + SLOT_MS });
+            open.push(through(v, ctx.rule, leg));
+            await s.pause();
+          }
+          gated.set(i, open);
         }
-        gated.set(i, open);
+        return undefined;
+      } finally {
+        spent = s.work();
       }
-      return { work: s.work() };
     });
+    work += spent;
     if (!r.ok) {
       return { reason: r.error, work };
     }
-    work += r.value.work;
-    if (r.value.stop !== undefined) {
-      return { reason: r.value.stop, work };
+    if (r.value !== undefined) {
+      return { reason: r.value, work };
     }
   }
   return { gated, work };
