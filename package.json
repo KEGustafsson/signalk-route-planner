@@ -1,0 +1,134 @@
+{
+  "name": "signalk-route-planner",
+  "version": "0.1.0",
+  "description": "Safe-water route planner for Signal K and Freeboard-SK: the shortest route through water deep enough for the boat, proved by signalk-underkeel's route check.",
+  "main": "lib/index.js",
+  "files": [
+    "lib/",
+    "public/",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "signalk-node-server-plugin",
+    "signalk-category-plotter-extensions",
+    "signalk-category-chart-plotters"
+  ],
+  "signalk": {
+    "displayName": "Safe-Water Route Planner"
+  },
+  "signalk-plugin-enabled-by-default": false,
+  "scripts": {
+    "clean:lib": "node -e \"const fs=require('fs');if(fs.existsSync('lib'))fs.rmSync('lib',{recursive:true,force:true});\"",
+    "build": "npm run clean:lib && tsc && node scripts/vendor-bus.js",
+    "check:ts": "tsc --noEmit",
+    "check:ts:tests": "tsc -p tsconfig.jest.json --noEmit",
+    "check:release-docs": "node scripts/check-release-truth.js",
+    "audit:shipped": "node scripts/audit-shipped.js",
+    "verify": "npm run check:ts && npm run check:ts:tests && npm run lint && npm test",
+    "verify:ci-local": "npm run check:ts && npm run check:ts:tests && npm run lint && npm run format:check && npm run build && npm run test:coverage && npm run check:release-docs",
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage --runInBand",
+    "lint": "eslint . --max-warnings 0",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,ts,json,md,yml}\"",
+    "format:check": "prettier --check \"**/*.{js,ts,json,md,yml}\"",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run build && node scripts/check-release-truth.js --publish",
+    "prepare": "husky",
+    "bench": "jest --runInBand --testPathIgnorePatterns /node_modules/ --testMatch \"**/__tests__/benchmarks/**/*.bench.ts\""
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@signalk/server-api": "^2.33.0",
+    "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.20.5",
+    "@typescript-eslint/eslint-plugin": "^8.71.2",
+    "@typescript-eslint/parser": "^8.71.2",
+    "eslint": "^10.13.0",
+    "fast-check": "^4.10.2",
+    "globals": "^17.13.0",
+    "husky": "^9.1.7",
+    "jest": "^30.5.2",
+    "jest-environment-node": "^30.5.2",
+    "lint-staged": "^17.6.0",
+    "prettier": "^3.9.10",
+    "signalk-plotterext-bus": "^0.21.0",
+    "ts-jest": "^29.4.15",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "author": "Karl-Erik Gustafsson",
+  "repository": "https://github.com/KEGustafsson/signalk-route-planner",
+  "homepage": "https://github.com/KEGustafsson/signalk-route-planner#readme",
+  "bugs": {
+    "url": "https://github.com/KEGustafsson/signalk-route-planner/issues"
+  },
+  "license": "EUPL-1.2",
+  "jest": {
+    "testEnvironment": "<rootDir>/__tests__/helpers/node-realm-environment.js",
+    "setupFilesAfterEnv": [
+      "<rootDir>/__tests__/helpers/assertion-budget.ts"
+    ],
+    "reporters": [
+      "default",
+      "github-actions",
+      "<rootDir>/__tests__/helpers/budget-reporter.js"
+    ],
+    "maxWorkers": 1,
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "src/**/*.ts",
+      "!src/**/*.d.ts"
+    ],
+    "testMatch": [
+      "**/__tests__/**/*.test.ts"
+    ],
+    "transform": {
+      "^.+\\.ts$": [
+        "ts-jest",
+        {
+          "tsconfig": "tsconfig.jest.json",
+          "diagnostics": false
+        }
+      ]
+    },
+    "moduleFileExtensions": [
+      "ts",
+      "js",
+      "json",
+      "node"
+    ],
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/lib/",
+      "/__tests__/benchmarks/",
+      "/__tests__/helpers/",
+      "<rootDir>/.claude/"
+    ],
+    "modulePathIgnorePatterns": [
+      "<rootDir>/.claude/"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 80,
+        "functions": 85,
+        "lines": 85,
+        "statements": 85
+      }
+    }
+  },
+  "lint-staged": {
+    "*.{js,ts}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "*.{json,md,yml}": [
+      "prettier --write"
+    ]
+  },
+  "dependencies": {}
+}

@@ -1,0 +1,84 @@
+name: Package tarball
+
+# Test, build, pack and upload the plugin tarball as a workflow artifact kept
+# for one day; nothing is published. Triggered manually via
+# workflow_dispatch. The package name is rewritten to the repository owner's
+# scope (for example @kegustafsson/signalk-route-planner) so snapshots never clash
+# with the canonical unscoped package name used for public releases.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Derive scoped package name (repository owner, lowercased)
+        id: scope
+        run: |
+          echo "package=@${GITHUB_REPOSITORY_OWNER,,}/signalk-route-planner" >> "$GITHUB_OUTPUT"
+
+      - name: Check for package-lock.json
+        id: lockfile
+        shell: bash
+        run: |
+          if [ -f package-lock.json ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: ${{ steps.lockfile.outputs.exists == 'true' && 'npm' || '' }}
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          if [ "${{ steps.lockfile.outputs.exists }}" = "true" ]; then
+            npm ci
+          else
+            npm install
+          fi
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type-check
+        run: npm run check:ts
+
+      - name: Build
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+      - name: Release documentation and package truth
+        run: npm run check:release-docs
+
+      - name: Rewrite package name to the owner's scope
+        run: npm pkg set name='${{ steps.scope.outputs.package }}'
+
+      - name: Pack tarball
+        id: pack
+        run: |
+          PACKED_TGZ="$(npm pack | tail -n 1)"
+          echo "packed_tgz=${PACKED_TGZ}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload tarball as workflow artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: signalk-route-planner
+          path: ${{ steps.pack.outputs.packed_tgz }}
+          if-no-files-found: error
+          retention-days: 1
