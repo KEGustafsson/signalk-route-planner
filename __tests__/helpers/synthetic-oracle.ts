@@ -63,7 +63,6 @@ function rectDist(px: number, py: number, x0: number, y0: number, x1: number, y1
   return Math.hypot(dx, dy);
 }
 
-/** What water within `near` of the corridor gets: land, shallows, unverified or clear. */
 /** The lowest water level over [start, end], sampled each minute and at the end. */
 function lowest(chart: Chart, w?: { start: number; end: number }): number {
   if (!chart.tide || !w) {
@@ -76,24 +75,27 @@ function lowest(chart: Chart, w?: { start: number; end: number }): number {
   return h;
 }
 
+/**
+ * What water within `near` of the corridor gets at water level `level`: land, closed,
+ * shallows (a tidal shoal without water enough among them), unverified or clear.
+ */
 function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
-  // A closed area's flag is reported with land's, as the route check reports every flag.
-  const closed = (chart.closed ?? []).find(near);
-  const rule = closed ? [closed.flag] : [];
-  if (chart.obstacles.some(near)) {
-    return { status: "fail", risk: 0.9, flags: ["LAND", ...rule] };
+  // Every flag the corridor meets is reported, as the route check reports them all; the
+  // worst status decides.
+  const land = chart.obstacles.some(near);
+  const closed = (chart.closed ?? []).filter(near).map((c) => c.flag);
+  const dry = (chart.tidal ?? []).some((c) => near(c) && level < c.needs);
+  const shallow = dry || (chart.shallows ?? []).some(near);
+  const unverified = (chart.unverified ?? []).some(near);
+  const flags = [...(land ? ["LAND"] : []), ...closed, ...(unverified ? ["NO_COVERAGE"] : [])];
+  if (land || shallow) {
+    return { status: "fail", risk: 0.9, flags };
   }
-  if (closed) {
-    return { status: "fail", risk: 0, flags: rule };
+  if (closed.length > 0) {
+    return { status: "fail", risk: 0, flags };
   }
-  if ((chart.tidal ?? []).some((c) => near(c) && level < c.needs)) {
-    return { status: "fail", risk: 0.9, flags: [] };
-  }
-  if ((chart.shallows ?? []).some(near)) {
-    return { status: "fail", risk: 0.9, flags: [] };
-  }
-  if ((chart.unverified ?? []).some(near)) {
-    return { status: "unverified", risk: 0, flags: ["NO_COVERAGE"] };
+  if (unverified) {
+    return { status: "unverified", risk: 0, flags };
   }
   if ((chart.marginal ?? []).some(near)) {
     return { status: "marginal", risk: 0.005, flags: [] };

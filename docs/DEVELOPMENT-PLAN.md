@@ -137,8 +137,9 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    miss a longer shortcut that passes after a shorter one failed. Every leg of the result has
    passed the corridor check over the trip window.
 5. **Proof.** `routeCheck` checks the route at its departure, leg by leg at each leg's own arrival.
-   Its statuses are the answer. A plan without `fallback` is offered only when every leg is `ok`,
-   `marginal` or an accepted `unverified`; otherwise the reply is 422 with the route check.
+   Its statuses are the answer. A plan without `fallback` is offered only when every leg but a
+   berth leg (step 13) is `ok`, `marginal` or an accepted `unverified`; otherwise the reply is
+   422 with the route check.
 6. **Why not straight.** The direct line's check result is returned when it fails, naming the
    worst hazard: the binding constraint.
 7. **Data not for navigation.** With `accept: ["NOT_FOR_NAVIGATION"]` the search may plan through
@@ -172,8 +173,9 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     stage draws on the plan's one work budget. Each part is proved by its own route check at its
     own corridor, from the time the boat reaches it, and every leg names its part and corridor.
 13. **Berth legs.** Alongside a quay, even the harbour corridor touches the quay. The harbour
-    stage then joins the end by the shortest stub (at most `berthMetres`), beyond which a checked
-    leg joins. The berth leg is returned as its own leg with the route check's status (usually
+    stage then joins the end by a stub of at most `berthMetres`, toward the first free square
+    near the end that a checked leg joins from the stub's far end; five halvings shorten the stub
+    to within 1/32 of its first length of the shortest that joins. The berth leg is returned as its own leg with the route check's status (usually
     `fail`, `LAND`) and `berth: true`; the reply's `underway` status covers every other leg, and
     `status` stays the worst of all. A strict plan is not refused for the quay a berth leg
     touches, but a berth leg is never taken into water a hard rule or no chart closes. The
