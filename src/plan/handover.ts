@@ -1,6 +1,6 @@
 import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
-import type { QuadTree } from "../search/quadtree";
+import type { QuadNode, QuadTree } from "../search/quadtree";
 import { centre } from "../search/quadtree";
 import type { PlanOptions } from "./options";
 import type { Mode, Stuck } from "./search";
@@ -27,7 +27,13 @@ function handovers(
   const r = opts.harbourMetres / tree.shape.unit;
   // Best first, as `access`: only squares nearer than the candidates are classified, and
   // the query stops at the search's share of the work, the search with it.
-  const found = tree.nearest(ux, uy, r, (n) => mode.enter(n), 24, mode.exhausted);
+  const within = (n: QuadNode): boolean => {
+    const c = centre(n);
+    return haversine(p, tree.lonLat(c[0], c[1])) <= opts.harbourMetres;
+  };
+  // Only usable handovers count toward the candidates: one whose centre is out of range is
+  // passed over, not counted, so a nearer one in range is not crowded out.
+  const found = tree.nearest(ux, uy, r, (n) => mode.enter(n) && within(n), 24, mode.exhausted);
   if (mode.exhausted()) {
     return "work";
   }

@@ -66,13 +66,16 @@ export function fallbackWeight(n: QuadNode): number {
 /**
  * Per-metre cost of a leaf in the strict search: free water 1; a smallest square the check
  * marks marginal, which a strict plan accepts, at the same risk cost as the fallback, so the
- * route crosses as little of it as it can; Infinity elsewhere.
+ * route crosses as little of it as it can, unless its flags close it (`crossable`); Infinity
+ * elsewhere.
  */
 export function strictWeight(n: QuadNode): number {
   if (n.state === "free") {
     return 1;
   }
-  return n.state === "marginal" && n.verdict ? 1 + RISK_WEIGHT * n.verdict.risk : Infinity;
+  return n.state === "marginal" && n.verdict && crossable(n.verdict)
+    ? 1 + RISK_WEIGHT * n.verdict.risk
+    : Infinity;
 }
 
 /**

@@ -7,7 +7,7 @@
 //   node scripts/trials/trial.js [--profile] [case-or-area ...]
 //
 // --profile prints, per case, where the work went: box and leg queries by size, and how many
-// boxes passed, so a change to the search can be measured against the work budget.
+// boxes and legs came back ok, so a change to the search can be measured against the work budget.
 //
 // Needs network (Traficom WFS, NOAA ENC downloads, cached under data/trials/), this package
 // built (`npm run build`), and a built signalk-underkeel 0.7.0 or later checkout next to this
@@ -139,11 +139,7 @@ function profiled(api, profile) {
           box: (sw, ne, w) => {
             const before = s.work();
             const v = s.box(sw, ne, w);
-            add(
-              `box ${bucket(side(sw, ne))}`,
-              s.work() - before,
-              v.status === "ok" || v.status === "unverified"
-            );
+            add(`box ${bucket(side(sw, ne))}`, s.work() - before, v.status === "ok");
             return v;
           },
           segment: (a, b, w) => {
@@ -288,7 +284,7 @@ async function main() {
     if (PROFILE) {
       for (const [k, e] of Object.entries(profile).sort((a, b) => b[1].work - a[1].work)) {
         process.stdout.write(
-          `     ${k.padEnd(14)} ${String(e.calls).padStart(7)} calls ${String(e.work).padStart(11)} work, ${e.passed} passed\n`
+          `     ${k.padEnd(14)} ${String(e.calls).padStart(7)} calls ${String(e.work).padStart(11)} work, ${e.passed} ok\n`
         );
       }
     }

@@ -1,6 +1,8 @@
+import fc from "fast-check";
 import { frameAt } from "../../src/foundation/geo";
 import type { Session, Verdict } from "../../src/oracle/contract";
 import { aStar } from "../../src/search/astar";
+import { strictWeight } from "../../src/search/fallback";
 import { QuadTree } from "../../src/search/quadtree";
 
 /** The quadtree's adjacency, on a chart where only chosen unit squares are free. */
@@ -116,5 +118,87 @@ describe("weighted A*", () => {
     const points = r.found ? r.points : [];
     // Up the west side, along the top and down the east: every point on a free square's edge.
     expect(points.every(([x, y]) => x <= 1 || y >= 7 || x >= 7)).toBe(true);
+  });
+});
+
+/** A chart of unit squares, each `ok`, `marginal` (at risk `r`), or failing; larger boxes fail. */
+function costedTree(kind: (x: number, y: number) => "ok" | "fail" | number) {
+  const holder: { tree?: QuadTree } = {};
+  const session: Session = {
+    halfWidth: 0,
+    box(sw, ne) {
+      const t = holder.tree as QuadTree;
+      const [x0, y0] = t.units(sw);
+      const [x1, y1] = t.units(ne);
+      if (Math.round(x1 - x0) !== 1 || Math.round(y1 - y0) !== 1) {
+        return { status: "fail", risk: 1, flags: [] };
+      }
+      const k = kind(Math.round(x0), Math.round(y0));
+      return k === "ok"
+        ? { status: "ok", risk: 0, flags: [] }
+        : k === "fail"
+          ? { status: "fail", risk: 1, flags: [] }
+          : { status: "marginal", risk: k, flags: [] };
+    },
+    segment: () => ({ status: "fail", risk: 1, flags: [] }),
+    work: () => 0,
+    pause: () => Promise.resolve()
+  };
+  const tree = new QuadTree(
+    { frame: frameAt([22, 60]), x0: 0, y0: 0, unit: 10, side: 8, maxLeaf: 8 },
+    session
+  );
+  holder.tree = tree;
+  return tree;
+}
+
+/** A path's cost: each piece's length at the weight of the square it lies in. */
+function pathCost(tree: QuadTree, points: [number, number][]): number {
+  let cost = 0;
+  for (let i = 1; i < points.length; i++) {
+    const [ax, ay] = points[i - 1] as [number, number];
+    const [bx, by] = points[i] as [number, number];
+    const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
+    cost += Math.hypot(bx - ax, by - ay) * strictWeight(leaf as never);
+  }
+  return cost;
+}
+
+describe("lazy A* with marginal squares", () => {
+  test("a marginal square is not entered when its flags close it", () => {
+    const leaf = (flags: string[]) =>
+      ({ state: "marginal", verdict: { status: "marginal", risk: 0.01, flags } }) as never;
+    expect(strictWeight(leaf([]))).toBeCloseTo(11);
+    expect(strictWeight(leaf(["LAND"]))).toBe(Infinity);
+    expect(strictWeight(leaf(["ENTRY_PROHIBITED"]))).toBe(Infinity);
+  });
+
+  test("property: lazy classification finds as cheap a path as a fully classified tree", async () => {
+    const cell = fc.oneof(
+      fc.constant("ok" as const),
+      fc.constant("fail" as const),
+      fc.double({ min: 0.001, max: 0.01, noNaN: true })
+    );
+    await fc.assert(
+      fc.asyncProperty(fc.array(cell, { minLength: 64, maxLength: 64 }), async (cells) => {
+        const kind = (x: number, y: number): "ok" | "fail" | number =>
+          (x === 0 && y === 0) || (x === 7 && y === 7) ? "ok" : (cells[y * 8 + x] as never);
+        const run = async (tree: QuadTree) => {
+          const from = tree.leafAt(0.5, 0.5);
+          const to = tree.leafAt(7.5, 7.5);
+          const r = await aStar(tree, from as never, [0.5, 0.5], to as never, [7.5, 7.5], {
+            ...limits,
+            weight: strictWeight
+          });
+          return r.found ? pathCost(tree, r.points) : Infinity;
+        };
+        const eager = costedTree(kind);
+        eager.leaves(() => true);
+        const full = await run(eager);
+        const lazy = await run(costedTree(kind));
+        return lazy <= full * (1 + 1e-9) + 1e-9;
+      }),
+      { numRuns: 200 }
+    );
   });
 });
