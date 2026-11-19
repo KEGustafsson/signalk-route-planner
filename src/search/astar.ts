@@ -79,19 +79,26 @@ function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
   if (st.closed.has(m.id)) {
     return;
   }
+  const gn = st.g.get(n.id) as number;
   const gm =
-    (st.g.get(n.id) as number) +
-    dist(st.pos(n), portal) * weightOf(st, n) +
-    dist(portal, st.pos(m)) * weightOf(st, m);
-  if (gm < (st.g.get(m.id) ?? Infinity)) {
+    gn + dist(st.pos(n), portal) * weightOf(st, n) + dist(portal, st.pos(m)) * weightOf(st, m);
+  const better = gm < (st.g.get(m.id) ?? Infinity);
+  if (better) {
     st.g.set(m.id, gm);
     st.back.set(m.id, { prev: n, portal });
-    const f =
-      m.state === "unknown" && m.size > 1
-        ? (st.g.get(n.id) as number) +
-          toSquare(m, st.pos(n)) * weightOf(st, n) +
-          st.greed * toSquare(m, st.goal)
-        : gm + st.greed * dist(st.pos(m), st.goal);
+  }
+  if (m.state === "unknown" && m.size > 1) {
+    // The centre's cost and the square's key are separate: the key is the lowest bound any
+    // predecessor gives, so a later one with a cheaper centre but a higher bound keeps it.
+    const f = gn + toSquare(m, st.pos(n)) * weightOf(st, n) + st.greed * toSquare(m, st.goal);
+    if (f < (st.queued.get(m.id) ?? Infinity)) {
+      st.queued.set(m.id, f);
+      st.open.push(m, f);
+    }
+    return;
+  }
+  if (better) {
+    const f = gm + st.greed * dist(st.pos(m), st.goal);
     st.queued.set(m.id, f);
     st.open.push(m, f);
   }

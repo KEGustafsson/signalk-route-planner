@@ -129,7 +129,12 @@ function profiled(api, profile) {
       Math.abs(ne[1] - sw[1]) * 111_200,
       Math.abs(ne[0] - sw[0]) * 111_200 * Math.cos((sw[1] * Math.PI) / 180)
     );
-  const length = (a, b) => side(a, b);
+  // A leg's own length, east and north together; a box by its longer side.
+  const length = (a, b) =>
+    Math.hypot(
+      (b[1] - a[1]) * 111_200,
+      (b[0] - a[0]) * 111_200 * Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180)
+    );
   return {
     ...api,
     session: (params, signal, job) =>
@@ -188,7 +193,7 @@ function failures(s, e, reply) {
   if (s.status !== e.status) {
     out.push(`status ${s.status}, expected ${e.status}`);
   }
-  if (e.workAtMost && (s.work ?? 0) > e.workAtMost) {
+  if (e.workAtMost !== undefined && (s.work ?? 0) > e.workAtMost) {
     out.push(`work ${s.work} over ${e.workAtMost}`);
   }
   if (e.reason && !(s.reason ?? "").includes(e.reason)) {

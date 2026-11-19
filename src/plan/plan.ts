@@ -56,7 +56,9 @@ function refusal(proof: Proof, parts: readonly Part[], rule: PassRule): string |
   proof.parts.forEach((span, k) => {
     const own = proof.legs.slice(span.legs[0], span.legs[1] + 1).filter((l) => !l.berth);
     if (parts[k]?.fallback === undefined) {
-      strict += own.filter((l) => l.status !== "marginal" && !passes(l, rule)).length;
+      strict += own.filter(
+        (l) => !(l.status === "marginal" && crossable(l)) && !passes(l, rule)
+      ).length;
     } else {
       closed += own.filter((l) => !crossable(l)).length;
     }
