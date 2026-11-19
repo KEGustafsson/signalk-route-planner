@@ -51,7 +51,8 @@ function profiled(api, profile, where) {
             return v;
           },
           work: () => s.work(),
-          pause: () => s.pause()
+          pause: () => s.pause(),
+          ...(s.within && { within: s.within })
         });
         const stage = `session xte ${params.xteLimit ?? "default"}`;
         const e = (profile[stage] ??= { calls: 0, work: 0, passed: 0 });
