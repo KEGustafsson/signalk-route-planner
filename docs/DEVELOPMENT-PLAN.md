@@ -219,7 +219,10 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
   survey of the trip's box grown by a quarter of the trip (3 to 15 km), in cells of 100 m or
   coarser: the deepest charted depth touching each. On it, A* finds the shortest 8-connected
   coarse route over cells that take the draft (the request's, else `COARSE_DRAFT`), each end
-  joined to the nearest such cell within 1.5 km. The corridor is the coarse route with 1.5 km
+  joined to the nearest such cell within 1.5 km. A step into a cell whose shallowest charted
+  depth does not take the draft costs `MAYBE_COST` (3) times as much: such a cell may hold a
+  shoal or an island the cells blur, and on Turku to Utö a route through them missed the real
+  way. The corridor is the coarse route with 1.5 km
   each side and 3.5 km around each end for the harbour stage, cut into the runs of 1 km bands
   (taller bands past 400 boxes), and `prepare` builds those boxes alone. While the machine
   refuses it as too large (413), narrower ones are asked for in turn (`CORRIDOR_WIDTHS`: 1 km

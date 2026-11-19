@@ -66,3 +66,26 @@ wait for a leg the tide cannot open.
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at
   chart datum. The refusal is the right answer; a shallower draft or a tide gate (R3) would
   change it.
+
+## R2's exit trial: Turku guest harbour → Utö, 50 nm (Finland)
+
+`npm run trial:r2` (`scripts/trials/r2-exit.js`) plans a trip past any planning box on
+signalk-underkeel's own planning boxes, depth survey and build processes, with a 10 km chart box
+around the start, as the plugin runs them. Run it in a memory limit to measure a machine's budget:
+the build processes size their heaps from it, and `TRIAL_CGROUP` names the cgroup whose peak is
+reported. The survey is kept in `data/trials/r2-exit/` and used again by the next run.
+
+| Run (2026-11-19), 2 GB limit, 512 MB build heap | Result                                                     |
+| ----------------------------------------------- | ---------------------------------------------------------- |
+| Planning boxes                                  | search region 33 039 km², trip region 4 972 km²: both 413  |
+| Depth survey                                    | 258 s, about 30 000 depth areas                            |
+| Corridor (1.5 km each side, 3.5 km at the ends) | 81 boxes, 497 km² (cap 784 km²), built in 298 s            |
+| Plan                                            | 200: 53.3 nm, 58 legs, 10.1 M work, 6.5 s                  |
+| Memory                                          | peak 375 MB for the plugin process and its build processes |
+
+- The route runs down the fairway past Nauvo and Korpo and across the open sea to Utö, its
+  route legs `unverified` (the WFS is not for navigation).
+- At the start, the harbour stage and the route's first two legs come back `fail` in the Aura
+  river, a single 0–10 m depth area in the WFS, as in the Turku → Nauvo cases.
+- The trip is past `DEFAULT_PLAN.maxDistance` and its work budget; the trial raises both.
+- The download is most of the time: the WFS answers a box with whole areas, about 1 MB/s.
