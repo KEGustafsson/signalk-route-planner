@@ -286,6 +286,10 @@ describe("Preparer with a survey", () => {
     void prep.forTrip(p.api, centre(g, 100, 100), centre(g, 500, 400), stop);
     await new Promise((r) => setImmediate(r));
     expect(corridors()).toBe(2);
+    // The same trip at another draft: its own corridor.
+    void prep.forTrip(p.api, from, to, stop, 3.5);
+    await new Promise((r) => setImmediate(r));
+    expect(corridors()).toBe(3);
     settle({ ok: false, status: 503, error: "done" });
   });
 });

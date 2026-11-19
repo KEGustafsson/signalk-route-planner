@@ -112,7 +112,9 @@ type Preparing = PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>;
 /** The draft the corridor is found for when the request gives none, metres. */
 export const COARSE_DRAFT = 2;
 
-const tripKey = (from: LonLat, to: LonLat): string => `${from.join(",")} ${to.join(",")}`;
+/** A trip's identity for its corridor: the ends and the draft the corridor is found for. */
+const tripKey = (from: LonLat, to: LonLat, draft: number): string =>
+  `${from.join(",")} ${to.join(",")} ${draft}`;
 
 /** Whether `build` serves the trip `trip` with least region `least`. */
 const serves = (build: Build, least: Bbox, trip: string): boolean =>
@@ -188,7 +190,7 @@ export class Preparer {
     stop: AbortSignal
   ): Build {
     const least = tripRegion(from, to);
-    const trip = tripKey(from, to);
+    const trip = tripKey(from, to, draft);
     for (const b of this.builds) {
       if (serves(b, least, trip)) {
         return b;
@@ -241,7 +243,7 @@ export class Preparer {
       return api;
     }
     const least = tripRegion(from, to);
-    const trip = tripKey(from, to);
+    const trip = tripKey(from, to, draft);
     const waited = sleep(this.waitMs);
     for (;;) {
       const build = this.buildFor(api, from, to, draft, stop);

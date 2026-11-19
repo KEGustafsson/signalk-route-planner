@@ -70,10 +70,10 @@ wait for a leg the tide cannot open.
 ## R2's exit trial: Turku guest harbour → Utö, 50 nm (Finland)
 
 `npm run trial:r2` (`scripts/trials/r2-exit.js`) plans a trip past any planning box on
-signalk-underkeel's own planning boxes, depth survey and build processes, with a 10 km chart box
-around the start, as the plugin runs them. Run it in a memory limit to measure a machine's budget:
-the build processes size their heaps from it, and `TRIAL_CGROUP` names the cgroup whose peak is
-reported. The survey is kept in `data/trials/r2-exit/` and used again by the next run.
+signalk-underkeel's own planning boxes, depth survey and build processes, with a chart box around
+the start, as the plugin runs them. Run it in a memory limit to measure a machine's budget: the
+build processes size their heaps from it, and `TRIAL_CGROUP` names the cgroup whose peak is
+reported. The script's header says what it keeps between runs.
 
 | Run (2026-11-19), 2 GB limit, 512 MB build heap | Result                                                     |
 | ----------------------------------------------- | ---------------------------------------------------------- |

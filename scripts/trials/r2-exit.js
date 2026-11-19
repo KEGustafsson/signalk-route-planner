@@ -9,7 +9,9 @@
 //
 // Run it in a 2 GB memory limit to measure a Pi's budget: the build processes size their heaps
 // from it, and TRIAL_CGROUP names the cgroup whose peak is reported (cgroup v1
-// memory.max_usage_in_bytes, or v2 memory.peak). Needs network (Traficom WFS), this package
+// memory.max_usage_in_bytes, or v2 memory.peak). The depth survey is kept in
+// data/trials/r2-exit/survey.json and used again by the next run (it takes minutes to download):
+// remove the file to survey again. Needs network (Traficom WFS), this package
 // built and a built signalk-underkeel 0.8.0 or later checkout next to this one or at
 // UNDERKEEL_DIR. Writes data/trials/r2-exit.json and .geojson. Exits 1 when the plan is not 200.
 

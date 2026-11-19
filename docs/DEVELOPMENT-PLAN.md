@@ -214,23 +214,20 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
   nothing; a region larger than underkeel builds on the machine, even the least, is 413 with its
   reason. How large that is is underkeel's policy.
 
-- A trip too long for even its least region is planned in a corridor (`src/plan/corridor.ts`),
-  when underkeel serves `survey` and `corridor` (its plan §4.11). The planner asks for the depth
-  survey of the trip's box grown by a quarter of the trip (3 to 15 km), in cells of 100 m or
-  coarser: the deepest charted depth touching each. On it, A* finds the shortest 8-connected
+- A trip too long for even its least region is planned in a corridor (`src/plan/corridor.ts`,
+  which holds its values), when underkeel serves `survey` and `corridor` (its plan §4.11). The
+  planner asks for the depth survey of a region around the trip. On it, A\* finds the cheapest
   coarse route over cells that take the draft (the request's, else `COARSE_DRAFT`), each end
-  joined to the nearest such cell within 1.5 km. A step into a cell whose shallowest charted
-  depth does not take the draft costs `MAYBE_COST` (3) times as much: such a cell may hold a
-  shoal or an island the cells blur, and on Turku to Utö a route through them missed the real
-  way. The corridor is the coarse route with 1.5 km
-  each side and 3.5 km around each end for the harbour stage, cut into the runs of 1 km bands
-  (taller bands past 400 boxes), and `prepare` builds those boxes alone. While the machine
-  refuses it as too large (413), narrower ones are asked for in turn (`CORRIDOR_WIDTHS`: 1 km
-  each side and 2.5 km around the ends, then 600 m and 1.5 km). The survey is
-  optimistic, a cell taking the draft wherever any area touching it does, so the coarse route
-  only says where to look: the search and the route check on the corridor's index decide, and
-  past the corridor the chart reads no coverage. A corridor build serves its own trip alone. A
-  survey that fails, or joins the ends by none, leaves the least region's 413 as the reply.
+  joined to the nearest such cell. A cell whose least charted bound does not take the draft
+  costs more, so the route keeps to water deep enough all over where it can: such a cell may
+  hold a shoal or an island the cells blur, and on Turku to Utö a route through them missed the
+  real way. The corridor is the coarse route with a band each side and more around each end for
+  the harbour stage, cut into boxes, and `prepare` builds those boxes alone; while the machine
+  refuses it as too large (413), narrower ones are asked for in turn. The survey is optimistic,
+  so the coarse route only says where to look: the search and the route check on the corridor's
+  index decide, and past the corridor the chart reads no coverage. A corridor build serves its
+  own trip alone, at its own draft. A survey that fails, or joins the ends by none, leaves the
+  least region's 413 as the reply.
 - R2's exit trial (`npm run trial:r2`, `docs/trials.md`) plans Turku to Utö, 50 nm, on
   underkeel's own planning boxes, survey and build processes in a 2 GB memory limit.
 
