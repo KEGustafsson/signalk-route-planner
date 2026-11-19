@@ -283,4 +283,20 @@ describe("/plan with prepare", () => {
     expect(r.status).toBe(400);
     expect(p.calls).toHaveLength(0);
   });
+
+  test("the trip's index is prepared for the request's draft", async () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    g[PLANNING_API] = p.api;
+    const drafts: (number | undefined)[] = [];
+    class Spy extends Preparer {
+      override forTrip(...args: Parameters<Preparer["forTrip"]>): ReturnType<Preparer["forTrip"]> {
+        drafts.push(args[4]);
+        return super.forTrip(...args);
+      }
+    }
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Spy(5));
+    await api.plan({ from: at(0, 0), to: at(5000, 0), draft: 3.5 }, new AbortController().signal);
+    await api.plan({ from: at(0, 0), to: at(5000, 0) }, new AbortController().signal);
+    expect(drafts).toEqual([3.5, undefined]);
+  });
 });

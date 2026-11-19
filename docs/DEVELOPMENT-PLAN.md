@@ -214,9 +214,26 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
   nothing; a region larger than underkeel builds on the machine, even the least, is 413 with its
   reason. How large that is is underkeel's policy.
 
-**Still open:** a 50 nm diagonal trip's box is far beyond what a small machine builds. It needs a planning box along
-the trip's corridor rather than its bounding box, and the search held to that corridor, before
-R2's exit criterion (§8) is met.
+- A trip too long for even its least region is planned in a corridor (`src/plan/corridor.ts`,
+  which holds its values), when underkeel serves `survey` and `corridor` (its plan §4.11). The
+  planner asks for the depth survey of a region around the trip. On it, A\* finds the cheapest
+  coarse route over cells that take the draft (the request's, else `COARSE_DRAFT`), each end
+  joined to the nearest such cell. A cell whose least charted bound does not take the draft
+  costs more, so the route keeps to water deep enough all over where it can: such a cell may
+  hold a shoal or an island the cells blur, and on Turku to Utö a route through them missed the
+  real way. The corridor is the coarse route with a band each side and more around each end for
+  the harbour stage, cut into boxes, and `prepare` builds those boxes alone; while the machine
+  refuses it as too large (413), narrower ones are asked for in turn. The survey is optimistic,
+  so the coarse route only says where to look: the search and the route check on the corridor's
+  index decide, and past the corridor the chart reads no coverage. A corridor build serves its
+  own trip alone, at its own draft. A survey that fails, or joins the ends by none, leaves the
+  least region's 413 as the reply.
+- R2's exit trial (`npm run trial:r2`, `docs/trials.md`) plans Turku to Utö, 50 nm, on
+  underkeel's own planning boxes, survey and build processes in a 2 GB memory limit.
+
+**Still open:** 50 nm is past `DEFAULT_PLAN.maxDistance` (60 km) and its work budget; the trial
+raises both, as the other trials raise the work. The search's region is still the square around
+the midpoint, not the corridor's box.
 
 ### 4.3 R3: time-dependent search and tide gates
 
@@ -385,7 +402,7 @@ unnoticed.
 | R   | Scope                                                                                    | Exit criteria                                                                            |
 | --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | R1  | Planning API v1 in underkeel; quadtree A*, string pulling, proof; `/plan`; minimal panel | every returned route's legs come from underkeel's route check; properties green          |
-| R2  | Planning box beyond the chart box                                                        | 50 nm plan within the memory budget on a Pi 3 / Cerbo GX                                 |
+| R2  | Planning box beyond the chart box                                                        | 50 nm plan within the memory budget of a 2 GB machine (Raspberry Pi 4 2 GB)              |
 | R3  | Time slots, waiting places, timed plan                                                   | Wadden Sea fixture: a plan that waits for the tide where every fixed departure fails     |
 | R4  | Risk cost and budget, alternatives, air draft, S-57 rules, FTIA lines, own tracks        | each alternative states length and risk; bridge fixture blocks a tall mast at high water |
 | R5  | Freeboard panel, interactive re-plan, `routePlan` service contract                       | live Freeboard trial                                                                     |

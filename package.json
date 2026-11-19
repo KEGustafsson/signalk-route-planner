@@ -37,7 +37,8 @@
     "prepublishOnly": "npm run build && node scripts/check-release-truth.js --publish",
     "prepare": "husky",
     "bench": "jest --runInBand --testPathIgnorePatterns /node_modules/ --testMatch \"**/__tests__/benchmarks/**/*.bench.ts\"",
-    "trial": "node scripts/trials/trial.js"
+    "trial": "node scripts/trials/trial.js",
+    "trial:r2": "node scripts/trials/r2-exit.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

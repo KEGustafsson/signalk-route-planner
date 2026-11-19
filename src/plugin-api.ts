@@ -54,7 +54,8 @@ export function apiFor(
       // A trip plan() refuses (too long, or no distance at all) builds no index.
       const dist = haversine(req.from, req.to);
       const near = dist >= 1 && dist <= DEFAULT_PLAN.maxDistance;
-      const api = near ? await preparer.forTrip(found, req.from, req.to, stop) : found;
+      // The corridor, if one is needed, is found for the request's draft.
+      const api = near ? await preparer.forTrip(found, req.from, req.to, stop, req.draft) : found;
       if (!("version" in api)) {
         return api;
       }

@@ -3,7 +3,8 @@ import { EARTH_RADIUS, haversine, midpoint } from "../foundation/geo";
 import type { PlanOptions } from "./options";
 import { DEFAULT_PLAN } from "./options";
 import type { Bbox, PlanningApiV1, Prepared, PrepareResult, Reply } from "../oracle/contract";
-import { canPrepare } from "../oracle/contract";
+import { canPrepare, canSurvey } from "../oracle/contract";
+import { boxOf, corridorsFor, SURVEY_CELL, surveyRegion } from "./corridor";
 
 /**
  * Charts for a trip past the chart box around the vessel (plan §4.2, R2): signalk-underkeel's
@@ -66,8 +67,6 @@ export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAU
 const holds = (o: Bbox, i: Bbox): boolean =>
   o[0] <= i[0] && o[1] <= i[1] && o[2] >= i[2] && o[3] >= i[3];
 
-const same = (a: Bbox, b: Bbox): boolean => holds(a, b) && holds(b, a);
-
 /** `api` with its session and route check over the prepared index `p`. */
 export function onPrepared(api: PlanningApiV1, p: Prepared): PlanningApiV1 {
   return {
@@ -97,33 +96,83 @@ const sleep = (ms: number): Promise<"waiting"> =>
   new Promise((resolve) => setTimeout(() => resolve("waiting"), ms).unref?.());
 
 /**
- * A build asked of the provider: the region it is building now, its result, and `narrowed`,
- * settled when a 413 turned it to its trip's least region.
+ * A build asked of the provider: the region it is building now, undefined for a corridor, the
+ * trip it is for, its result, and `narrowed`, settled when a 413 turned it to a smaller region
+ * (each time a fresh one).
  */
 interface Build {
-  region: Bbox;
+  region: Bbox | undefined;
+  readonly trip: string;
   result: Promise<PrepareResult>;
   narrowed: Promise<"narrowed">;
 }
 
+type Preparing = PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>;
+
+/** The draft the corridor is found for when the request gives none, metres. */
+export const COARSE_DRAFT = 2;
+
+/** A trip's identity for its corridor: the ends and the draft the corridor is found for. */
+const tripKey = (from: LonLat, to: LonLat, draft: number): string =>
+  `${from.join(",")} ${to.join(",")} ${draft}`;
+
+/** Whether `build` serves the trip `trip` with least region `least`. */
+const serves = (build: Build, least: Bbox, trip: string): boolean =>
+  build.region === undefined ? build.trip === trip : holds(build.region, least);
+
 /**
- * The index for `first`, the whole search region, or, when that is too large to build on the
- * machine (413), for the trip's least region, `narrow` told first: past it the chart reads no
- * coverage, `unverified`, and the search keeps to the water it can check.
+ * A corridor for the trip on signalk-underkeel's depth survey (`corridor.ts`), when it serves
+ * one: undefined when it does not, or the survey fails or joins the ends by none.
+ */
+async function corridor(
+  api: Preparing,
+  from: LonLat,
+  to: LonLat,
+  draft: number,
+  stop: AbortSignal
+): Promise<Bbox[][] | undefined> {
+  if (!canSurvey(api)) {
+    return undefined;
+  }
+  const s = await api.survey(surveyRegion(from, to), SURVEY_CELL, stop);
+  return s.ok ? corridorsFor(s.value, from, to, draft) : undefined;
+}
+
+/**
+ * The index for `first`, the whole search region; when that is too large to build on the
+ * machine (413), for the trip's least region; and when that is too, for a corridor on the
+ * depth survey, narrower in turn (`CORRIDOR_WIDTHS`) while it is too. `narrow` is told each region it turns to, undefined for the corridor: past the
+ * region the chart reads no coverage, `unverified`, and the search keeps to the water it can
+ * check.
  */
 async function prepareTrip(
-  api: PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>,
-  first: Bbox,
-  least: Bbox,
+  api: Preparing,
+  trip: { from: LonLat; to: LonLat; draft: number; first: Bbox; least: Bbox },
   stop: AbortSignal,
-  narrow: () => void
+  narrow: (to: Bbox | undefined) => void
 ): Promise<PrepareResult> {
-  const r = await api.prepare(first, stop);
-  if (r.ok || r.status !== 413 || first === least) {
+  const { first, least } = trip;
+  let r = await api.prepare(first, stop);
+  if (!r.ok && r.status === 413 && first !== least) {
+    narrow(least);
+    r = await api.prepare(least, stop);
+  }
+  if (r.ok || r.status !== 413) {
     return r;
   }
-  narrow();
-  return api.prepare(least, stop);
+  const corridors = await corridor(api, trip.from, trip.to, trip.draft, stop);
+  if (!corridors) {
+    return r;
+  }
+  narrow(undefined);
+  // Narrower in turn while the machine refuses a corridor as too large to build.
+  for (const parts of corridors) {
+    r = await api.prepare(boxOf(parts), stop, parts);
+    if (r.ok || r.status !== 413) {
+      return r;
+    }
+  }
+  return r;
 }
 
 /** The trips' indexes being built, each carried on past the request that asked for it. */
@@ -132,33 +181,39 @@ export class Preparer {
 
   constructor(private readonly waitMs = PREPARE_WAIT_MS) {}
 
-  /** A build whose region holds `least`, else a new one for the trip. */
+  /** A build that serves the trip, else a new one for it. */
   private buildFor(
-    api: PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>,
+    api: Preparing,
     from: LonLat,
     to: LonLat,
-    least: Bbox,
+    draft: number,
     stop: AbortSignal
   ): Build {
+    const least = tripRegion(from, to);
+    const trip = tripKey(from, to, draft);
     for (const b of this.builds) {
-      if (holds(b.region, least)) {
+      if (serves(b, least, trip)) {
         return b;
       }
     }
     const whole = searchRegion(from, to);
     const first = holds(least, whole) ? least : whole;
-    let narrowTo: () => void = () => undefined;
-    const narrowed = new Promise<"narrowed">((resolve) => {
-      narrowTo = () => resolve("narrowed");
-    });
-    const narrow = (): void => {
-      build.region = least;
-      narrowTo();
+    let settle: () => void = () => undefined;
+    const fresh = (): Promise<"narrowed"> =>
+      new Promise((resolve) => {
+        settle = () => resolve("narrowed");
+      });
+    const narrow = (region: Bbox | undefined): void => {
+      build.region = region;
+      const was = settle;
+      build.narrowed = fresh();
+      was();
     };
     const build: Build = {
       region: first,
-      narrowed,
-      result: prepareTrip(api, first, least, stop, narrow)
+      trip,
+      narrowed: fresh(),
+      result: prepareTrip(api, { from, to, draft, first, least }, stop, narrow)
         .catch((err: Error): PrepareResult => ({ ok: false, status: 503, error: err.message }))
         .then((r) => {
           this.builds.delete(build);
@@ -173,38 +228,37 @@ export class Preparer {
    * The planning API over an index for the trip `from`–`to`; `api` itself when it serves no
    * `prepare`; BUILDING while the index is still being built after `waitMs`; the provider's
    * refusal as a reply. A build whose region holds the trip's least region is shared; one that
-   * fell back past the trip to its own least region is not, and the trip gets its own, as it does
-   * when a larger region it shared is refused as too large (413). The build runs until `stop`
-   * (the plugin stopping), not the request.
+   * turned past the trip to a smaller region is not, and the trip gets its own, as it does when
+   * another trip's region it shared is refused as too large (413). A corridor serves its own
+   * trip alone. The build runs until `stop` (the plugin stopping), not the request.
    */
   async forTrip(
     api: PlanningApiV1,
     from: LonLat,
     to: LonLat,
-    stop: AbortSignal
+    stop: AbortSignal,
+    draft = COARSE_DRAFT
   ): Promise<PlanningApiV1 | Reply> {
     if (!canPrepare(api)) {
       return api;
     }
     const least = tripRegion(from, to);
+    const trip = tripKey(from, to, draft);
     const waited = sleep(this.waitMs);
     for (;;) {
-      const build = this.buildFor(api, from, to, least, stop);
+      const build = this.buildFor(api, from, to, draft, stop);
       let r = await Promise.race([build.result, build.narrowed, waited]);
-      if (r === "narrowed") {
-        if (!holds(build.region, least)) {
-          continue;
-        }
-        r = await Promise.race([build.result, waited]);
+      while (r === "narrowed" && serves(build, least, trip)) {
+        r = await Promise.race([build.result, build.narrowed, waited]);
+      }
+      if (r === "narrowed" || (r !== "waiting" && !serves(build, least, trip))) {
+        continue;
       }
       if (r === "waiting") {
         return BUILDING;
       }
-      // A 413 for a larger trip's region it shared is no answer for this trip's own: asked again.
-      if (
-        !holds(build.region, least) ||
-        (!r.ok && r.status === 413 && !same(build.region, least))
-      ) {
+      // A 413 for another trip's region it shared is no answer for this trip's own: asked again.
+      if (!r.ok && r.status === 413 && build.trip !== trip) {
         continue;
       }
       if (!r.ok) {
