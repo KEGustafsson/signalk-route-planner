@@ -2,11 +2,11 @@ import { parsePlanRequest } from "./api/plan-request";
 import type { ApiProvider } from "./api/routes";
 import { publicReason } from "./foundation/public-text";
 import type { PlanningApiV1, Reply } from "./oracle/contract";
-import { canSurvey, planningApi } from "./oracle/contract";
+import { planningApi } from "./oracle/contract";
 import { haversine } from "./foundation/geo";
 import { DEFAULT_PLAN, limitsFor } from "./plan/options";
 import { plan } from "./plan/plan";
-import { inCorridor, Preparer } from "./plan/prepare";
+import { longTrip, Preparer, tripLimits } from "./plan/prepare";
 
 /** The REST handlers bound to the planning API signalk-underkeel publishes (plan §5). */
 
@@ -53,16 +53,16 @@ export function apiFor(
       const req = parsed.value;
       // A trip plan() refuses (too long, or no distance at all) builds no index.
       const dist = haversine(req.from, req.to);
-      // Past maxDistance a trip is planned only in a corridor, where underkeel can make one.
-      const long = dist > DEFAULT_PLAN.maxDistance && canSurvey(found);
-      const reach = limitsFor(DEFAULT_PLAN, dist, long).maxDistance;
+      // Past maxDistance a trip is planned only where underkeel can survey: in a corridor, or in a
+      // planning box where the machine builds its region.
+      const reach = limitsFor(DEFAULT_PLAN, dist, longTrip(found, dist)).maxDistance;
       const near = dist >= 1 && dist <= reach;
       // The corridor, if one is needed, is found for the request's draft.
       const api = near ? await preparer.forTrip(found, req.from, req.to, stop, req.draft) : found;
       if (!("version" in api)) {
         return api;
       }
-      const limits = limitsFor(DEFAULT_PLAN, dist, long || inCorridor(api));
+      const limits = tripLimits(found, api, dist);
       const d = api.defaults();
       return plan(
         api,

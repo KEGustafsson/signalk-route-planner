@@ -37,8 +37,7 @@ const need = (p) => {
 };
 const uk = (m) => need(path.join(UK, `${m}.js`));
 const { plan } = need(path.join(ROOT, "lib", "plan", "plan.js"));
-const { DEFAULT_PLAN, limitsFor } = need(path.join(ROOT, "lib", "plan", "options.js"));
-const { inCorridor, Preparer } = need(path.join(ROOT, "lib", "plan", "prepare.js"));
+const { Preparer, tripLimits } = need(path.join(ROOT, "lib", "plan", "prepare.js"));
 const { haversine } = need(path.join(ROOT, "lib", "foundation", "geo.js"));
 const { profiled, printProfile } = require("./profile");
 
@@ -219,7 +218,7 @@ async function main() {
       `no index for the trip: ${JSON.stringify(prepared.body)} after ${JSON.stringify(log)}`
     );
   }
-  const limits = limitsFor(DEFAULT_PLAN, haversine(FROM, TO), inCorridor(prepared));
+  const limits = tripLimits(api, prepared, haversine(FROM, TO));
   const t1 = Date.now();
   const departure = Date.now();
   const profile = {};

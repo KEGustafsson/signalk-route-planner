@@ -77,8 +77,9 @@ A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departur
 `speed` (m/s), `xteLimit` (m), `probability` and `draft` (m); unset options take
 signalk-underkeel's route-check settings. `accept: ["NOT_FOR_NAVIGATION"]` plans on depth data
 marked not for navigation (its legs stay `unverified`), and `fallback: true` returns, when no
-route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart, or 100 nm when the trip is planned in
-a corridor.
+route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart, or 100 nm where signalk-underkeel serves
+its depth survey: such a trip is planned in a corridor, or in a planning box where the machine
+builds its whole region, with a corridor's work budget either way.
 
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
 `preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the

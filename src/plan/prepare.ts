@@ -1,7 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import { EARTH_RADIUS, haversine, midpoint } from "../foundation/geo";
 import type { PlanOptions } from "./options";
-import { DEFAULT_PLAN } from "./options";
+import { DEFAULT_PLAN, limitsFor } from "./options";
 import type {
   Bbox,
   PlanningApiV1,
@@ -73,6 +73,28 @@ export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAU
 
 const holds = (o: Bbox, i: Bbox): boolean =>
   o[0] <= i[0] && o[1] <= i[1] && o[2] >= i[2] && o[3] >= i[3];
+
+/**
+ * Whether a trip `d` metres long is past `maxDistance` where `api`, the provider, can survey:
+ * then it is prepared and planned with a corridor's limits, in a corridor or, where the machine
+ * builds its region, in a planning box.
+ */
+export function longTrip(api: PlanningApiV1, d: number, opts: PlanOptions = DEFAULT_PLAN): boolean {
+  return d > opts.maxDistance && canSurvey(api);
+}
+
+/**
+ * The limits `/plan` gives a trip `d` metres long on `prepared`, the index for it from the
+ * provider `api`: a corridor's for a long trip (`longTrip`) or one planned in a corridor.
+ */
+export function tripLimits(
+  api: PlanningApiV1,
+  prepared: PlanningApiV1,
+  d: number,
+  opts: PlanOptions = DEFAULT_PLAN
+): PlanOptions {
+  return limitsFor(opts, d, longTrip(api, d, opts) || inCorridor(prepared));
+}
 
 /** The planning APIs over a corridor's index (`onPrepared`), for `inCorridor`. */
 const CORRIDORS = new WeakSet<PlanningApiV1>();
