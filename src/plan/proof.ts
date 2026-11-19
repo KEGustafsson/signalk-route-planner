@@ -16,6 +16,9 @@ export interface ProofInput {
   draft?: number;
 }
 
+/** Stands in for the flags of a leg that is not `ok` but came without any: closed water. */
+export const FLAGS_MISSING = "FLAGS_MISSING";
+
 export interface CheckedLeg {
   index: number;
   status: Status;
@@ -92,6 +95,9 @@ export async function prove(
     own.forEach((l, i) => {
       legs.push({
         ...l,
+        // Every flag rule reads the flags. An `ok` leg sent without them has none; any other
+        // leg without them has restrictions the reply does not name, so it is never crossable.
+        flags: l.flags ?? (l.status === "ok" ? [] : [FLAGS_MISSING]),
         index: legs.length,
         part: part.kind,
         ...(part.xteLimit !== undefined && { xteLimit: part.xteLimit }),

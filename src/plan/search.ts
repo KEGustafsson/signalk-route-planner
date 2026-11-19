@@ -4,7 +4,13 @@ import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
-import { berthable, crossable, fallbackShortcut, fallbackWeight } from "../search/fallback";
+import {
+  berthable,
+  crossable,
+  fallbackWeight,
+  riskyShortcut,
+  strictWeight
+} from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
@@ -86,7 +92,16 @@ export function shapeFor(
   opts: PlanOptions
 ): TreeShape | string {
   const d = haversine(from, to);
-  const half = d / 2 + Math.max(d / 2, opts.minMargin);
+  return regionShape(midpoint(from, to), d / 2 + Math.max(d / 2, opts.minMargin), halfWidth, opts);
+}
+
+/** The quadtree's shape for the square of half side `half` metres around `middle`, or why there is none. */
+export function regionShape(
+  middle: LonLat,
+  half: number,
+  halfWidth: number,
+  opts: PlanOptions
+): TreeShape | string {
   let unit = Math.max(opts.minCell, halfWidth / 2);
   while (pow2((2 * half) / unit) > opts.maxSideUnits) {
     unit *= 2;
@@ -98,7 +113,7 @@ export function shapeFor(
   }
   const maxLeaf = 2 ** Math.floor(Math.log2(leafMetres / unit));
   const extent = (side * unit) / 2;
-  const frame = frameAt(midpoint(from, to));
+  const frame = frameAt(middle);
   // Planning API v1 boxes are west–east corner pairs: none may cross the 180° meridian.
   if (frame.toLonLat(-extent, 0)[0] > frame.toLonLat(extent, 0)[0]) {
     return "the planning region crosses the 180° meridian, which the planning API does not take";
@@ -131,8 +146,9 @@ export interface Mode {
 }
 
 const strictMode = (rule: PassRule): Mode => ({
-  enter: (n) => n.state === "free",
-  joins: (v) => passes(v, rule)
+  enter: (n) => Number.isFinite(strictWeight(n)),
+  joins: (v) => passes(v, rule) || (v.status === "marginal" && crossable(v)),
+  weight: strictWeight
 });
 
 const FALLBACK: Mode = {
@@ -165,19 +181,16 @@ function access(
     return { leaf: own, at: [ux, uy] };
   }
   const r = opts.accessMetres / tree.shape.unit;
+  const within = (n: QuadNode): boolean => {
+    const c = centre(n);
+    return haversine(p, tree.lonLat(c[0], c[1])) <= opts.accessMetres;
+  };
+  // Best first: only squares nearer than the eighth candidate are classified, and the
+  // query stops at the search's share of the work.
   const near = tree
-    .leaves(
-      (n) => n.x < ux + r && ux - r < n.x + n.size && n.y < uy + r && uy - r < n.y + n.size,
-      exhausted
-    )
-    .filter((n) => mode.enter(n))
+    .nearest(ux, uy, r, (n) => mode.enter(n) && within(n), 8, exhausted)
     .map((n) => ({ n, d: Math.hypot(centre(n)[0] - ux, centre(n)[1] - uy) }))
-    .filter(({ n }) => {
-      const c = centre(n);
-      return haversine(p, tree.lonLat(c[0], c[1])) <= opts.accessMetres;
-    })
-    .sort((a, b) => a.d - b.d)
-    .slice(0, 8);
+    .sort((a, b) => a.d - b.d);
   for (const { n } of near) {
     if (exhausted()) {
       return WORK_LIMIT;
@@ -339,7 +352,8 @@ async function attempt(
           exhausted,
           pause: () => session.pause(),
           every: 64,
-          weight: mode.weight
+          weight: mode.weight,
+          greed: opts.greed
         });
   if (!found.found) {
     return {
@@ -371,23 +385,42 @@ async function searchTree(
 ): Promise<Searched> {
   const strict = await attempt(tree, session, ends, opts, strictMode(how.rule), how.berth);
   if ("path" in strict) {
-    return strict;
+    return {
+      ...strict,
+      shortcut: riskyShortcut(tree, strict.path, (v) => v.status === "marginal")
+    };
+  }
+  // Refused only at an end: the harbour stage plans that end in its own small region, so
+  // the route stays strict and no fallback floods the whole region (plan §4.1).
+  const exhausted = () => session.work() >= opts.maxWork * opts.searchShare;
+  const handover = stuckEnds(tree, ends, strict.stuck, opts, {
+    ...strictMode(how.rule),
+    exhausted
+  });
+  if (handover === "work") {
+    return { reason: WORK_LIMIT };
+  }
+  if (handover) {
+    return { reason: strict.reason, stuck: handover };
   }
   const again =
     how.fallback && strict.reason !== WORK_LIMIT
       ? await attempt(tree, session, ends, opts, FALLBACK, how.berth)
       : undefined;
   if (again && "path" in again) {
-    return { ...again, shortcut: fallbackShortcut(tree, again.path), fallback: strict.reason };
+    return {
+      ...again,
+      shortcut: riskyShortcut(tree, again.path, crossable),
+      fallback: strict.reason
+    };
   }
   // The fallback stopped at the work limit: say so, not why the strict search found no way.
   if (again?.reason === WORK_LIMIT) {
     return { reason: WORK_LIMIT };
   }
-  const exhausted = () => session.work() >= opts.maxWork * opts.searchShare;
-  const near =
-    stuckEnds(tree, ends, strict.stuck, opts, { ...strictMode(how.rule), exhausted }) ??
-    (again ? stuckEnds(tree, ends, again.stuck, opts, { ...FALLBACK, exhausted }) : undefined);
+  const near = again
+    ? stuckEnds(tree, ends, again.stuck, opts, { ...FALLBACK, exhausted })
+    : undefined;
   if (near === "work") {
     return { reason: WORK_LIMIT };
   }

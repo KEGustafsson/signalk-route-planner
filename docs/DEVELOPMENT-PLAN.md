@@ -122,10 +122,15 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    - `fail` at the smallest size: blocked.
    - `unverified` at the smallest size: blocked, and counted, so a failed plan can say the only
      way through is unverified water.
+   - `marginal` at the smallest size: passable at a cost per metre of 1 + 1000·P, as a strict
+     plan accepts a marginal leg; the search crosses as little of it as it can.
    - otherwise it splits into four, down to a cell of max(10 m, halfWidth / 2).
      Squares are classified lazily as A* reaches them, so open water stays a few large leaves.
 3. **A\*** over free leaves that share an edge, through the midpoint of the shared edge, with the
-   straight-line distance as the heuristic.
+   straight-line distance as the heuristic, weighted 1.25 (`greed`): the path costs at most 1.25
+   times the cheapest before string pulling, for far fewer squares classified among islands.
+   A neighbour is queued unclassified at the cost it would have in free water and classified
+   only when it comes off the queue, so squares A\* never reaches are never asked about.
 4. **String pulling.** From each kept waypoint, later path points are tried farthest first, then
    halving the distance in points, and the first whose straight leg `session.segment` passes
    becomes the next waypoint. This bounded heuristic costs O(log n) checks a waypoint and can
@@ -278,6 +283,27 @@ pulling at the whole. A plan's stages (the main search, harbour stages, the main
 draw on that one budget, each with what the stages before it left. The proof is underkeel's
 route check, bounded by `/route-check`'s own limits; its work is not counted in the plan's. Work
 is counted, never timed, so a request gives the same answer on any machine.
+
+**Where the work goes** (`npm run trial -- --profile`): nine tenths of it is boxes under 50 m, at
+the shores the search meets. R2 cuts those by asking about fewer of them:
+
+- the start and destination joins and the harbour handovers search the squares near an end in
+  order of distance and stop once they have enough candidates (`QuadTree.nearest`), instead of
+  classifying every square within the access or harbour radius (`src/plan/options.ts`);
+- A\* classifies a square when it reaches it, not when it reaches a neighbour (lazy A\*);
+- A\* is weighted (`greed` 1.25);
+- the strict search crosses marginal water at a cost instead of failing and handing the whole
+  route to the fallback;
+- an end the search cannot join goes to its harbour stage before any whole-route fallback,
+  whose risk-weighted search reaches across the whole region.
+
+With these the field trials' work fell on every case but the Bayside fallback, most where a
+harbour end had sent the whole route to the fallback; `docs/trials.md` records each case's work.
+
+Still open: a 20 nm passage through the archipelago is three to four times the budget, and a
+fallback route across risky water (Bayside, through unassessed water) reaches across its whole
+region. The trials cap each case's work (`workAtMost`) so a change cannot give this back
+unnoticed.
 
 ## 7. Testing
 

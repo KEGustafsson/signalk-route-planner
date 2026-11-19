@@ -48,9 +48,17 @@ const routePart = (o: Extract<SearchOutcome, { ok: true }>, xteLimit?: number): 
   ...(o.fallback !== undefined && { fallback: o.fallback })
 });
 
+/** Handovers a harbour stage tries, most on the way first. */
+const MAX_HANDOVERS = 3;
+
 type HarbourFound =
-  | { found: Extract<SearchOutcome, { ok: true }>; handover: LonLat; work: number }
-  | { refused: string; work: number };
+  | {
+      found: Extract<SearchOutcome, { ok: true }>;
+      handover: LonLat;
+      work: number;
+      squares: number;
+    }
+  | { refused: string; work: number; squares: number };
 
 /** The harbour stage at one end: a route from `point` to the first handover it reaches. */
 function harbourStage(
@@ -60,24 +68,29 @@ function harbourStage(
   candidates: LonLat[],
   budget: number
 ) {
-  const opts = { ...st.opts, minMargin: st.opts.harbourMargin, harbourMetres: 0, maxWork: budget };
+  const opts = { ...st.opts, maxWork: budget };
   return st.api.session<HarbourFound>(
     { ...st.params, xteLimit: st.opts.harbourXte },
     st.signal,
     async (s) => {
+      // Each handover in a small region of its own: it bounds what a fallback search crosses.
+      const search = { ...opts, minMargin: opts.harbourMargin, harbourMetres: 0 };
       let reason = "no handover";
-      for (const h of candidates) {
+      // Every handover tried counts its squares, the ones that found no way included.
+      let squares = 0;
+      for (const h of candidates.slice(0, MAX_HANDOVERS)) {
         const [a, b]: [LonLat, LonLat] = end === "start" ? [point, h] : [h, point];
-        const o = await searchRoute(s, a, b, opts, st.rule, st.fallback, st.opts.berthMetres);
+        const o = await searchRoute(s, a, b, search, st.rule, st.fallback, opts.berthMetres);
+        squares += o.squares;
         if (o.ok) {
-          return { found: o, handover: h, work: s.work() };
+          return { found: o, handover: h, work: s.work(), squares };
         }
         reason = o.reason;
         if (/work limit/.test(o.reason)) {
           break;
         }
       }
-      return { refused: reason, work: s.work() };
+      return { refused: reason, work: s.work(), squares };
     }
   );
 }
@@ -125,18 +138,56 @@ async function harbours(
       return h;
     }
     work += h.value.work;
+    squares += h.value.squares;
     if ("refused" in h.value) {
       const what = end === "start" ? "start" : "destination";
       const reason = `${o.reason}; the harbour stage found no way out from the ${what} at xte ${st.opts.harbourXte} m: ${h.value.refused}`;
-      return { ok: false, refusal: { ...o, reason, work }, direct: o.direct, work };
+      return { ok: false, refusal: { ...o, reason, work, squares }, direct: o.direct, work };
     }
-    squares += h.value.found.squares;
     ends[end] = {
       part: harbourPart(end, h.value.found, st.opts.harbourXte),
       handover: h.value.handover
     };
   }
   return { ends, work, squares };
+}
+
+/**
+ * When a harbour stage finds no way out and the request asked for `fallback`: the whole route
+ * in fallback, its risky legs marked, on the work that is left; else the harbour refusal.
+ */
+async function lastResort(
+  st: Stage,
+  ends: [LonLat, LonLat],
+  refused: Extract<Staged, { refusal: unknown }>,
+  xteLimit?: number
+): Promise<Staged> {
+  const left = st.opts.maxWork - refused.work;
+  if (left <= 0) {
+    return { ...refused, refusal: { ...refused.refusal, reason: WORK_LIMIT } };
+  }
+  const opts = { ...st.opts, harbourMetres: 0, maxWork: left };
+  const whole = await st.api.session(st.params, st.signal, (s) =>
+    searchRoute(s, ends[0], ends[1], opts, st.rule, st.fallback)
+  );
+  if (!whole.ok) {
+    return whole;
+  }
+  if (!whole.value.ok) {
+    // Its work counts, and so does its running out of it: the harbour refusal otherwise.
+    const work = refused.work + whole.value.work;
+    const reason = whole.value.reason === WORK_LIMIT ? WORK_LIMIT : refused.refusal.reason;
+    const squares = refused.refusal.squares + whole.value.squares;
+    return { ...refused, refusal: { ...refused.refusal, reason, work, squares }, work };
+  }
+  return {
+    ok: true,
+    parts: [routePart(whole.value, xteLimit)],
+    direct: refused.direct,
+    work: refused.work + whole.value.work,
+    // Every stage's squares: the first search's, the harbour stages' and this one's.
+    squares: refused.refusal.squares + whole.value.squares
+  };
 }
 
 /** The main search, then harbour stages for the ends it could not join, then the main again. */
@@ -146,11 +197,11 @@ export async function stages(
   to: LonLat,
   xteLimit?: number
 ): Promise<Staged> {
-  const run = (a: LonLat, b: LonLat, budget: number) =>
+  const run = (a: LonLat, b: LonLat, opts: Partial<PlanOptions>) =>
     st.api.session(st.params, st.signal, (s) =>
-      searchRoute(s, a, b, { ...st.opts, maxWork: budget }, st.rule, st.fallback)
+      searchRoute(s, a, b, { ...st.opts, ...opts }, st.rule, st.fallback)
     );
-  const first = await run(from, to, st.opts.maxWork);
+  const first = await run(from, to, {});
   if (!first.ok) {
     return first;
   }
@@ -169,12 +220,16 @@ export async function stages(
   }
   const h = await harbours(st, o, o.stuck, [from, to]);
   if (!("ends" in h)) {
-    return h;
+    return "refusal" in h && st.fallback ? lastResort(st, [from, to], h, xteLimit) : h;
   }
   return between(st, o, h, [from, to], xteLimit, run);
 }
 
-type Run = (a: LonLat, b: LonLat, budget: number) => Promise<SessionResult<SearchOutcome>>;
+type Run = (
+  a: LonLat,
+  b: LonLat,
+  opts: Partial<PlanOptions>
+) => Promise<SessionResult<SearchOutcome>>;
 
 /** After the harbour stages: the main search between their handovers, within the one budget. */
 async function between(
@@ -207,7 +262,7 @@ async function between(
   if (h.ends.start && h.ends.end && same(a, b)) {
     return { ok: true, parts: harbourParts([]), direct: o.direct, work, squares: h.squares };
   }
-  const inner = await run(a, b, st.opts.maxWork - work);
+  const inner = await run(a, b, { maxWork: st.opts.maxWork - work });
   if (!inner.ok) {
     return inner;
   }

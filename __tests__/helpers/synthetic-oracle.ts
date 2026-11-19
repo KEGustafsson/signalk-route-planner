@@ -31,6 +31,8 @@ export interface Chart {
   /** Charted shallows: fail, but the fallback may cross them. */
   shallows?: Circle[];
   unverified?: Circle[];
+  /** Water the check passes with a warning: marginal, at P(UKC < 0) 0.005. */
+  marginal?: Circle[];
   /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
   closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
@@ -74,6 +76,12 @@ function judge(chart: Chart, near: (c: Circle) => boolean): Verdict {
   }
   if (unverified) {
     return { status: "unverified", risk: 0, flags };
+  }
+  if ((chart.marginal ?? []).some(near)) {
+    // As underkeel: a flag that leaves the water unchecked makes it unverified, not marginal.
+    return chart.notForNavigation
+      ? { status: "unverified", risk: 0.005, flags: ["NOT_FOR_NAVIGATION"] }
+      : { status: "marginal", risk: 0.005, flags: [] };
   }
   return chart.notForNavigation
     ? { status: "unverified", risk: 0, flags: ["NOT_FOR_NAVIGATION"] }

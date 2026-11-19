@@ -4,7 +4,10 @@
 // Field trials (docs/trials.md): plans the cases in trials.json on real chart data with
 // signalk-underkeel's planning API, and checks each result against its expectation.
 //
-//   node scripts/trials/trial.js [case-or-area ...]
+//   node scripts/trials/trial.js [--profile] [case-or-area ...]
+//
+// --profile prints, per case, where the work went: box and leg queries by size, and how many
+// boxes and legs came back ok, so a change to the search can be measured against the work budget.
 //
 // Needs network (Traficom WFS, NOAA ENC downloads, cached under data/trials/), this package
 // built (`npm run build`), and a built signalk-underkeel 0.7.0 or later checkout next to this
@@ -23,6 +26,7 @@ const UK = path.join(
 );
 const DATA = path.resolve(process.env.TRIALS_DIR ?? path.join(ROOT, "data", "trials"));
 const NOAA = "https://charts.noaa.gov/ENCs";
+const PROFILE = process.argv.includes("--profile");
 
 const need = (p) => {
   if (!fs.existsSync(p)) {
@@ -110,6 +114,57 @@ function apiFor(index, draft) {
   return planningApi(() => deps, "field trial");
 }
 
+/** The work behind each box and leg query, bucketed by size, while `profile` is set. */
+function profiled(api, profile) {
+  const bucket = (metres) =>
+    metres < 50 ? "<50 m" : metres < 200 ? "<200 m" : metres < 1000 ? "<1 km" : ">=1 km";
+  const add = (key, work, passed) => {
+    const e = (profile[key] ??= { calls: 0, work: 0, passed: 0 });
+    e.calls++;
+    e.work += work;
+    e.passed += passed ? 1 : 0;
+  };
+  const side = (sw, ne) =>
+    Math.max(
+      Math.abs(ne[1] - sw[1]) * 111_200,
+      Math.abs(ne[0] - sw[0]) * 111_200 * Math.cos((sw[1] * Math.PI) / 180)
+    );
+  // A leg's own length, east and north together; a box by its longer side.
+  const length = (a, b) =>
+    Math.hypot(
+      (b[1] - a[1]) * 111_200,
+      (b[0] - a[0]) * 111_200 * Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180)
+    );
+  return {
+    ...api,
+    session: (params, signal, job) =>
+      api.session(params, signal, async (s) => {
+        const r = await job({
+          halfWidth: s.halfWidth,
+          box: (sw, ne, w) => {
+            const before = s.work();
+            const v = s.box(sw, ne, w);
+            add(`box ${bucket(side(sw, ne))}`, s.work() - before, v.status === "ok");
+            return v;
+          },
+          segment: (a, b, w) => {
+            const before = s.work();
+            const v = s.segment(a, b, w);
+            add(`leg ${bucket(length(a, b))}`, s.work() - before, v.status === "ok");
+            return v;
+          },
+          work: () => s.work(),
+          pause: () => s.pause()
+        });
+        const stage = `session xte ${params.xteLimit ?? "default"}`;
+        const e = (profile[stage] ??= { calls: 0, work: 0, passed: 0 });
+        e.calls++;
+        e.work += s.work();
+        return r;
+      })
+  };
+}
+
 function summarise(reply) {
   const b = reply.body;
   if (reply.status !== 200) {
@@ -137,6 +192,9 @@ function failures(s, e, reply) {
   const out = [];
   if (s.status !== e.status) {
     out.push(`status ${s.status}, expected ${e.status}`);
+  }
+  if (e.workAtMost !== undefined && (s.work ?? 0) > e.workAtMost) {
+    out.push(`work ${s.work} over ${e.workAtMost}`);
   }
   if (e.reason && !(s.reason ?? "").includes(e.reason)) {
     out.push(`reason does not name "${e.reason}"`);
@@ -187,7 +245,7 @@ function geojson(reply) {
 
 async function main() {
   const { areas, cases } = JSON.parse(fs.readFileSync(path.join(__dirname, "trials.json"), "utf8"));
-  const pick = process.argv.slice(2);
+  const pick = process.argv.slice(2).filter((a) => a !== "--profile");
   const unknown = pick.filter((sel) => !cases.some((c) => c.name === sel || c.area === sel));
   if (unknown.length > 0) {
     throw new Error(`no trial case or area named ${unknown.join(", ")}`);
@@ -198,7 +256,9 @@ async function main() {
   fs.mkdirSync(DATA, { recursive: true });
   let bad = 0;
   for (const c of run) {
-    const api = apiFor(await indexFor(areas, c), c.draft);
+    const profile = {};
+    const base = apiFor(await indexFor(areas, c), c.draft);
+    const api = PROFILE ? profiled(base, profile) : base;
     const t = Date.now();
     const reply = await plan(
       api,
@@ -225,6 +285,13 @@ async function main() {
     process.stdout.write(`${f.length === 0 ? "PASS" : "FAIL"} ${c.name} ${JSON.stringify(s)}\n`);
     for (const why of f) {
       process.stdout.write(`     ${why}\n`);
+    }
+    if (PROFILE) {
+      for (const [k, e] of Object.entries(profile).sort((a, b) => b[1].work - a[1].work)) {
+        process.stdout.write(
+          `     ${k.padEnd(14)} ${String(e.calls).padStart(7)} calls ${String(e.work).padStart(11)} work, ${e.passed} ok\n`
+        );
+      }
     }
   }
   process.exit(bad > 0 ? 1 : 0);

@@ -53,32 +53,68 @@ export function fallbackWeight(n: QuadNode): number {
     return 1;
   }
   const v = n.verdict;
-  if ((n.state !== "blocked" && n.state !== "unverified") || !v || !crossable(v)) {
+  if (
+    (n.state !== "blocked" && n.state !== "unverified" && n.state !== "marginal") ||
+    !v ||
+    !crossable(v)
+  ) {
     return Infinity;
   }
   return 1 + RISK_WEIGHT * v.risk + (v.status === "unverified" ? UNVERIFIED_WEIGHT : 0);
 }
 
 /**
- * A fallback shortcut that does not pass may replace path points i..j only when every
- * piece of the path between them already crosses a square the check does not pass,
- * the shortcut crosses only water the fallback may cross (so never a leg too long to
- * check, land or uncharted water), and it is no riskier than the riskiest of those squares: pulling straightens a risky stretch within itself and
- * never draws passing water into it.
+ * Per-metre cost of a leaf in the strict search: free water 1; a smallest square the check
+ * marks marginal, which a strict plan accepts, at the same risk cost as the fallback, so the
+ * route crosses as little of it as it can, unless its flags close it (`crossable`); Infinity
+ * elsewhere.
  */
-export function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
+export function strictWeight(n: QuadNode): number {
+  if (n.state === "free") {
+    return 1;
+  }
+  return n.state === "marginal" && n.verdict && crossable(n.verdict)
+    ? 1 + RISK_WEIGHT * n.verdict.risk
+    : Infinity;
+}
+
+/**
+ * A shortcut that does not pass may replace path points i..j only when every piece of
+ * the path between them already crosses a square the check does not pass, `allowed`
+ * takes the shortcut's verdict (the fallback: only flags it may cross, so never land,
+ * uncharted water or a leg too long to check; the strict search: marginal), and it is no
+ * riskier than the riskiest of those squares: pulling
+ * straightens a risky stretch within itself and never draws passing water into it.
+ */
+export function riskyShortcut(
+  tree: QuadTree,
+  path: readonly LonLat[],
+  allowed: (v: Verdict) => boolean
+): Shortcut {
   const risk = path.slice(1).map((b, k) => {
     const a = path[k] as LonLat;
     const [ax, ay] = tree.units(a);
     const [bx, by] = tree.units(b);
     const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
-    // A free square's piece is not risky, whatever its verdict's own risk.
-    return leaf?.state === "free" ? undefined : (leaf?.verdict?.risk ?? 0);
+    // A search piece runs within one square, from its entry to its centre and on; a piece
+    // that leaves it, such as a checked leg joining an end, passed its own check, so it is
+    // not risky, and nor is a free square's piece, whatever its verdict's own risk.
+    const inside = (x: number, y: number): boolean =>
+      !!leaf &&
+      x >= leaf.x - 1e-6 &&
+      x <= leaf.x + leaf.size + 1e-6 &&
+      y >= leaf.y - 1e-6 &&
+      y <= leaf.y + leaf.size + 1e-6;
+    if (!leaf || leaf.state === "free" || !inside(ax, ay) || !inside(bx, by)) {
+      return undefined;
+    }
+    return leaf.verdict?.risk ?? 0;
   });
   return (v, i, j) => {
     const span = risk.slice(i, j);
     return (
       crossable(v) &&
+      allowed(v) &&
       span.every((r) => r !== undefined) &&
       v.risk <= Math.max(...(span as number[]))
     );

@@ -1,6 +1,7 @@
 import type { Frame, LonLat } from "../foundation/geo";
 import { grownBoxKm2 } from "../foundation/geo";
 import type { Session, Status } from "../oracle/contract";
+import { Heap } from "./heap";
 import type { PassRule } from "./passes";
 import { OK_ONLY, passes } from "./passes";
 
@@ -13,8 +14,8 @@ import { OK_ONLY, passes } from "./passes";
  * `unverified`) is free water: every leg inside it, with
  * the corridor half-width around it, is inside the box the verdict covered.
  * Any other verdict splits the square, down to one unit; a one-unit square
- * that is not `ok` is blocked, and remembered as unverified when its verdict
- * said so.
+ * that is `marginal` stays passable at a cost (search/fallback.ts), and any other
+ * that does not pass is blocked, remembered as unverified when its verdict said so.
  */
 
 /** The largest box with its buffer the tree sends, km²: under the planning API's 25. */
@@ -23,7 +24,7 @@ export const MAX_BOX_KM2 = 24;
 /** A one-unit square too large to ask about: never free, counted as unverified. */
 const TOO_LARGE = { status: "unverified" as const, risk: 0, flags: ["BOX_TOO_LARGE"] };
 
-export type NodeState = "unknown" | "free" | "blocked" | "unverified" | "split";
+export type NodeState = "unknown" | "free" | "marginal" | "blocked" | "unverified" | "split";
 
 export interface QuadNode {
   id: number;
@@ -122,6 +123,9 @@ export class QuadTree {
       n.state = "free";
     } else if (n.size > 1) {
       this.split(n);
+    } else if (v.status === "marginal") {
+      // Passable at a cost (search/fallback.ts): a strict plan accepts a marginal leg.
+      n.state = "marginal";
     } else if (v.status === "unverified") {
       n.state = "unverified";
       this.unverified++;
@@ -132,10 +136,16 @@ export class QuadTree {
 
   /**
    * The leaves whose squares meet `touches`, classified as needed; a split
-   * square is entered only when `touches` holds for it. Once `stop` holds, no
-   * further square is classified and the leaves found so far are returned.
+   * square is entered only when `touches` holds for it. With `classify` false no
+   * chart query is made: a square not yet classified comes back `unknown`, once it
+   * is no larger than `maxLeaf` (larger ones split without asking). Once `stop` holds,
+   * no further square is classified and the leaves found so far are returned.
    */
-  leaves(touches: (n: QuadNode) => boolean, stop: () => boolean = () => false): QuadNode[] {
+  leaves(
+    touches: (n: QuadNode) => boolean,
+    classify = true,
+    stop: () => boolean = () => false
+  ): QuadNode[] {
     const out: QuadNode[] = [];
     const stack = [this.root];
     while (stack.length > 0 && !stop()) {
@@ -143,10 +153,58 @@ export class QuadTree {
       if (!touches(n)) {
         continue;
       }
-      this.resolve(n);
+      if (classify || n.size > this.shape.maxLeaf) {
+        this.resolve(n);
+      }
       if (n.state === "split") {
         stack.push(...(n.children as QuadNode[]));
       } else {
+        out.push(n);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Up to `k` leaves that `accept` takes, nearest the unit point (ux, uy) by the
+   * distance to their squares, within `radius` units. Best first: a square is
+   * classified only when nothing nearer is left, so the query costs the squares
+   * nearer than the k-th leaf it returns, not the whole disc. It stops once `stop` holds.
+   * With `via`, a second unit point, they come in order of the way from (ux, uy) through
+   * the square on to `via` instead: still only squares within `radius` of (ux, uy).
+   */
+  nearest(
+    ux: number,
+    uy: number,
+    radius: number,
+    accept: (n: QuadNode) => boolean,
+    k: number,
+    stop: () => boolean = () => false,
+    via?: [number, number]
+  ): QuadNode[] {
+    const to = (n: QuadNode, px: number, py: number): number =>
+      Math.hypot(
+        Math.max(n.x - px, 0, px - (n.x + n.size)),
+        Math.max(n.y - py, 0, py - (n.y + n.size))
+      );
+    // A lower bound for every point of the square, so the order holds as squares split.
+    const key = (n: QuadNode): number => to(n, ux, uy) + (via ? to(n, via[0], via[1]) : 0);
+    const open = new Heap<QuadNode>();
+    const push = (n: QuadNode): void => {
+      if (to(n, ux, uy) <= radius) {
+        open.push(n, key(n));
+      }
+    };
+    push(this.root);
+    const out: QuadNode[] = [];
+    while (open.size > 0 && out.length < k && !stop()) {
+      const n = open.pop();
+      this.resolve(n);
+      if (n.state === "split") {
+        for (const c of n.children as QuadNode[]) {
+          push(c);
+        }
+      } else if (accept(n)) {
         out.push(n);
       }
     }
@@ -166,13 +224,12 @@ export class QuadTree {
 
   /**
    * Free leaves sharing an edge of positive length with `n`, with the shared edge's
-   * midpoint, and those meeting it at a corner only, with that corner. Once `stop` holds, no
-   * further square is classified: the caller must not take the list as complete.
+   * midpoint, and those meeting it at a corner only, with that corner.
    */
   neighbours(
     n: QuadNode,
     enter: (m: QuadNode) => boolean = isFree,
-    stop: () => boolean = () => false
+    classify = true
   ): { node: QuadNode; portal: [number, number] }[] {
     const out: { node: QuadNode; portal: [number, number] }[] = [];
     const { x, y, size } = n;
@@ -197,14 +254,16 @@ export class QuadTree {
         (m) => [mid(x, x + size, m.x, m.x + m.size), y]
       ]
     ];
+    // Unclassified: a candidate the caller classifies when it gets to it.
+    const may = (m: QuadNode): boolean => (!classify && m.state === "unknown") || enter(m);
     for (const [touches, portal] of sides) {
-      for (const m of this.leaves(touches, stop)) {
-        if (enter(m) && m !== n) {
+      for (const m of this.leaves(touches, classify)) {
+        if (may(m) && m !== n) {
           out.push({ node: m, portal: portal(m) });
         }
       }
     }
-    return [...out, ...this.cornerNeighbours(n, enter, stop)];
+    return [...out, ...this.cornerNeighbours(n, may, classify)];
   }
 
   /**
@@ -216,7 +275,7 @@ export class QuadTree {
   private cornerNeighbours(
     n: QuadNode,
     enter: (m: QuadNode) => boolean,
-    stop: () => boolean
+    classify: boolean
   ): { node: QuadNode; portal: [number, number] }[] {
     const out: { node: QuadNode; portal: [number, number] }[] = [];
     for (const [dx, dy] of [
@@ -227,7 +286,7 @@ export class QuadTree {
     ] as const) {
       const cx = dx > 0 ? n.x + n.size : n.x;
       const cy = dy > 0 ? n.y + n.size : n.y;
-      const m = this.diagonal(cx, cy, dx, dy, stop);
+      const m = this.diagonal(cx, cy, dx, dy, classify);
       if (m && enter(m)) {
         out.push({ node: m, portal: [cx, cy] });
       }
@@ -241,7 +300,7 @@ export class QuadTree {
     cy: number,
     dx: 1 | -1,
     dy: 1 | -1,
-    stop: () => boolean
+    classify: boolean
   ): QuadNode | undefined {
     const side = this.shape.side;
     const px = cx + dx * 1e-6;
@@ -251,7 +310,7 @@ export class QuadTree {
     }
     const m = this.leaves(
       (q) => px >= q.x && px < q.x + q.size && py >= q.y && py < q.y + q.size,
-      stop
+      classify
     )[0];
     if (!m) {
       return undefined;
