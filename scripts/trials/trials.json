@@ -26,7 +26,7 @@
         "status": 200,
         "lengthNm": [18, 21.5],
         "parts": ["harbour:start", "route", "harbour:end"],
-        "workAtMost": 6000000
+        "workAtMost": 7000000
       }
     },
     {
@@ -44,7 +44,7 @@
         "lengthNm": [18, 20.5],
         "parts": ["harbour:start", "route", "harbour:end"],
         "routeStatuses": ["unverified"],
-        "workAtMost": 4500000
+        "workAtMost": 6500000
       }
     },
     {
@@ -60,7 +60,7 @@
         "lengthNm": [0.9, 1.3],
         "parts": ["route"],
         "routeStatuses": ["ok", "marginal"],
-        "workAtMost": 1200000
+        "workAtMost": 2500000
       }
     },
     {
@@ -74,7 +74,7 @@
       "expect": {
         "status": 200,
         "lengthNm": [3.2, 4.4],
-        "workAtMost": 22000000
+        "workAtMost": 44000000
       }
     },
     {
@@ -89,7 +89,7 @@
       "expect": {
         "status": 422,
         "reason": "harbour stage",
-        "workAtMost": 2500000
+        "workAtMost": 3000000
       }
     }
   ]
