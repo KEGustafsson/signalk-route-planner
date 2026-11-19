@@ -96,6 +96,18 @@ describe("fallback", () => {
     }
   });
 
+  test("a berth leg along a quay into uncharted water keeps NO_COVERAGE and is closed", () => {
+    // The test oracle reports every flag a corridor meets, as the route check does.
+    const chart: Chart = {
+      obstacles: [{ x: 0, y: 60, r: 50 }],
+      unverified: [{ x: 300, y: 0, r: 50 }]
+    };
+    const v = legVerdict(chart, at(0, 0), at(300, 0), 40);
+    expect(v.status).toBe("fail");
+    expect(v.flags).toEqual(["LAND", "NO_COVERAGE"]);
+    expect(berthable(v)).toBe(false);
+  });
+
   test("on, with open water round the shallows: the strict route, no fallback", async () => {
     const r = await run({ obstacles: [], shallows: [{ x: 2500, y: 0, r: 600 }] }, true);
     const b = r.body as Body;
