@@ -77,15 +77,17 @@ function lowest(chart: Chart, w?: { start: number; end: number }): number {
 }
 
 function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
+  // A closed area's flag is reported with land's, as the route check reports every flag.
+  const closed = (chart.closed ?? []).find(near);
+  const rule = closed ? [closed.flag] : [];
   if (chart.obstacles.some(near)) {
-    return { status: "fail", risk: 0.9, flags: ["LAND"] };
+    return { status: "fail", risk: 0.9, flags: ["LAND", ...rule] };
+  }
+  if (closed) {
+    return { status: "fail", risk: 0, flags: rule };
   }
   if ((chart.tidal ?? []).some((c) => near(c) && level < c.needs)) {
     return { status: "fail", risk: 0.9, flags: [] };
-  }
-  const closed = (chart.closed ?? []).find(near);
-  if (closed) {
-    return { status: "fail", risk: 0, flags: [closed.flag] };
   }
   if ((chart.shallows ?? []).some(near)) {
     return { status: "fail", risk: 0.9, flags: [] };

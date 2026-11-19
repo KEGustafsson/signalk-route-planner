@@ -1,7 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { PlanningApiV1, Reply, Status, Verdict } from "../oracle/contract";
-import { crossable } from "../search/fallback";
+import { berthable, crossable } from "../search/fallback";
 import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
@@ -55,11 +55,11 @@ function directOf(v: Verdict): { status: Status; risk: number; flags: string[]; 
  * `fallback` is offered only when every leg still passes (or is marginal); a fallback
  * part is offered with its risky legs marked, as the request asked, but never over water
  * the fallback may not cross (land, no chart, a hard rule). A berth leg touches its quay
- * by design and is not counted.
+ * by design, so its `LAND` is not counted, but a berth leg a hard rule or no chart closes is.
  */
 function refusal(proof: Proof, parts: readonly Part[], rule: PassRule): string | undefined {
   let strict = 0;
-  let closed = 0;
+  let closed = proof.legs.filter((l) => l.berth && !berthable(l)).length;
   proof.parts.forEach((span, k) => {
     const own = proof.legs.slice(span.legs[0], span.legs[1] + 1).filter((l) => !l.berth);
     if (parts[k]?.fallback === undefined) {
@@ -73,7 +73,7 @@ function refusal(proof: Proof, parts: readonly Part[], rule: PassRule): string |
     return `the route check does not pass ${strict} of the ${n} planned legs at the departure`;
   }
   return closed > 0
-    ? `${closed} of the ${n} legs of a fallback part cross water no route may cross at the departure`
+    ? `${closed} of the ${n} planned legs cross water no route may cross at the departure`
     : undefined;
 }
 

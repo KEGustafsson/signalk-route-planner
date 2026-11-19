@@ -39,6 +39,14 @@ export function crossable(v: Pick<Verdict, "flags">): boolean {
   return v.flags.every((f) => CROSSABLE.has(f));
 }
 
+/**
+ * True when a berth leg may carry this verdict: it lies alongside the quay, so `LAND` is
+ * expected, but any other flag the fallback may not cross (no chart, a hard rule) closes it.
+ */
+export function berthable(v: Pick<Verdict, "flags">): boolean {
+  return v.flags.every((f) => f === "LAND" || CROSSABLE.has(f));
+}
+
 /** Per-metre cost of a leaf in the fallback search; Infinity where it may not go. */
 export function fallbackWeight(n: QuadNode): number {
   if (n.state === "free") {

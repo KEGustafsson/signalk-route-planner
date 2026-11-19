@@ -18,8 +18,9 @@ next to this one, or at `UNDERKEEL_DIR`. Each case writes its reply to
 run exits 1 when a result does not meet the expectation in `scripts/trials/trials.json`.
 
 Every case is planned for a 1.8 m draft, at 3 m/s, with the water at chart datum (σ 0.2 m), so
-the results do not depend on the tide or the day. The work limit is raised: the trials measure
-what the search finds, and R2 brings the work into the Raspberry Pi budget.
+the results do not depend on the tide or the day. The work limit is raised, so a trial tells
+whether the search finds a route apart from whether it does so within the Raspberry Pi budget
+(`docs/DEVELOPMENT-PLAN.md` §6).
 
 Each case also caps its work (`workAtMost`), in underkeel work units; the plan's budget is
 1.2 M (`docs/DEVELOPMENT-PLAN.md` §6). `npm run trial -- --profile` shows where the work went.
