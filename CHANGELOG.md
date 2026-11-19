@@ -40,6 +40,9 @@ All notable changes to signalk-route-planner are documented here.
   unfinished, and does not write a plan over a route edited while it waited.
 - Corridors for trips too long for any planning box: with signalk-underkeel's `survey` and
   `corridor`, a coarse route on its depth survey of the trip's region, a band along it built as
-  the planning box. `npm run trial:r2` plans Turku to Utö, 50 nm, within a 2 GB memory limit.
+  the planning box. A corridor's trip may be up to 100 nm, its search given work in proportion to
+  its length; the search asks about no square that reaches past the corridor's boxes and searches
+  the square around them. `npm run trial:r2` plans Turku to Utö, 50 nm, within a 2 GB memory
+  limit, and `--profile` shows where its work goes.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.

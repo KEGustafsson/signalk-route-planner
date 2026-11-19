@@ -31,7 +31,9 @@ A trip too long for any planning box the machine builds is planned in a corridor
 signalk-underkeel 0.8.0 or later also serves `survey` and `corridor` (with its Traficom WFS depth
 source). The planner finds a coarse route on underkeel's depth survey of the trip's region, and
 underkeel builds a planning box of a band a few kilometres wide along it. Past the band the chart
-reads no coverage. The survey and the band are downloaded first, which takes minutes.
+reads no coverage. The survey and the band are downloaded first, which takes minutes. A trip
+planned in a corridor may be up to 100 nm long, and its search may take longer, in proportion to
+the trip: about half a minute on a Raspberry Pi 4 for 50 nm.
 
 ## Use
 
@@ -75,7 +77,9 @@ A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departur
 `speed` (m/s), `xteLimit` (m), `probability` and `draft` (m); unset options take
 signalk-underkeel's route-check settings. `accept: ["NOT_FOR_NAVIGATION"]` plans on depth data
 marked not for navigation (its legs stay `unverified`), and `fallback: true` returns, when no
-route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart.
+route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart, or 100 nm where signalk-underkeel serves
+its depth survey: such a trip is planned in a corridor, or in a planning box where the machine
+builds its whole region, with a corridor's work budget either way.
 
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
 `preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the

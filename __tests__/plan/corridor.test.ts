@@ -17,7 +17,7 @@ import {
   corridorParts,
   surveyRegion
 } from "../../src/plan/corridor";
-import { BUILDING, Preparer, searchRegion, tripRegion } from "../../src/plan/prepare";
+import { BUILDING, inCorridor, Preparer, searchRegion, tripRegion } from "../../src/plan/prepare";
 import { syntheticApi } from "../helpers/synthetic-oracle";
 
 /** A corridor on the depth survey, for a trip too long for any planning box (plan §4.2). */
@@ -218,6 +218,35 @@ describe("Preparer with a survey", () => {
     ]);
     expect(p.surveys).toEqual([surveyRegion(from, to)]);
     expect(p.asked[2]?.corridor?.length).toBeGreaterThan(10);
+  });
+
+  test("a corridor's index says its boxes to the search's sessions", async () => {
+    const p = provider(g, 1000);
+    const r = await new Preparer(1000).forTrip(p.api, from, to, new AbortController().signal);
+    if (!("version" in r)) {
+      throw new Error("no index");
+    }
+    const parts = p.asked[2]?.corridor;
+    const s = await r.session(
+      { departure: 0, until: 1, speed: 3 },
+      new AbortController().signal,
+      (x) => Promise.resolve(x.within)
+    );
+    expect(s).toEqual({ ok: true, value: parts });
+    expect(inCorridor(r)).toBe(true);
+    // A region's index says none.
+    const q = provider(g, 1e9);
+    const whole = await new Preparer(1000).forTrip(q.api, from, to, new AbortController().signal);
+    if (!("version" in whole)) {
+      throw new Error("no index");
+    }
+    const t = await whole.session(
+      { departure: 0, until: 1, speed: 3 },
+      new AbortController().signal,
+      (x) => Promise.resolve(x.within)
+    );
+    expect(t).toEqual({ ok: true, value: undefined });
+    expect(inCorridor(whole)).toBe(false);
   });
 
   test("narrower corridors in turn while the widest is too large to build", async () => {

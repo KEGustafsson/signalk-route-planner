@@ -1,5 +1,5 @@
 import type { LonLat } from "../foundation/geo";
-import { frameAt, haversine, midpoint } from "../foundation/geo";
+import { haversine } from "../foundation/geo";
 import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
@@ -13,10 +13,11 @@ import {
 } from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
-import type { QuadNode, TreeShape } from "../search/quadtree";
-import { centre, MAX_BOX_KM2, QuadTree } from "../search/quadtree";
+import type { QuadNode } from "../search/quadtree";
+import { centre, QuadTree } from "../search/quadtree";
 import { stuckEnds } from "./handover";
 import type { PlanOptions } from "./options";
+import { shapeFor } from "./region";
 
 /**
  * The static search (plan §4.1): the direct line first, then a quadtree over the
@@ -63,9 +64,6 @@ export interface Stuck {
   end?: LonLat[];
 }
 
-/** A box with its corridor buffer at the frame's origin stays under MAX_BOX_KM2. */
-const MAX_BOX_SIDE = Math.sqrt(MAX_BOX_KM2 * 1e6);
-
 /** Legs whose corridor is over this, km², are never checked as one leg (the API refuses 25). */
 const MAX_LEG_KM2 = 24;
 
@@ -80,51 +78,6 @@ export function checkLeg(session: Session, a: LonLat, b: LonLat): Verdict {
   return ((haversine(a, b) + 2 * r) * 2 * r) / 1e6 > MAX_LEG_KM2
     ? NOT_CHECKED
     : session.segment(a, b);
-}
-
-const pow2 = (n: number): number => 2 ** Math.ceil(Math.log2(Math.max(1, n)));
-
-/** The quadtree's shape around start and goal, or why there is none. */
-export function shapeFor(
-  from: LonLat,
-  to: LonLat,
-  halfWidth: number,
-  opts: PlanOptions
-): TreeShape | string {
-  const d = haversine(from, to);
-  return regionShape(midpoint(from, to), d / 2 + Math.max(d / 2, opts.minMargin), halfWidth, opts);
-}
-
-/** The quadtree's shape for the square of half side `half` metres around `middle`, or why there is none. */
-export function regionShape(
-  middle: LonLat,
-  half: number,
-  halfWidth: number,
-  opts: PlanOptions
-): TreeShape | string {
-  let unit = Math.max(opts.minCell, halfWidth / 2);
-  while (pow2((2 * half) / unit) > opts.maxSideUnits) {
-    unit *= 2;
-  }
-  const side = pow2((2 * half) / unit);
-  const leafMetres = Math.min(opts.maxLeafMetres, MAX_BOX_SIDE - 2 * halfWidth);
-  if (leafMetres < unit) {
-    return `the corridor half-width ${Math.round(halfWidth)} m is too wide to plan in`;
-  }
-  const maxLeaf = 2 ** Math.floor(Math.log2(leafMetres / unit));
-  const extent = (side * unit) / 2;
-  const frame = frameAt(middle);
-  // Planning API v1 boxes are west–east corner pairs: none may cross the 180° meridian.
-  if (frame.toLonLat(-extent, 0)[0] > frame.toLonLat(extent, 0)[0]) {
-    return "the planning region crosses the 180° meridian, which the planning API does not take";
-  }
-  if (
-    Math.abs(frame.toLonLat(0, extent)[1]) >= 90 ||
-    Math.abs(frame.toLonLat(0, -extent)[1]) >= 90
-  ) {
-    return "the planning region reaches a pole";
-  }
-  return { frame, x0: -extent, y0: -extent, unit, side, maxLeaf };
 }
 
 interface Access {
@@ -445,7 +398,7 @@ export async function searchRoute(
   if (passes(direct, rule)) {
     return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
   }
-  const shape = shapeFor(from, to, session.halfWidth, opts);
+  const shape = shapeFor(from, to, session.halfWidth, opts, session.within);
   const tree = typeof shape === "string" ? undefined : new QuadTree(shape, session, rule);
   const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,

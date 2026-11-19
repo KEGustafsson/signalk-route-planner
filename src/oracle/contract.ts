@@ -38,6 +38,12 @@ export interface Session {
   segment(a: LonLat, b: LonLat, window?: Window): Verdict;
   work(): number;
   pause(): Promise<void>;
+  /**
+   * The boxes the index was built in when they are a corridor's, set by the planner
+   * (`onPrepared`), not by the provider: past them the chart reads no coverage, so the search
+   * asks about no square that reaches past them.
+   */
+  readonly within?: readonly Bbox[];
 }
 
 export type SessionResult<T> =

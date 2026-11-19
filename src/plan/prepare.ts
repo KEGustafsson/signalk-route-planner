@@ -1,8 +1,15 @@
 import type { LonLat } from "../foundation/geo";
 import { EARTH_RADIUS, haversine, midpoint } from "../foundation/geo";
 import type { PlanOptions } from "./options";
-import { DEFAULT_PLAN } from "./options";
-import type { Bbox, PlanningApiV1, Prepared, PrepareResult, Reply } from "../oracle/contract";
+import { DEFAULT_PLAN, limitsFor } from "./options";
+import type {
+  Bbox,
+  PlanningApiV1,
+  Prepared,
+  PrepareResult,
+  Reply,
+  Session
+} from "../oracle/contract";
 import { canPrepare, canSurvey } from "../oracle/contract";
 import { boxOf, corridorsFor, SURVEY_CELL, surveyRegion } from "./corridor";
 
@@ -54,7 +61,7 @@ export function tripRegion(from: LonLat, to: LonLat, margin = PREPARE_MARGIN): B
 
 /**
  * Every place the search may ask about: the square its region is cut from, half side
- * d/2 + max(d/2, minMargin) around the midpoint (`shapeFor`), and a harbour stage's region around
+ * d/2 + max(d/2, minMargin) around the midpoint (`shapeFor`, `region.ts`), and a harbour stage's region around
  * each end, each with a corridor's reach.
  */
 export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAULT_PLAN): Bbox {
@@ -67,18 +74,74 @@ export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAU
 const holds = (o: Bbox, i: Bbox): boolean =>
   o[0] <= i[0] && o[1] <= i[1] && o[2] >= i[2] && o[3] >= i[3];
 
-/** `api` with its session and route check over the prepared index `p`. */
-export function onPrepared(api: PlanningApiV1, p: Prepared): PlanningApiV1 {
-  return {
+/**
+ * Whether a trip `d` metres long is past `maxDistance` where `api`, the provider, can survey:
+ * then it is prepared and planned with a corridor's limits, in a corridor or, where the machine
+ * builds its region, in a planning box.
+ */
+export function longTrip(api: PlanningApiV1, d: number, opts: PlanOptions = DEFAULT_PLAN): boolean {
+  return d > opts.maxDistance && canSurvey(api);
+}
+
+/**
+ * The limits `/plan` gives a trip `d` metres long on `prepared`, the index for it from the
+ * provider `api`: a corridor's for a long trip (`longTrip`) or one planned in a corridor.
+ */
+export function tripLimits(
+  api: PlanningApiV1,
+  prepared: PlanningApiV1,
+  d: number,
+  opts: PlanOptions = DEFAULT_PLAN
+): PlanOptions {
+  return limitsFor(opts, d, longTrip(api, d, opts) || inCorridor(prepared));
+}
+
+/** The planning APIs over a corridor's index (`onPrepared`), for `inCorridor`. */
+const CORRIDORS = new WeakSet<PlanningApiV1>();
+
+/** Whether `api` is over a corridor's index: its trip is planned with a corridor's limits. */
+export function inCorridor(api: PlanningApiV1): boolean {
+  return CORRIDORS.has(api);
+}
+
+/**
+ * `api` with its session and route check over the prepared index `p`; its sessions carry
+ * `corridor`, the boxes `p` was built in when they are a corridor's (`Session.within`).
+ */
+export function onPrepared(
+  api: PlanningApiV1,
+  p: Prepared,
+  corridor?: readonly Bbox[]
+): PlanningApiV1 {
+  const over: PlanningApiV1 = {
     version: 1,
     provider: api.provider,
     unavailable: () => api.unavailable(),
     coverage: () => p.coverage,
     defaults: () => api.defaults(),
-    session: (params, signal, job) => p.session(params, signal, job),
+    session: (params, signal, job) =>
+      p.session(
+        params,
+        signal,
+        corridor === undefined ? job : (s) => job(withinCorridor(s, corridor))
+      ),
     routeCheck: (body, signal) => p.routeCheck(body, signal)
   };
+  if (corridor !== undefined) {
+    CORRIDORS.add(over);
+  }
+  return over;
 }
+
+/** `s` that says its index lies within `corridor`'s boxes. */
+const withinCorridor = (s: Session, corridor: readonly Bbox[]): Session => ({
+  halfWidth: s.halfWidth,
+  box: (sw, ne, window) => s.box(sw, ne, window),
+  segment: (a, b, window) => s.segment(a, b, window),
+  work: () => s.work(),
+  pause: () => s.pause(),
+  within: corridor
+});
 
 /** The 503 while the trip's index is built. */
 export const BUILDING: Reply = {
@@ -103,11 +166,14 @@ const sleep = (ms: number): Promise<"waiting"> =>
 interface Build {
   region: Bbox | undefined;
   readonly trip: string;
-  result: Promise<PrepareResult>;
+  result: Promise<Prepping>;
   narrowed: Promise<"narrowed">;
 }
 
 type Preparing = PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>;
+
+/** A build's result, with the corridor's boxes when it was built for one. */
+type Prepping = PrepareResult & { corridor?: readonly Bbox[] };
 
 /** The draft the corridor is found for when the request gives none, metres. */
 export const COARSE_DRAFT = 2;
@@ -150,7 +216,7 @@ async function prepareTrip(
   trip: { from: LonLat; to: LonLat; draft: number; first: Bbox; least: Bbox },
   stop: AbortSignal,
   narrow: (to: Bbox | undefined) => void
-): Promise<PrepareResult> {
+): Promise<Prepping> {
   const { first, least } = trip;
   let r = await api.prepare(first, stop);
   if (!r.ok && r.status === 413 && first !== least) {
@@ -168,7 +234,10 @@ async function prepareTrip(
   // Narrower in turn while the machine refuses a corridor as too large to build.
   for (const parts of corridors) {
     r = await api.prepare(boxOf(parts), stop, parts);
-    if (r.ok || r.status !== 413) {
+    if (r.ok) {
+      return { ...r, corridor: parts };
+    }
+    if (r.status !== 413) {
       return r;
     }
   }
@@ -214,7 +283,7 @@ export class Preparer {
       trip,
       narrowed: fresh(),
       result: prepareTrip(api, { from, to, draft, first, least }, stop, narrow)
-        .catch((err: Error): PrepareResult => ({ ok: false, status: 503, error: err.message }))
+        .catch((err: Error): Prepping => ({ ok: false, status: 503, error: err.message }))
         .then((r) => {
           this.builds.delete(build);
           return r;
@@ -264,7 +333,7 @@ export class Preparer {
       if (!r.ok) {
         return { status: r.status, body: { errors: [r.error] } };
       }
-      return onPrepared(api, r.value);
+      return onPrepared(api, r.value, r.corridor);
     }
   }
 }

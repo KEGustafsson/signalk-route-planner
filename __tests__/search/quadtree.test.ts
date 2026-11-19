@@ -1,5 +1,6 @@
 import fc from "fast-check";
-import { frameAt } from "../../src/foundation/geo";
+import type { LonLat } from "../../src/foundation/geo";
+import { coveredShare, frameAt, grownBox } from "../../src/foundation/geo";
 import type { Session, Verdict } from "../../src/oracle/contract";
 import { aStar } from "../../src/search/astar";
 import { strictWeight } from "../../src/search/fallback";
@@ -215,5 +216,91 @@ describe("lazy A* with marginal squares", () => {
       }),
       { numRuns: 200 }
     );
+  });
+});
+
+describe("a corridor's squares", () => {
+  /** Open water everywhere; the session's index lies within `within` alone. */
+  function corridorTree(within: [number, number, number, number][] | undefined) {
+    const asked: [LonLat, LonLat][] = [];
+    const ok: Verdict = { status: "ok", risk: 0, flags: [] };
+    const session: Session = {
+      halfWidth: 5,
+      box(sw, ne) {
+        asked.push([sw, ne]);
+        return ok;
+      },
+      segment: () => ok,
+      work: () => 0,
+      pause: () => Promise.resolve(),
+      ...(within && { within })
+    };
+    const tree = new QuadTree(
+      { frame: frameAt([22, 60]), x0: 0, y0: 0, unit: 10, side: 64, maxLeaf: 64 },
+      session
+    );
+    return { tree, asked, session };
+  }
+
+  /** An L: a strip along the south edge, then one north along x 32–48, edge to edge. */
+  function band(tree: QuadTree): [number, number, number, number][] {
+    const box = (
+      x0: number,
+      y0: number,
+      x1: number,
+      y1: number
+    ): [number, number, number, number] => {
+      const sw = tree.lonLat(x0, y0);
+      const ne = tree.lonLat(x1, y1);
+      return [sw[0], sw[1], ne[0], ne[1]];
+    };
+    return [box(0, 0, 48, 16), box(32, 16, 48, 64)];
+  }
+
+  test("no box reaching past the corridor is asked; the search keeps inside it", async () => {
+    const probe = corridorTree(undefined);
+    const within = band(probe.tree);
+    const { tree, asked, session } = corridorTree(within);
+    const from = tree.leafAt(2, 4);
+    const to = tree.leafAt(40, 60);
+    expect(from?.state).toBe("free");
+    expect(to?.state).toBe("free");
+    const r = await aStar(tree, from as never, [2, 4], to as never, [40, 60], limits);
+    expect(r.found).toBe(true);
+    expect(asked.length).toBeGreaterThan(0);
+    for (const [sw, ne] of asked) {
+      expect(coveredShare(grownBox(sw, ne, session.halfWidth), within)).toBeGreaterThan(1 - 1e-9);
+    }
+    // Every point of the path lies inside the corridor's boxes.
+    const inside = (p: [number, number]) => {
+      const q = tree.lonLat(p[0], p[1]);
+      return within.some((b) => q[0] >= b[0] && q[0] <= b[2] && q[1] >= b[1] && q[1] <= b[3]);
+    };
+    expect(r.found && r.points.every(inside)).toBe(true);
+    expect(tree.unverified).toBeGreaterThan(0);
+  });
+
+  test("a square past the corridor is unverified for no coverage, unasked", () => {
+    const probe = corridorTree(undefined);
+    const { tree, asked } = corridorTree(band(probe.tree));
+    const far = tree.leafAt(8, 56);
+    expect(far?.state).toBe("unverified");
+    expect(far?.verdict?.flags).toEqual(["NO_COVERAGE"]);
+    expect(asked).toHaveLength(0);
+  });
+});
+
+describe("coveredShare", () => {
+  test("by area, over boxes that meet edge to edge", () => {
+    const box = [0, 0, 2, 2] as const;
+    expect(coveredShare(box, [])).toBe(0);
+    expect(coveredShare(box, [[0, 0, 1, 2]])).toBeCloseTo(0.5);
+    expect(
+      coveredShare(box, [
+        [-1, -1, 1, 3],
+        [1, -1, 3, 3]
+      ])
+    ).toBeCloseTo(1);
+    expect(coveredShare(box, [[5, 5, 6, 6]])).toBe(0);
   });
 });

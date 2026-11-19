@@ -5,7 +5,10 @@
 // box, Turku guest harbour to Utö, on signalk-underkeel's own planning boxes, depth survey and
 // build processes, with a 10 km chart box around the start, as on a 2 GB Raspberry Pi 4.
 //
-//   node scripts/trials/r2-exit.js
+//   node scripts/trials/r2-exit.js [--profile]
+//
+// --profile prints where the plan's work went, as the field trials' does, with each box named
+// by where it lies against the corridor: inside one of its boxes, across its edge, or outside.
 //
 // Run it in a 2 GB memory limit to measure a Pi's budget: the build processes size their heaps
 // from it, and TRIAL_CGROUP names the cgroup whose peak is reported (cgroup v1
@@ -34,13 +37,30 @@ const need = (p) => {
 };
 const uk = (m) => need(path.join(UK, `${m}.js`));
 const { plan } = need(path.join(ROOT, "lib", "plan", "plan.js"));
-const { DEFAULT_PLAN } = need(path.join(ROOT, "lib", "plan", "options.js"));
-const { Preparer } = need(path.join(ROOT, "lib", "plan", "prepare.js"));
+const { Preparer, tripLimits } = need(path.join(ROOT, "lib", "plan", "prepare.js"));
+const { haversine } = need(path.join(ROOT, "lib", "foundation", "geo.js"));
+const { profiled, printProfile } = require("./profile");
+
+const PROFILE = process.argv.includes("--profile");
 
 const FROM = [22.2447535, 60.4399228];
 // Utö guest harbour.
 const TO = [21.3702, 59.7823];
 const DRAFT = 1.8;
+
+/** Where the box `sw`–`ne` lies against the corridor's boxes: in one, across an edge, or out. */
+function against(parts) {
+  const overlap = ([w, s, e, n], b) =>
+    Math.max(w, b[0]) < Math.min(e, b[2]) && Math.max(s, b[1]) < Math.min(n, b[3]);
+  const inside = ([w, s, e, n], b) => w >= b[0] && e <= b[2] && s >= b[1] && n <= b[3];
+  return (sw, ne) => {
+    const box = [sw[0], sw[1], ne[0], ne[1]];
+    if (parts.some((p) => inside(box, p))) {
+      return "in";
+    }
+    return parts.some((p) => overlap(box, p)) ? "edge" : "out";
+  };
+}
 
 /** The cgroup's peak memory, MB, or undefined. */
 function cgroupPeakMb() {
@@ -198,10 +218,12 @@ async function main() {
       `no index for the trip: ${JSON.stringify(prepared.body)} after ${JSON.stringify(log)}`
     );
   }
+  const limits = tripLimits(api, prepared, haversine(FROM, TO));
   const t1 = Date.now();
   const departure = Date.now();
+  const profile = {};
   const reply = await plan(
-    prepared,
+    PROFILE ? profiled(prepared, profile, corridor && against(corridor)) : prepared,
     {
       from: FROM,
       to: TO,
@@ -214,8 +236,8 @@ async function main() {
     },
     stop.signal,
     Date.now(),
-    // 50 nm is past the plan's default reach and work budget, which R2 does not change.
-    { ...DEFAULT_PLAN, maxWork: 100_000_000, maxDistance: 120_000 }
+    // The limits /plan gives the trip: a corridor's reach, its work in proportion to the trip.
+    limits
   );
   const km2 = (b) =>
     (b[2] - b[0]) *
@@ -229,9 +251,8 @@ async function main() {
     ...(reply.status === 200
       ? { lengthNm: +(b.length / 1852).toFixed(2), legs: b.check.legs.length, work: b.work }
       : { reason: b.reason ?? (b.errors ?? []).join("; "), work: b.work }),
-    distanceNm: +(
-      require(path.join(ROOT, "lib", "foundation", "geo.js")).haversine(FROM, TO) / 1852
-    ).toFixed(1),
+    distanceNm: +(haversine(FROM, TO) / 1852).toFixed(1),
+    maxWork: limits.maxWork,
     buildHeapMb: heapMb,
     planningBoxCapKm2: (2 * capKm) ** 2,
     corridor: corridor && {
@@ -260,6 +281,9 @@ async function main() {
   process.stdout.write(
     `${reply.status === 200 ? "PASS" : "FAIL"} r2-exit ${JSON.stringify(summary)}\n`
   );
+  if (PROFILE) {
+    printProfile(profile);
+  }
   boxes.stop();
   process.exit(reply.status === 200 ? 0 : 1);
 }

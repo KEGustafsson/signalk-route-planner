@@ -13,6 +13,11 @@ export interface PlanOptions {
   maxSideUnits: number;
   /** Smallest square, metres, at least; also at least half the corridor half-width. */
   minCell: number;
+  /**
+   * Smallest square of a corridor's region, metres, at least: a long trip's shores are long,
+   * and each halving of the square doubles the boxes asked along them.
+   */
+  corridorCell: number;
   /** Largest square the chart is asked about, metres, before its corridor buffer. */
   maxLeafMetres: number;
   /** The region reaches past start and goal by half their distance, and at least this, metres. */
@@ -21,6 +26,13 @@ export interface PlanOptions {
   accessMetres: number;
   /** Start and goal at most this far apart, metres. */
   maxDistance: number;
+  /** A trip planned in a corridor (plan §4.2) may be this long, metres. */
+  corridorDistance: number;
+  /**
+   * ...and its search may do this much work per km of its straight distance, and at least
+   * `maxWork`: a long trip's shores are long, and its index took minutes to build.
+   */
+  corridorWorkPerKm: number;
   /** The verdict window: the trip at the request speed over this many times the straight distance. */
   windowFactor: number;
   /** ...and at least this long, ms. */
@@ -47,10 +59,13 @@ export const DEFAULT_PLAN: PlanOptions = {
   greed: 1.25,
   maxSideUnits: 4096,
   minCell: 10,
+  corridorCell: 40,
   maxLeafMetres: 4000,
   minMargin: 2000,
   accessMetres: 500,
   maxDistance: 60_000,
+  corridorDistance: 185_200,
+  corridorWorkPerKm: 120_000,
   windowFactor: 3,
   minWindow: 3_600_000,
   harbourXte: 0,
@@ -58,3 +73,19 @@ export const DEFAULT_PLAN: PlanOptions = {
   harbourMargin: 300,
   berthMetres: 40
 };
+
+/**
+ * The limits for a trip `d` metres long: `opts`, or when `corridor` (the trip is planned in a
+ * corridor, or past `maxDistance` where one can be made), the corridor's reach and work in
+ * proportion to the trip.
+ */
+export function limitsFor(opts: PlanOptions, d: number, corridor: boolean): PlanOptions {
+  if (!corridor) {
+    return opts;
+  }
+  return {
+    ...opts,
+    maxDistance: Math.max(opts.maxDistance, opts.corridorDistance),
+    maxWork: Math.max(opts.maxWork, Math.ceil((d / 1000) * opts.corridorWorkPerKm))
+  };
+}

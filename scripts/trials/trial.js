@@ -18,6 +18,7 @@
 const fs = require("fs");
 const path = require("path");
 const { unzip } = require("./unzip");
+const { profiled, printProfile } = require("./profile");
 
 const ROOT = path.resolve(__dirname, "..", "..");
 const UK = path.join(
@@ -133,57 +134,6 @@ function apiFor(index, draft, tide, departure) {
     queue: new RequestQueue()
   };
   return planningApi(() => deps, "field trial");
-}
-
-/** The work behind each box and leg query, bucketed by size, while `profile` is set. */
-function profiled(api, profile) {
-  const bucket = (metres) =>
-    metres < 50 ? "<50 m" : metres < 200 ? "<200 m" : metres < 1000 ? "<1 km" : ">=1 km";
-  const add = (key, work, passed) => {
-    const e = (profile[key] ??= { calls: 0, work: 0, passed: 0 });
-    e.calls++;
-    e.work += work;
-    e.passed += passed ? 1 : 0;
-  };
-  const side = (sw, ne) =>
-    Math.max(
-      Math.abs(ne[1] - sw[1]) * 111_200,
-      Math.abs(ne[0] - sw[0]) * 111_200 * Math.cos((sw[1] * Math.PI) / 180)
-    );
-  // A leg's own length, east and north together; a box by its longer side.
-  const length = (a, b) =>
-    Math.hypot(
-      (b[1] - a[1]) * 111_200,
-      (b[0] - a[0]) * 111_200 * Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180)
-    );
-  return {
-    ...api,
-    session: (params, signal, job) =>
-      api.session(params, signal, async (s) => {
-        const r = await job({
-          halfWidth: s.halfWidth,
-          box: (sw, ne, w) => {
-            const before = s.work();
-            const v = s.box(sw, ne, w);
-            add(`box ${bucket(side(sw, ne))}`, s.work() - before, v.status === "ok");
-            return v;
-          },
-          segment: (a, b, w) => {
-            const before = s.work();
-            const v = s.segment(a, b, w);
-            add(`leg ${bucket(length(a, b))}`, s.work() - before, v.status === "ok");
-            return v;
-          },
-          work: () => s.work(),
-          pause: () => s.pause()
-        });
-        const stage = `session xte ${params.xteLimit ?? "default"}`;
-        const e = (profile[stage] ??= { calls: 0, work: 0, passed: 0 });
-        e.calls++;
-        e.work += s.work();
-        return r;
-      })
-  };
 }
 
 function summarise(reply) {
@@ -314,11 +264,7 @@ async function main() {
       process.stdout.write(`     ${why}\n`);
     }
     if (PROFILE) {
-      for (const [k, e] of Object.entries(profile).sort((a, b) => b[1].work - a[1].work)) {
-        process.stdout.write(
-          `     ${k.padEnd(14)} ${String(e.calls).padStart(7)} calls ${String(e.work).padStart(11)} work, ${e.passed} ok\n`
-        );
-      }
+      printProfile(profile);
     }
   }
   process.exit(bad > 0 ? 1 : 0);

@@ -6,9 +6,11 @@ import {
   PREPARE_MARGIN,
   Preparer,
   searchRegion,
+  tripLimits,
   tripRegion
 } from "../../src/plan/prepare";
 import { apiFor } from "../../src/plugin-api";
+import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -284,6 +286,29 @@ describe("/plan with prepare", () => {
     expect(p.calls).toHaveLength(0);
   });
 
+  test("past maxDistance, a provider that surveys has the trip prepared, up to a corridor's reach", async () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    g[PLANNING_API] = {
+      ...p.api,
+      features: ["prepare", "survey", "corridor"],
+      survey: () => Promise.resolve({ ok: false, status: 503, error: "none" })
+    };
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+    const waiting = await api.plan(
+      { from: at(0, 0), to: at(70_000, 0) },
+      new AbortController().signal
+    );
+    expect(waiting).toMatchObject({ status: 503, body: { preparing: true } });
+    expect(p.calls).toHaveLength(1);
+    // Past a corridor's reach: refused, building nothing.
+    const far = await api.plan(
+      { from: at(0, 0), to: at(DEFAULT_PLAN.corridorDistance + 1000, 0) },
+      new AbortController().signal
+    );
+    expect(far.status).toBe(400);
+    expect(p.calls).toHaveLength(1);
+  });
+
   test("the trip's index is prepared for the request's draft", async () => {
     const p = preparing(syntheticApi({ obstacles: [] }));
     g[PLANNING_API] = p.api;
@@ -298,5 +323,30 @@ describe("/plan with prepare", () => {
     await api.plan({ from: at(0, 0), to: at(5000, 0), draft: 3.5 }, new AbortController().signal);
     await api.plan({ from: at(0, 0), to: at(5000, 0) }, new AbortController().signal);
     expect(drafts).toEqual([3.5, undefined]);
+  });
+});
+
+describe("tripLimits", () => {
+  const surveys = (api: PlanningApiV1): PlanningApiV1 => ({
+    ...api,
+    features: ["prepare", "survey", "corridor"],
+    survey: () => Promise.resolve({ ok: false as const, status: 503, error: "none" })
+  });
+
+  test("past maxDistance where the provider surveys: a corridor's limits, on a planning box too", () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    const region = onPrepared(p.api, p.prepared);
+    const far = tripLimits(surveys(p.api), region, 87_800);
+    expect(far.maxDistance).toBe(DEFAULT_PLAN.corridorDistance);
+    expect(far.maxWork).toBeGreaterThan(DEFAULT_PLAN.maxWork);
+    // Without a survey the trip keeps the default limits, and plan() refuses it.
+    expect(tripLimits(p.api, region, 87_800)).toBe(DEFAULT_PLAN);
+  });
+
+  test("within maxDistance on a planning box: the default limits; in a corridor: a corridor's", () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    expect(tripLimits(surveys(p.api), onPrepared(p.api, p.prepared), 40_000)).toBe(DEFAULT_PLAN);
+    const corridor = onPrepared(p.api, p.prepared, [[21, 59, 23, 61]]);
+    expect(tripLimits(p.api, corridor, 40_000).maxWork).toBeGreaterThan(DEFAULT_PLAN.maxWork);
   });
 });

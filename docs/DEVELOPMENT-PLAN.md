@@ -228,12 +228,23 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
   index decide, and past the corridor the chart reads no coverage. A corridor build serves its
   own trip alone, at its own draft. A survey that fails, or joins the ends by none, leaves the
   least region's 413 as the reply.
+- The search on a corridor's index knows its boxes (`Session.within`). It asks about no square
+  whose box reaches past them: past them the chart reads no coverage, which no request accepts
+  and the fallback never crosses, so such a square is unverified without a query and one across
+  their edge is split until its parts lie inside or outside. Its region is the square around the
+  corridor's boxes when that is smaller than the square around the midpoint, with a coarser
+  smallest square than a short trip's: each halving of it doubles the boxes asked along a long
+  trip's shores.
+- A trip planned in a corridor, or past `maxDistance` where underkeel serves a survey, has a
+  corridor's limits (`limitsFor`, `src/plan/options.ts`): a longer reach, and work in proportion
+  to the trip's length, never less than a short trip's. Its index took minutes to build, and its
+  shores are long.
 - R2's exit trial (`npm run trial:r2`, `docs/trials.md`) plans Turku to Utö, 50 nm, on
   underkeel's own planning boxes, survey and build processes in a 2 GB memory limit.
 
-**Still open:** 50 nm is past `DEFAULT_PLAN.maxDistance` (60 km) and its work budget; the trial
-raises both, as the other trials raise the work. The search's region is still the square around
-the midpoint, not the corridor's box.
+**Still open:** most of a corridor's work is the search along the archipelago's shores, as in
+§6; steering the search along the coarse route could cut it. A survey reaches only so far
+(underkeel's cap on its area), so a long diagonal trip may be refused before its corridor.
 
 ### 4.3 R3: time-dependent search and tide gates
 
@@ -352,7 +363,8 @@ for underkeel to build on the machine.
 ## 6. Performance budget
 
 Raspberry Pi 4 is the reference. One plan may do 1 200 000 underkeel work units (about 3 s on a
-Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop). A\* stops at 80 % of that and string
+Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop); a trip planned in a corridor may do
+more, in proportion to its length (§4.2). A\* stops at 80 % of that and string
 pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
 draw on that one budget, each with what the stages before it left. The proof is underkeel's
 route check, bounded by `/route-check`'s own limits; its work is not counted in the plan's. Work
