@@ -154,12 +154,22 @@ async function lastResort(
   refused: Extract<Staged, { refusal: unknown }>,
   xteLimit?: number
 ): Promise<Staged> {
-  const opts = { ...st.opts, harbourMetres: 0, maxWork: st.opts.maxWork - refused.work };
+  const left = st.opts.maxWork - refused.work;
+  if (left <= 0) {
+    return { ...refused, refusal: { ...refused.refusal, reason: WORK_LIMIT } };
+  }
+  const opts = { ...st.opts, harbourMetres: 0, maxWork: left };
   const whole = await st.api.session(st.params, st.signal, (s) =>
     searchRoute(s, ends[0], ends[1], opts, st.rule, st.fallback)
   );
-  if (!whole.ok || !whole.value.ok) {
-    return refused;
+  if (!whole.ok) {
+    return whole;
+  }
+  if (!whole.value.ok) {
+    // Its work counts, and so does its running out of it: the harbour refusal otherwise.
+    const work = refused.work + whole.value.work;
+    const reason = whole.value.reason === WORK_LIMIT ? WORK_LIMIT : refused.refusal.reason;
+    return { ...refused, refusal: { ...refused.refusal, reason, work }, work };
   }
   return {
     ok: true,

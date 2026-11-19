@@ -22,8 +22,8 @@ the results do not depend on the tide or the day. The work limit is raised, so a
 whether the search finds a route apart from whether it does so within the Raspberry Pi budget
 (`docs/DEVELOPMENT-PLAN.md` §6).
 
-Each case also caps its work (`workAtMost`), in underkeel work units; the plan's budget is
-1.2 M (`docs/DEVELOPMENT-PLAN.md` §6). `npm run trial -- --profile` shows where the work went.
+Each case also caps its work (`workAtMost`), in underkeel work units, against the plan's own
+budget (`DEFAULT_PLAN.maxWork` in `src/plan/options.ts`, `docs/DEVELOPMENT-PLAN.md` §6). `npm run trial -- --profile` shows where the work went.
 
 Run the trials for every change to the search or the plan. When a change moves a result for a
 good reason, update the expectation and the table below in the same pull request.

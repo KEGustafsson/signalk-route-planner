@@ -54,12 +54,27 @@ interface State {
   back: Map<number, { prev: QuadNode; portal: XY }>;
   closed: Map<number, QuadNode>;
   open: Heap<QuadNode>;
+  /** The priority each square was last queued at: an entry queued earlier is stale. */
+  queued: Map<number, number>;
 }
 
 /** A leaf's weight, 1 while it is not classified: a lower bound, so the queue order holds. */
 const weightOf = (st: State, n: QuadNode): number => (n.state === "unknown" ? 1 : st.weight(n));
 
-/** Queues `m`, reached from `n` through `portal`, when that is cheaper than what it has. */
+/** Distance from point `p` to the square of `n`: 0 inside it. */
+function toSquare(n: QuadNode, p: XY): number {
+  const dx = Math.max(n.x - p[0], 0, p[0] - (n.x + n.size));
+  const dy = Math.max(n.y - p[1], 0, p[1] - (n.y + n.size));
+  return Math.hypot(dx, dy);
+}
+
+/**
+ * Queues `m`, reached from `n` through `portal`, when that is cheaper than what it has. A
+ * square not yet classified and larger than a unit may split, and a child of it can be
+ * cheaper than its centre: it is queued at a lower bound for every square in it (the cost to
+ * `n`, on to the square's nearest point, and the heuristic from the square's nearest point to
+ * the goal), and at its own cost once classified.
+ */
 function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
   if (st.closed.has(m.id)) {
     return;
@@ -71,7 +86,14 @@ function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
   if (gm < (st.g.get(m.id) ?? Infinity)) {
     st.g.set(m.id, gm);
     st.back.set(m.id, { prev: n, portal });
-    st.open.push(m, gm + st.greed * dist(st.pos(m), st.goal));
+    const f =
+      m.state === "unknown" && m.size > 1
+        ? (st.g.get(n.id) as number) +
+          toSquare(m, st.pos(n)) * weightOf(st, n) +
+          st.greed * toSquare(m, st.goal)
+        : gm + st.greed * dist(st.pos(m), st.goal);
+    st.queued.set(m.id, f);
+    st.open.push(m, f);
   }
 }
 
@@ -98,10 +120,17 @@ function classify(st: State, n: QuadNode): boolean {
     return false;
   }
   const b = st.back.get(n.id);
-  if (b && st.weight(n) !== 1) {
-    // Queued at weight 1: queue it again at its own.
+  if (b && (st.weight(n) !== 1 || n.size > 1)) {
+    // Queued at weight 1, or at a lower bound: queue it again at its own cost, from
+    // whichever expanded square beside it is the cheapest way in (the portal sets the
+    // length inside it).
     st.g.delete(n.id);
     relax(st, b.prev, n, b.portal);
+    for (const { node: m, portal } of st.tree.neighbours(n, (q) => st.closed.has(q.id), false)) {
+      if (st.closed.has(m.id)) {
+        relax(st, m, n, portal);
+      }
+    }
     return false;
   }
   return true;
@@ -131,13 +160,16 @@ export async function aStar(
     g: new Map([[from.id, 0]]),
     back: new Map(),
     closed: new Map(),
-    open: new Heap<QuadNode>()
+    open: new Heap<QuadNode>(),
+    queued: new Map([[from.id, dist(start, goal)]])
   };
   st.open.push(from, dist(start, goal));
   let expanded = 0;
   while (st.open.size > 0) {
+    const key = st.open.peekKey();
     const n = st.open.pop();
-    if (st.closed.has(n.id) || n.state === "split") {
+    // A square queued again at another priority is expanded at that one, not this.
+    if (st.closed.has(n.id) || n.state === "split" || st.queued.get(n.id) !== key) {
       continue;
     }
     if (n.state === "unknown" && !classify(st, n)) {

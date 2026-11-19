@@ -319,13 +319,8 @@ the shores the search meets. R2 cuts those by asking about fewer of them:
 - an end the search cannot join goes to its harbour stage before any whole-route fallback,
   whose risk-weighted search reaches across the whole region.
 
-| Field trial (`docs/trials.md`)   | Before R2 |  After |
-| -------------------------------- | --------: | -----: |
-| Turku → Nauvo, CATZOC B          |    18.4 M |  4.7 M |
-| Turku → Nauvo, CATZOC A1         |    16.5 M |  3.3 M |
-| Miami: sea → Fisher Island basin |    1.13 M | 0.66 M |
-| Miami: sea → Bayside             |    17.0 M | 17.1 M |
-| Miami: sea → Miami Beach Marina  |    39.3 M |  1.6 M |
+With these the field trials' work fell on every case but the Bayside fallback, most where a
+harbour end had sent the whole route to the fallback; `docs/trials.md` records each case's work.
 
 Still open: a 20 nm passage through the archipelago is three to four times the budget, and a
 fallback route across risky water (Bayside, through unassessed water) reaches across its whole
