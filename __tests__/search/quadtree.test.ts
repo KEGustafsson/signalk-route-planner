@@ -78,7 +78,7 @@ describe("quadtree adjacency", () => {
     const tree = treeWith((x, y) => (x === 0 && y === 0) || (x === 7 && y === 7), queries);
     const from = tree.leafAt(0.5, 0.5);
     const to = tree.leafAt(7.5, 7.5);
-    const cap = queries.n + 3;
+    const cap = queries.n + 1;
     const r = await aStar(tree, from as never, [0.5, 0.5], to as never, [7.5, 7.5], {
       ...limits,
       exhausted: () => queries.n >= cap
