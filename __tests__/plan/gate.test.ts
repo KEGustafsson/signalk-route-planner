@@ -127,14 +127,21 @@ describe("tide gates", () => {
       NOW
     );
     expect(ok.ok && ok.value.latestDeparture).toBe(NOW + 6 * HOUR);
-    // ISO 8601 with a zone, on a real calendar day: no other form, and no 30 February.
-    for (const latest of [
-      "Wed, 18 Nov 2026 12:00:00 GMT",
-      "2026-11-18T12:00:00",
-      "2026-02-30T07:00:00Z"
-    ]) {
+    // ISO 8601 with a zone: no other form.
+    for (const latest of ["Wed, 18 Nov 2026 12:00:00 GMT", "2026-11-18T12:00:00"]) {
       expect(parsePlanRequest({ ...base, latestDeparture: latest }, NOW).ok).toBe(false);
     }
+  });
+
+  test("latestDeparture is a real calendar day: 30 February is refused, not rolled into March", () => {
+    // Date.parse would make it 2 March 07:00, inside this departure's 24 h.
+    const base = { from: [22, 60], to: [22.1, 60.1], departure: "2026-03-02T00:00:00Z" };
+    expect(parsePlanRequest({ ...base, latestDeparture: "2026-03-02T07:00:00Z" }, NOW).ok).toBe(
+      true
+    );
+    expect(parsePlanRequest({ ...base, latestDeparture: "2026-02-30T07:00:00Z" }, NOW).ok).toBe(
+      false
+    );
   });
 });
 
@@ -184,6 +191,32 @@ describe("the departure gate's legs", () => {
     );
     const t = await timeDeparture(api, g, parts, ctx);
     expect(t.ok).toBe(false);
+  });
+
+  test("a session the abort ends mid-way still counts the work it did", async () => {
+    const calls = { n: 0 };
+    const fail: Verdict = { status: "fail", risk: 0.9, flags: [] };
+    const api = {
+      defaults: () => ({ speed: 3, xteLimit: 30, probability: 0.01, planningBuffer: 10 }),
+      async session(_p: unknown, _s: AbortSignal, job: (s: Session) => Promise<unknown>) {
+        const s = {
+          halfWidth: 10,
+          box: () => fail,
+          segment: () => (calls.n++, fail),
+          work: () => calls.n * 100,
+          pause: () => Promise.reject(new Error("aborted"))
+        } as Session;
+        try {
+          return { ok: true, value: await job(s) };
+        } catch {
+          return { ok: false, status: 503, error: "aborted" };
+        }
+      }
+    } as unknown as PlanningApiV1;
+    const t = await timeDeparture(api, g, parts, ctx);
+    // Queries over the whole horizon and one slot before the pause the abort ended: all counted.
+    expect(calls.n).toBeGreaterThan(1);
+    expect(t).toMatchObject({ ok: false, work: calls.n * 100 });
   });
 
   test("with its work spent, the gate asks nothing more, not even over the whole horizon", async () => {
