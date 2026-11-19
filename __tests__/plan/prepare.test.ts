@@ -205,6 +205,25 @@ describe("Preparer", () => {
     }
   });
 
+  test("a 413 for a longer trip's region it shared: the trip asks for its own", async () => {
+    const e = each();
+    const prep = new Preparer(1000);
+    const stop = new AbortController().signal;
+    const a = prep.forTrip(e.api, at(0, 0), at(20_000, 0), stop);
+    // Inside the first trip's least region: it shares the build throughout.
+    const b = prep.forTrip(e.api, at(1000, 0), at(4000, 0), stop);
+    await flush();
+    e.calls[0]?.settle({ ok: false, status: 413, error: "too large" });
+    await flush();
+    e.calls[1]?.settle({ ok: false, status: 413, error: "still too large" });
+    await flush();
+    expect(await a).toEqual({ status: 413, body: { errors: ["still too large"] } });
+    // The shorter trip asks for its own regions; its least is built.
+    expect(e.calls.map((c) => c.region).slice(2)).toEqual([searchRegion(at(1000, 0), at(4000, 0))]);
+    e.calls[2]?.settle(e.ok());
+    expect("version" in (await b)).toBe(true);
+  });
+
   test("the prepared index serves the sessions and the route check", async () => {
     const inner = syntheticApi({ obstacles: [] });
     const p = preparing(inner);

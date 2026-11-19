@@ -66,6 +66,8 @@ export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAU
 const holds = (o: Bbox, i: Bbox): boolean =>
   o[0] <= i[0] && o[1] <= i[1] && o[2] >= i[2] && o[3] >= i[3];
 
+const same = (a: Bbox, b: Bbox): boolean => holds(a, b) && holds(b, a);
+
 /** `api` with its session and route check over the prepared index `p`. */
 export function onPrepared(api: PlanningApiV1, p: Prepared): PlanningApiV1 {
   return {
@@ -171,8 +173,9 @@ export class Preparer {
    * The planning API over an index for the trip `from`–`to`; `api` itself when it serves no
    * `prepare`; BUILDING while the index is still being built after `waitMs`; the provider's
    * refusal as a reply. A build whose region holds the trip's least region is shared; one that
-   * fell back past the trip to its own least region is not, and the trip gets its own. The build
-   * runs until `stop` (the plugin stopping), not the request.
+   * fell back past the trip to its own least region is not, and the trip gets its own, as it does
+   * when a larger region it shared is refused as too large (413). The build runs until `stop`
+   * (the plugin stopping), not the request.
    */
   async forTrip(
     api: PlanningApiV1,
@@ -197,7 +200,11 @@ export class Preparer {
       if (r === "waiting") {
         return BUILDING;
       }
-      if (!holds(build.region, least)) {
+      // A 413 for a larger trip's region it shared is no answer for this trip's own: asked again.
+      if (
+        !holds(build.region, least) ||
+        (!r.ok && r.status === 413 && !same(build.region, least))
+      ) {
         continue;
       }
       if (!r.ok) {
