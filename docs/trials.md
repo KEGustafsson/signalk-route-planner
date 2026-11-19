@@ -17,8 +17,9 @@ next to this one, or at `UNDERKEEL_DIR`. Each case writes its reply to
 `data/trials/<case>.json` and its legs with their statuses to `data/trials/<case>.geojson`. The
 run exits 1 when a result does not meet the expectation in `scripts/trials/trials.json`.
 
-Every case is planned for a 1.8 m draft, at 3 m/s, with the water at chart datum (σ 0.2 m), so
-the results do not depend on the tide or the day. The work limit is raised, so a trial tells
+Every case is planned for a 1.8 m draft, at 3 m/s, and by default with the water at chart datum
+(σ 0.2 m), so the results do not depend on the tide or the day; a case may model a tide instead
+(`miami-meloy-channel-tide`). The work limit is raised, so a trial tells
 whether the search finds a route apart from whether it does so within the Raspberry Pi budget
 (`docs/DEVELOPMENT-PLAN.md` §6).
 

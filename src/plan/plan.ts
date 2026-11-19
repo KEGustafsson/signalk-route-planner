@@ -114,6 +114,8 @@ interface Planned {
   base: object;
   rule: PassRule;
   found?: Extract<Staged, { ok: true }>;
+  /** The planning API work its search did, offered or refused. */
+  work: number;
 }
 
 async function planAt(
@@ -143,7 +145,12 @@ async function planAt(
   const st = { api, params, signal, opts, rule, fallback: input.fallback === true };
   const found = await stages(st, input.from, input.to, input.xteLimit);
   if ("error" in found) {
-    return { reply: { status: found.status, body: { errors: [found.error] } }, base: {}, rule };
+    return {
+      reply: { status: found.status, body: { errors: [found.error] } },
+      base: {},
+      rule,
+      work: 0
+    };
   }
   const base = {
     plannedAt: new Date(now).toISOString(),
@@ -158,9 +165,10 @@ async function planAt(
       ...(r.unverified > 0 && { unverifiedSquares: r.unverified }),
       work: found.work
     };
-    return { reply: { status: 422, body }, base, rule };
+    return { reply: { status: 422, body }, base, rule, work: found.work };
   }
-  return { reply: await proved(api, input, signal, { base, rule, found }), base, rule, found };
+  const reply = await proved(api, input, signal, { base, rule, found });
+  return { reply, base, rule, found, work: found.work };
 }
 
 /** The route check of `found` at `input.departure`, and the reply it makes. */
@@ -190,6 +198,12 @@ async function proved(
   return { status: 200, body: offered(base, found.parts, proof, found) };
 }
 
+/** `r` with `work` set to the request's total, where its body carries work. */
+function withWork(r: Reply, work: number): Reply {
+  const body = r.body as { work?: number };
+  return body && typeof body === "object" && "work" in body ? { ...r, body: { ...body, work } } : r;
+}
+
 /** True when a reply offers a route that passes as planned, with no leg left to the tide. */
 const passesAsPlanned = (r: Reply): boolean =>
   r.status === 200 && (r.body as { fallback?: string }).fallback === undefined;
@@ -206,18 +220,30 @@ async function gated(
   opts: PlanOptions,
   first: Planned
 ): Promise<Reply> {
-  const candidate =
-    first.found ?? (await planAt(api, { ...input, fallback: true }, signal, now, opts)).found;
+  // One budget for the whole request: the first search, the fallback's, and the timing.
+  let used = first.work;
+  let candidate = first.found;
   if (!candidate) {
-    return first.reply;
+    const left = opts.maxWork - used;
+    if (left <= 0) {
+      return first.reply;
+    }
+    const again = await planAt(api, { ...input, fallback: true }, signal, now, {
+      ...opts,
+      maxWork: left
+    });
+    used += again.work;
+    candidate = again.found;
+  }
+  if (!candidate) {
+    return withWork(first.reply, used);
   }
   const g = { ...input, latest: input.latestDeparture };
-  const budget = Math.max(0, opts.maxWork - candidate.work);
+  const budget = Math.max(0, opts.maxWork - used);
   const timed = await timeDeparture(api, g, candidate.parts, { rule: first.rule, signal, budget });
-  const note = (reason: string): Reply => ({
-    ...first.reply,
-    body: { ...(first.reply.body as object), gate: { reason } }
-  });
+  used += timed.work;
+  const note = (reason: string): Reply =>
+    withWork({ ...first.reply, body: { ...(first.reply.body as object), gate: { reason } } }, used);
   if (!timed.ok) {
     return note(timed.reason);
   }
@@ -236,6 +262,8 @@ async function gated(
     status: 200,
     body: {
       ...body,
+      // Every search and the timing, each counted once.
+      work: used,
       departure: new Date(timed.departure).toISOString(),
       gate: {
         requested: new Date(input.departure).toISOString(),

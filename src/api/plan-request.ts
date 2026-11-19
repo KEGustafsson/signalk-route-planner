@@ -27,13 +27,38 @@ const YEAR = 365 * 24 * 3_600_000;
 /** The longest a plan may wait for the tide: a day covers two tides everywhere. */
 export const MAX_WAIT_MS = 24 * 3_600_000;
 
+const ISO_TIME =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/**
+ * Epoch ms of an ISO 8601 date and time with a zone (`Z` or an offset), else NaN. Date.parse
+ * alone takes other forms and rolls an impossible date over (30 February becomes March).
+ */
+export function isoTime(v: string): number {
+  const m = ISO_TIME.exec(v);
+  if (!m) {
+    return NaN;
+  }
+  const [y, mo, d, h, mi, s] = m.slice(1, 7).map((x) => Number(x ?? 0)) as number[];
+  const days = new Date(Date.UTC(y as number, mo as number, 0)).getUTCDate();
+  const valid =
+    (mo as number) >= 1 &&
+    (mo as number) <= 12 &&
+    (d as number) >= 1 &&
+    (d as number) <= days &&
+    (h as number) < 24 &&
+    (mi as number) < 60 &&
+    (s as number) < 60;
+  return valid ? Date.parse(v) : NaN;
+}
+
 /** `departure` and `latestDeparture`, ISO 8601, each checked. */
 function times(
   b: Record<string, unknown>,
   now: number,
   errors: string[]
 ): { departure?: number; latestDeparture?: number } {
-  const iso = (v: unknown): number => (typeof v === "string" ? Date.parse(v) : NaN);
+  const iso = (v: unknown): number => (typeof v === "string" ? isoTime(v) : NaN);
   let departure: number | undefined;
   if (b.departure !== undefined) {
     const t = iso(b.departure);

@@ -48,8 +48,14 @@
     return (metres / 1852).toFixed(1) + " nm";
   }
 
-  /** "Leave at 14:15 UTC, waiting 3 h 15 min for the tide. " for a tide-gated plan, else "". */
+  /**
+   * "Leave at 14:15 UTC, waiting 3 h 15 min for the tide. " for a tide-gated plan; why waiting
+   * found no departure when it did not (a fallback reply still offers its marked route); else "".
+   */
   function gateText(gate) {
+    if (gate && gate.reason) {
+      return "Waiting for the tide found no passing route: " + gate.reason + ". ";
+    }
     if (!gate || !gate.departure) {
       return "";
     }

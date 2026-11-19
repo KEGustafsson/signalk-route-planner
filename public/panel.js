@@ -62,9 +62,19 @@ function showLegs(legs) {
   table.hidden = legs.length === 0;
 }
 
-/** The latest departure, `hours` from now, as the request field; none for 0. */
+/**
+ * The departure and the latest departure, `hours` after it, as request fields, both from one
+ * reading of the clock so the wait never exceeds the server's limit; none for 0.
+ */
 function latest(hours) {
-  return hours > 0 ? { latestDeparture: new Date(Date.now() + hours * 3_600_000).toISOString() } : {};
+  if (!(hours > 0)) {
+    return {};
+  }
+  const now = Date.now();
+  return {
+    departure: new Date(now).toISOString(),
+    latestDeparture: new Date(now + hours * 3_600_000).toISOString()
+  };
 }
 
 async function planSelected() {

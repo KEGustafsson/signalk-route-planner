@@ -2,7 +2,9 @@ import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { PlanningApiV1, Verdict, Window } from "../oracle/contract";
 import type { PassRule } from "../search/passes";
+import { berthable } from "../search/fallback";
 import { passes } from "../search/passes";
+import { isBerth } from "./proof";
 import type { Part } from "./stages";
 
 /**
@@ -23,13 +25,17 @@ export interface GateInput {
   draft?: number;
 }
 
+/** The departure, or why there is none, with the planning API work the timing did. */
 export type Timed =
-  { ok: true; departure: number; gated: number[] } | { ok: false; reason: string };
+  | { ok: true; departure: number; gated: number[]; work: number }
+  | { ok: false; reason: string; work: number };
 
 interface Leg {
   a: LonLat;
   b: LonLat;
   xteLimit?: number;
+  /** A berth leg: alongside its quay by design, held only to `berthable`, as the proof holds it. */
+  berth?: true;
   /** Time from departure to the leg's start and end, ms. */
   from: number;
   to: number;
@@ -48,6 +54,7 @@ export function legsOf(parts: readonly Part[], speed: number): Leg[] {
         a,
         b,
         ...(p.xteLimit !== undefined && { xteLimit: p.xteLimit }),
+        ...(isBerth(p, i - 1) && { berth: true as const }),
         from: t,
         to: t + dt
       });
@@ -57,8 +64,12 @@ export function legsOf(parts: readonly Part[], speed: number): Leg[] {
   return legs;
 }
 
-/** Whether a verdict lets a strict plan through: passing, or marginal. */
-const through = (v: Verdict, rule: PassRule): boolean => passes(v, rule) || v.status === "marginal";
+/**
+ * Whether a verdict lets a strict plan through: passing, or marginal. A berth leg touches its
+ * quay by design, so as in the proof only a flag `berthable` rejects closes it.
+ */
+const through = (v: Verdict, rule: PassRule, leg: Leg): boolean =>
+  leg.berth ? berthable(v) : passes(v, rule) || v.status === "marginal";
 
 /** The slot windows that cover [from, to), on the grid from `origin`. */
 function slotsOver(origin: number, from: number, to: number): number[] {
@@ -83,7 +94,7 @@ async function passWindows(
   legs: readonly Leg[],
   horizon: Window,
   ctx: { rule: PassRule; signal: AbortSignal; budget: number }
-): Promise<Map<number, boolean[]> | string> {
+): Promise<{ gated: Map<number, boolean[]>; work: number } | { reason: string; work: number }> {
   const slots = Math.ceil((horizon.end - horizon.start) / SLOT_MS);
   const gated = new Map<number, boolean[]>();
   let work = 0;
@@ -97,32 +108,41 @@ async function passWindows(
       ...(g.draft !== undefined && { draft: g.draft })
     };
     const r = await api.session(params, ctx.signal, async (s) => {
+      const spent = (): boolean => work + s.work() >= ctx.budget;
       for (const [i, leg] of legs.entries()) {
-        if (leg.xteLimit !== width || through(s.segment(leg.a, leg.b, horizon), ctx.rule)) {
+        if (leg.xteLimit !== width) {
+          continue;
+        }
+        // Every query is within the budget, the full-horizon one included.
+        if (spent()) {
+          return { stop: WORK, work: s.work() };
+        }
+        if (through(s.segment(leg.a, leg.b, horizon), ctx.rule, leg)) {
           continue;
         }
         const open: boolean[] = [];
         for (let k = 0; k < slots; k++) {
-          if (work + s.work() >= ctx.budget) {
-            return WORK;
+          if (spent()) {
+            return { stop: WORK, work: s.work() };
           }
           const start = horizon.start + k * SLOT_MS;
-          open.push(through(s.segment(leg.a, leg.b, { start, end: start + SLOT_MS }), ctx.rule));
+          const v = s.segment(leg.a, leg.b, { start, end: start + SLOT_MS });
+          open.push(through(v, ctx.rule, leg));
           await s.pause();
         }
         gated.set(i, open);
       }
-      return s.work();
+      return { work: s.work() };
     });
     if (!r.ok) {
-      return r.error;
+      return { reason: r.error, work };
     }
-    if (typeof r.value === "string") {
-      return r.value;
+    work += r.value.work;
+    if (r.value.stop !== undefined) {
+      return { reason: r.value.stop, work };
     }
-    work += r.value;
   }
-  return gated;
+  return { gated, work };
 }
 
 /**
@@ -139,10 +159,11 @@ export async function timeDeparture(
   const legs = legsOf(parts, g.speed);
   const trip = legs[legs.length - 1]?.to ?? 0;
   const horizon: Window = { start: g.departure, end: g.latest + trip + SLOT_MS };
-  const open = await passWindows(api, g, legs, horizon, ctx);
-  if (typeof open === "string") {
-    return { ok: false, reason: open };
+  const windows = await passWindows(api, g, legs, horizon, ctx);
+  if ("reason" in windows) {
+    return { ok: false, reason: windows.reason, work: windows.work };
   }
+  const { gated: open, work } = windows;
   const gated = [...open.keys()];
   for (let t = g.departure; t <= g.latest; t += SLOT_MS) {
     const clear = gated.every((i) => {
@@ -151,12 +172,22 @@ export async function timeDeparture(
       return slotsOver(g.departure, t + leg.from, t + leg.to).every((k) => w[k] === true);
     });
     if (clear) {
-      return { ok: true, departure: t, gated };
+      return { ok: true, departure: t, gated, work };
     }
   }
-  const at = new Date(g.latest).toISOString();
-  return {
-    ok: false,
-    reason: `no departure up to ${at} passes leg${gated.length === 1 ? "" : "s"} ${gated.map((i) => i + 1).join(", ")} at any state of the water level the forecast gives`
-  };
+  return { ok: false, reason: noDeparture(g.latest, gated, open), work };
+}
+
+/**
+ * Why no departure qualified: the gated legs no window of the horizon opens, if any; else the
+ * gated legs, each passable in some window, that no single departure reaches in their windows.
+ */
+function noDeparture(latest: number, gated: number[], open: Map<number, boolean[]>): string {
+  const at = new Date(latest).toISOString();
+  const name = (ls: number[]) =>
+    `leg${ls.length === 1 ? "" : "s"} ${ls.map((i) => i + 1).join(", ")}`;
+  const closed = gated.filter((i) => !(open.get(i) as boolean[]).includes(true));
+  return closed.length > 0
+    ? `no departure up to ${at} passes ${name(closed)}: no state of the water level the forecast gives opens ${closed.length === 1 ? "it" : "them"}`
+    : `no departure up to ${at} passes ${name(gated)} each in a window the check passes it in`;
 }

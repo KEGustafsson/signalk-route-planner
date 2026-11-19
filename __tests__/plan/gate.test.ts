@@ -1,6 +1,9 @@
 import type { LonLat } from "../../src/foundation/geo";
 import { parsePlanRequest } from "../../src/api/plan-request";
+import type { PlanningApiV1, Session, Verdict } from "../../src/oracle/contract";
+import { timeDeparture } from "../../src/plan/gate";
 import { plan } from "../../src/plan/plan";
+import type { Part } from "../../src/plan/stages";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -29,6 +32,7 @@ const falling = (t: number): number => 1 - 1.2 * Math.sin((2 * Math.PI * (t - NO
 
 interface Body {
   status: string;
+  work?: number;
   departure?: string;
   route: { coordinates: LonLat[] };
   check: { legs: { status: string }[] };
@@ -98,6 +102,12 @@ describe("tide gates", () => {
     expect(body.gate?.reason).toMatch(/no departure up to .* passes leg/);
   });
 
+  test("the reply counts the timing's work with the searches', each once", async () => {
+    const plain = await planned(barred(falling));
+    const timed = await planned(barred(falling), NOW + 12 * HOUR);
+    expect(timed.body.work as number).toBeGreaterThan(plain.body.work as number);
+  });
+
   test("a route that passes at the departure is offered as it is, with no gate", async () => {
     const high = (): number => 2;
     const { r, body } = await planned(barred(high), NOW + 12 * HOUR);
@@ -117,5 +127,68 @@ describe("tide gates", () => {
       NOW
     );
     expect(ok.ok && ok.value.latestDeparture).toBe(NOW + 6 * HOUR);
+    // ISO 8601 with a zone, on a real calendar day: no other form, and no 30 February.
+    for (const latest of [
+      "Wed, 18 Nov 2026 12:00:00 GMT",
+      "2026-11-18T12:00:00",
+      "2026-02-30T07:00:00Z"
+    ]) {
+      expect(parsePlanRequest({ ...base, latestDeparture: latest }, NOW).ok).toBe(false);
+    }
+  });
+});
+
+/** A planning API whose every leg gets `verdict(a, b)`, counting the segment queries. */
+function fixedApi(verdict: (a: LonLat) => Verdict) {
+  const calls = { n: 0 };
+  const api = {
+    defaults: () => ({ speed: 3, xteLimit: 30, probability: 0.01, planningBuffer: 10 }),
+    async session(_p: unknown, _s: AbortSignal, job: (s: Session) => Promise<unknown>) {
+      const s = {
+        halfWidth: 10,
+        box: () => verdict([0, 0]),
+        segment: (a: LonLat) => (calls.n++, verdict(a)),
+        work: () => calls.n * 100,
+        pause: () => Promise.resolve()
+      } as Session;
+      return { ok: true, value: await job(s) };
+    }
+  } as unknown as PlanningApiV1;
+  return { api, calls };
+}
+
+describe("the departure gate's legs", () => {
+  const quay = at(0, 0);
+  const off = at(30, 0);
+  const sea = at(2000, 0);
+  // A harbour part from the quay: its first leg is the berth leg, the rest open water.
+  const parts: Part[] = [
+    { kind: "harbour", end: "start", coordinates: [quay, off, sea], xteLimit: 0, berth: off }
+  ];
+  const g = { departure: NOW, latest: NOW + 6 * HOUR, speed: 3 };
+  const rule = { accept: [], probability: 0.01 };
+  const ctx = { rule, signal: NEVER, budget: 1e9 };
+  const ok: Verdict = { status: "ok", risk: 0, flags: [] };
+
+  test("a berth leg along its quay is not gated: its LAND is expected, as in the proof", async () => {
+    const { api } = fixedApi((a) =>
+      a === quay ? { status: "fail", risk: 0.9, flags: ["LAND"] } : ok
+    );
+    const t = await timeDeparture(api, g, parts, ctx);
+    expect(t).toMatchObject({ ok: true, departure: NOW, gated: [] });
+  });
+
+  test("a berth leg into closed water still closes the gate", async () => {
+    const { api } = fixedApi((a) =>
+      a === quay ? { status: "fail", risk: 0.9, flags: ["LAND", "ENTRY_PROHIBITED"] } : ok
+    );
+    const t = await timeDeparture(api, g, parts, ctx);
+    expect(t.ok).toBe(false);
+  });
+
+  test("with its work spent, the gate asks nothing more, not even over the whole horizon", async () => {
+    const { api, calls } = fixedApi(() => ok);
+    const t = await timeDeparture(api, g, parts, { ...ctx, budget: 0 });
+    expect({ ok: t.ok, calls: calls.n }).toEqual({ ok: false, calls: 0 });
   });
 });

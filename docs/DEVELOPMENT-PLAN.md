@@ -205,8 +205,9 @@ windows, at the lowest water in each.
    gated leg lies, as the boat reaches it, in windows it may be passed in.
 5. The route check proves the route leaving then, leg by leg at each arrival. The plan is offered
    only if it passes, with `departure` and `gate` (the requested and chosen departures, the wait
-   and the gated legs); else the refusal carries `gate.reason`, naming the legs no state of the
-   water level passes.
+   and the gated legs); else the refusal carries `gate.reason`, why no departure qualified: legs
+   no state of the water level passes, or gated legs whose windows each pass but at no common
+   departure.
 
 The work of step 3 draws on what the search left of `maxWork`.
 
