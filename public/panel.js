@@ -92,18 +92,34 @@ async function planSelected() {
       show("fail", "The route needs a start and a destination point.");
       return;
     }
-    const res = await fetch(`${P.API}/plan`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ...ends,
-        ...(document.getElementById("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
-        ...(document.getElementById("fallback").checked && { fallback: true }),
-        ...latest(Number(document.getElementById("wait").value))
-      })
-    });
-    const body = await res.json().catch(() => ({}));
+    let res;
+    let body;
+    for (let attempt = 0; ; attempt++) {
+      res = await fetch(`${P.API}/plan`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...ends,
+          ...(document.getElementById("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
+          ...(document.getElementById("fallback").checked && { fallback: true }),
+          ...latest(Number(document.getElementById("wait").value))
+        })
+      });
+      body = await res.json().catch(() => ({}));
+      const wait = P.preparingWait(res.status, body, res.headers.get("Retry-After"));
+      if (wait === null || attempt >= P.MAX_PREPARING) {
+        break;
+      }
+      // signalk-underkeel builds the trip's chart index: asked again, the planner plans on it.
+      const s = P.summary(res.status, body);
+      show(s.kind, s.text);
+      await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+    }
+    if (P.preparingWait(res.status, body, null) !== null) {
+      show("unverified", "Not planned: the chart index for this trip's region is still being built; plan again later.");
+      return;
+    }
     const s = P.summary(res.status, body);
     show(s.kind, s.text);
     if (res.status === 200) {

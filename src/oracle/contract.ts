@@ -49,9 +49,33 @@ export interface Reply {
   headers?: Record<string, string>;
 }
 
+/** [west, south, east, north], degrees. */
+export type Bbox = [number, number, number, number];
+
+/**
+ * An index prepared for a region (`prepare`): the session and route check over it. Its
+ * queries are judged on the charts wherever a box's or leg's corridor lies in the region.
+ */
+export interface Prepared {
+  /** The box the index was built in; undefined for a whole index. */
+  readonly coverage: Bbox | undefined;
+  session<T>(
+    params: SessionParams,
+    signal: AbortSignal,
+    job: (s: Session) => Promise<T>
+  ): Promise<SessionResult<T>>;
+  routeCheck(body: unknown, signal: AbortSignal): Promise<Reply>;
+  release(): void;
+}
+
+export type PrepareResult =
+  { ok: true; value: Prepared } | { ok: false; status: number; error: string };
+
 export interface PlanningApiV1 {
   readonly version: 1;
   readonly provider: string;
+  /** Additions to version 1 the provider serves; absent from one that serves none. */
+  readonly features?: readonly string[];
   unavailable(): string | undefined;
   coverage(): [number, number, number, number] | undefined;
   defaults(): { speed: number; xteLimit: number; probability: number; planningBuffer: number };
@@ -61,6 +85,18 @@ export interface PlanningApiV1 {
     job: (s: Session) => Promise<T>
   ): Promise<SessionResult<T>>;
   routeCheck(body: unknown, signal: AbortSignal): Promise<Reply>;
+  /**
+   * With `features` listing "prepare": an index for `region`, the chart box around the vessel
+   * when it covers it, else a planning box built for it, which can take minutes.
+   */
+  prepare?(region: Bbox, signal: AbortSignal): Promise<PrepareResult>;
+}
+
+/** Whether `api` serves `prepare` (signalk-underkeel's planning boxes). */
+export function canPrepare(
+  api: PlanningApiV1
+): api is PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">> {
+  return api.features?.includes("prepare") === true && typeof api.prepare === "function";
 }
 
 const METHODS = ["unavailable", "coverage", "defaults", "session", "routeCheck"] as const;

@@ -31,5 +31,10 @@ All notable changes to signalk-route-planner are documented here.
 - Tide gates: with `latestDeparture`, a route that passes only at some states of the tide is
   offered leaving at the earliest departure up to then that the route check passes, with the
   wait; the planner asks the planning API about each gated leg over 15-minute windows.
+- Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
+  index of the trip's region (both ends with 3.5 km around them): the chart box around the vessel
+  when it covers the region, else a planning box underkeel builds. While the build runs past
+  20 s, `/plan` answers 503 with `preparing: true` and `Retry-After`, and the panel plans again
+  until the index is built.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.

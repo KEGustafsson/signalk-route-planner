@@ -64,9 +64,28 @@
     return "Leave at " + gate.departure.slice(11, 16) + " UTC, waiting " + wait + " for the tide. ";
   }
 
+  /** A panel plans again this many times at most while the trip's chart index is built. */
+  const MAX_PREPARING = 60;
+
+  /** Seconds to wait before planning again while the chart index is built, else null. */
+  function preparingWait(status, body, retryAfter) {
+    if (status !== 503 || !body || body.preparing !== true) {
+      return null;
+    }
+    const s = Number(retryAfter);
+    return isFinite(s) && s > 0 ? Math.min(s, 300) : 30;
+  }
+
   /** One line for the panel from a `/plan` reply (status code and body). */
   function summary(status, body) {
     const b = body || {};
+    if (status === 503 && b.preparing === true) {
+      return {
+        kind: "muted",
+        text:
+          "Building the chart index for this trip's region in signalk-underkeel; this can take minutes. Planning again shortly…"
+      };
+    }
     if (status === 200) {
       const legs = (b.check && b.check.legs) || [];
       return {
@@ -107,6 +126,8 @@
     planPoints: planPoints,
     nm: nm,
     summary: summary,
+    preparingWait: preparingWait,
+    MAX_PREPARING: MAX_PREPARING,
     legLabel: legLabel
   };
   if (typeof module !== "undefined" && module.exports) {
