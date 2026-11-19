@@ -37,8 +37,9 @@ const need = (p) => {
 };
 const uk = (m) => need(path.join(UK, `${m}.js`));
 const { plan } = need(path.join(ROOT, "lib", "plan", "plan.js"));
-const { DEFAULT_PLAN } = need(path.join(ROOT, "lib", "plan", "options.js"));
-const { Preparer } = need(path.join(ROOT, "lib", "plan", "prepare.js"));
+const { DEFAULT_PLAN, limitsFor } = need(path.join(ROOT, "lib", "plan", "options.js"));
+const { inCorridor, Preparer } = need(path.join(ROOT, "lib", "plan", "prepare.js"));
+const { haversine } = need(path.join(ROOT, "lib", "foundation", "geo.js"));
 const { profiled, printProfile } = require("./profile");
 
 const PROFILE = process.argv.includes("--profile");
@@ -218,6 +219,7 @@ async function main() {
       `no index for the trip: ${JSON.stringify(prepared.body)} after ${JSON.stringify(log)}`
     );
   }
+  const limits = limitsFor(DEFAULT_PLAN, haversine(FROM, TO), inCorridor(prepared));
   const t1 = Date.now();
   const departure = Date.now();
   const profile = {};
@@ -235,8 +237,8 @@ async function main() {
     },
     stop.signal,
     Date.now(),
-    // 50 nm is past the plan's default reach and work budget, which R2 does not change.
-    { ...DEFAULT_PLAN, maxWork: 100_000_000, maxDistance: 120_000 }
+    // The limits /plan gives the trip: a corridor's reach, its work in proportion to the trip.
+    limits
   );
   const km2 = (b) =>
     (b[2] - b[0]) *
@@ -250,9 +252,8 @@ async function main() {
     ...(reply.status === 200
       ? { lengthNm: +(b.length / 1852).toFixed(2), legs: b.check.legs.length, work: b.work }
       : { reason: b.reason ?? (b.errors ?? []).join("; "), work: b.work }),
-    distanceNm: +(
-      require(path.join(ROOT, "lib", "foundation", "geo.js")).haversine(FROM, TO) / 1852
-    ).toFixed(1),
+    distanceNm: +(haversine(FROM, TO) / 1852).toFixed(1),
+    maxWork: limits.maxWork,
     buildHeapMb: heapMb,
     planningBoxCapKm2: (2 * capKm) ** 2,
     corridor: corridor && {

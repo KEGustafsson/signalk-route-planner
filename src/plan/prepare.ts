@@ -74,6 +74,14 @@ export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAU
 const holds = (o: Bbox, i: Bbox): boolean =>
   o[0] <= i[0] && o[1] <= i[1] && o[2] >= i[2] && o[3] >= i[3];
 
+/** The planning APIs over a corridor's index (`onPrepared`), for `inCorridor`. */
+const CORRIDORS = new WeakSet<PlanningApiV1>();
+
+/** Whether `api` is over a corridor's index: its trip is planned with a corridor's limits. */
+export function inCorridor(api: PlanningApiV1): boolean {
+  return CORRIDORS.has(api);
+}
+
 /**
  * `api` with its session and route check over the prepared index `p`; its sessions carry
  * `corridor`, the boxes `p` was built in when they are a corridor's (`Session.within`).
@@ -83,7 +91,7 @@ export function onPrepared(
   p: Prepared,
   corridor?: readonly Bbox[]
 ): PlanningApiV1 {
-  return {
+  const over: PlanningApiV1 = {
     version: 1,
     provider: api.provider,
     unavailable: () => api.unavailable(),
@@ -97,6 +105,10 @@ export function onPrepared(
       ),
     routeCheck: (body, signal) => p.routeCheck(body, signal)
   };
+  if (corridor !== undefined) {
+    CORRIDORS.add(over);
+  }
+  return over;
 }
 
 /** `s` that says its index lies within `corridor`'s boxes. */

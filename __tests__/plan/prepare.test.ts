@@ -9,6 +9,7 @@ import {
   tripRegion
 } from "../../src/plan/prepare";
 import { apiFor } from "../../src/plugin-api";
+import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -282,6 +283,29 @@ describe("/plan with prepare", () => {
     const r = await api.plan({ from: at(0, 0), to: at(70_000, 0) }, new AbortController().signal);
     expect(r.status).toBe(400);
     expect(p.calls).toHaveLength(0);
+  });
+
+  test("past maxDistance, a provider that surveys has the trip prepared, up to a corridor's reach", async () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    g[PLANNING_API] = {
+      ...p.api,
+      features: ["prepare", "survey", "corridor"],
+      survey: () => Promise.resolve({ ok: false, status: 503, error: "none" })
+    };
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+    const waiting = await api.plan(
+      { from: at(0, 0), to: at(70_000, 0) },
+      new AbortController().signal
+    );
+    expect(waiting).toMatchObject({ status: 503, body: { preparing: true } });
+    expect(p.calls).toHaveLength(1);
+    // Past a corridor's reach: refused, building nothing.
+    const far = await api.plan(
+      { from: at(0, 0), to: at(DEFAULT_PLAN.corridorDistance + 1000, 0) },
+      new AbortController().signal
+    );
+    expect(far.status).toBe(400);
+    expect(p.calls).toHaveLength(1);
   });
 
   test("the trip's index is prepared for the request's draft", async () => {
