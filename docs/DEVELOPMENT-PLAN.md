@@ -229,7 +229,7 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
   past the corridor the chart reads no coverage. A corridor build serves its own trip alone. A
   survey that fails, or joins the ends by none, leaves the least region's 413 as the reply.
 - R2's exit trial (`npm run trial:r2`, `docs/trials.md`) plans Turku to Utö, 50 nm, on
-  underkeel's own planning boxes, survey and build processes in a 1 GB memory limit.
+  underkeel's own planning boxes, survey and build processes in a 2 GB memory limit.
 
 **Still open:** 50 nm is past `DEFAULT_PLAN.maxDistance` (60 km) and its work budget; the trial
 raises both, as the other trials raise the work. The search's region is still the square around
@@ -402,7 +402,7 @@ unnoticed.
 | R   | Scope                                                                                    | Exit criteria                                                                            |
 | --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | R1  | Planning API v1 in underkeel; quadtree A*, string pulling, proof; `/plan`; minimal panel | every returned route's legs come from underkeel's route check; properties green          |
-| R2  | Planning box beyond the chart box                                                        | 50 nm plan within the memory budget on a Pi 3 / Cerbo GX                                 |
+| R2  | Planning box beyond the chart box                                                        | 50 nm plan within the memory budget of a 2 GB machine (Raspberry Pi 4 2 GB)              |
 | R3  | Time slots, waiting places, timed plan                                                   | Wadden Sea fixture: a plan that waits for the tide where every fixed departure fails     |
 | R4  | Risk cost and budget, alternatives, air draft, S-57 rules, FTIA lines, own tracks        | each alternative states length and risk; bridge fixture blocks a tall mast at high water |
 | R5  | Freeboard panel, interactive re-plan, `routePlan` service contract                       | live Freeboard trial                                                                     |

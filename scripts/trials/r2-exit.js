@@ -3,11 +3,11 @@
 
 // R2's exit trial (docs/DEVELOPMENT-PLAN.md §8, docs/trials.md): a 50 nm plan past the chart
 // box, Turku guest harbour to Utö, on signalk-underkeel's own planning boxes, depth survey and
-// build processes, with a 10 km chart box around the start, as on a 1 GB Raspberry Pi 3.
+// build processes, with a 10 km chart box around the start, as on a 2 GB Raspberry Pi 4.
 //
 //   node scripts/trials/r2-exit.js
 //
-// Run it in a 1 GB memory limit to measure a Pi's budget: the build processes size their heaps
+// Run it in a 2 GB memory limit to measure a Pi's budget: the build processes size their heaps
 // from it, and TRIAL_CGROUP names the cgroup whose peak is reported (cgroup v1
 // memory.max_usage_in_bytes, or v2 memory.peak). Needs network (Traficom WFS), this package
 // built and a built signalk-underkeel 0.8.0 or later checkout next to this one or at
