@@ -4,7 +4,13 @@ import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
-import { crossable, fallbackWeight, riskyShortcut, strictWeight } from "../search/fallback";
+import {
+  berthable,
+  crossable,
+  fallbackWeight,
+  riskyShortcut,
+  strictWeight
+} from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
@@ -151,7 +157,7 @@ const FALLBACK: Mode = {
   weight: fallbackWeight
 };
 
-const WORK_LIMIT =
+export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
 
 /**
@@ -200,15 +206,16 @@ function access(
       ? berthJoin(
           tree,
           session,
-          { p, goal, berth, mode },
+          { p, goal, berth, mode, exhausted },
           near.map((x) => x.n)
         )
       : undefined;
-  if (stub) {
-    return stub;
-  }
+  // A stub found past the work limit is not offered: the search answers with the limit.
   if (exhausted()) {
     return WORK_LIMIT;
+  }
+  if (stub) {
+    return stub;
   }
   const what = goal ? "destination" : "start";
   const flags = own?.verdict?.flags.length ? ` (${own.verdict.flags.join(", ")})` : "";
@@ -224,20 +231,24 @@ function toward(p: LonLat, q: LonLat, d: number): LonLat {
 /**
  * A berth leg (plan §4.1): when no checked leg joins `p` because the quay or pier it lies
  * at is inside the corridor, the shortest stub from `p` toward a square's centre, at most
- * `berth` metres, beyond which a checked leg joins. The stub itself is not checked by the
- * search; the route check marks it.
+ * `berth` metres, beyond which a checked leg joins. The stub may touch its quay (`LAND`), but
+ * one a hard rule or no chart closes is not taken (`berthable`); the route check marks it.
+ * Each check stops at the work limit.
  */
 function berthJoin(
   tree: QuadTree,
   session: Session,
-  end: { p: LonLat; goal: boolean; berth: number; mode: Mode },
+  end: { p: LonLat; goal: boolean; berth: number; mode: Mode; exhausted: () => boolean },
   near: QuadNode[]
 ): Access | undefined {
-  const { p, goal, berth, mode } = end;
+  const { p, goal, berth, mode, exhausted } = end;
   for (const n of near) {
     const c = centre(n);
     const cl = tree.lonLat(c[0], c[1]);
     const joinsAt = (d: number): boolean => {
+      if (exhausted()) {
+        return false;
+      }
       const q = toward(p, cl, d);
       return mode.joins(goal ? checkLeg(session, cl, q) : checkLeg(session, q, cl));
     };
@@ -254,7 +265,12 @@ function berthJoin(
         lo = mid;
       }
     }
-    return { leaf: n, at: c, joined: p, berth: toward(p, cl, hi) };
+    // The stub lies alongside the quay, but never in water a hard rule or no chart closes.
+    const q = toward(p, cl, hi);
+    if (!berthable(goal ? checkLeg(session, q, p) : checkLeg(session, p, q))) {
+      continue;
+    }
+    return { leaf: n, at: c, joined: p, berth: q };
   }
   return undefined;
 }

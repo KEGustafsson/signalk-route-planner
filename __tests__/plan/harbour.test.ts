@@ -3,7 +3,7 @@ import { haversine } from "../../src/foundation/geo";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
 import { joined } from "../../src/plan/proof";
-import type { Circle } from "../helpers/synthetic-oracle";
+import type { Chart, Circle } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
 /**
@@ -37,8 +37,8 @@ interface Body {
   reason?: string;
 }
 
-async function planFrom(from: LonLat, opts = DEFAULT_PLAN) {
-  const chart = { obstacles: inlet() };
+async function planFrom(from: LonLat, opts = DEFAULT_PLAN, closed: Chart["closed"] = []) {
+  const chart: Chart = { obstacles: inlet(), closed };
   const api = syntheticApi(chart);
   const r = await plan(
     api,
@@ -92,6 +92,14 @@ describe("harbour stage", () => {
     // The berth leg ends where the harbour corridor clears the wall.
     const q = xy(body.route.coordinates[1] as LonLat);
     expect(q[1]).toBeLessThanOrEqual(15 + 1);
+  });
+
+  test("a berth leg is never taken into an entry-prohibited area, quay or not", async () => {
+    // The same berth, but the quayside it lies at is closed to entry.
+    const closed = [{ x: 300, y: 18, r: 4, flag: "ENTRY_PROHIBITED" }];
+    const { r, body } = await planFrom(at(300, 18), DEFAULT_PLAN, closed);
+    expect(r.status).toBe(422);
+    expect(body.berths).toBeUndefined();
   });
 
   test("without berth legs the same point is refused, naming the harbour stage", async () => {

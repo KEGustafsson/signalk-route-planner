@@ -1,9 +1,10 @@
 import type { LonLat } from "../foundation/geo";
-import type { PlanningApiV1, SessionParams, Verdict } from "../oracle/contract";
+import type { PlanningApiV1, SessionParams, SessionResult, Verdict } from "../oracle/contract";
 import type { PassRule } from "../search/passes";
 import type { PlanOptions } from "./options";
+import { same } from "./proof";
 import type { SearchOutcome } from "./search";
-import { searchRoute } from "./search";
+import { searchRoute, WORK_LIMIT } from "./search";
 
 /**
  * The stages of one plan (plan §4.1, harbour stage). The main search runs at the request's
@@ -201,10 +202,47 @@ export async function stages(
   if (!("ends" in h)) {
     return "refusal" in h && st.fallback ? lastResort(st, [from, to], h, xteLimit) : h;
   }
+  return between(st, o, h, [from, to], xteLimit, run);
+}
+
+type Run = (
+  a: LonLat,
+  b: LonLat,
+  opts: Partial<PlanOptions>
+) => Promise<SessionResult<SearchOutcome>>;
+
+/** After the harbour stages: the main search between their handovers, within the one budget. */
+async function between(
+  st: Stage,
+  o: Refused,
+  h: { ends: Ends; work: number; squares: number },
+  points: [LonLat, LonLat],
+  xteLimit: number | undefined,
+  run: Run
+): Promise<Staged> {
+  const [from, to] = points;
   let work = h.work;
-  const inner = await run(h.ends.start?.handover ?? from, h.ends.end?.handover ?? to, {
-    maxWork: st.opts.maxWork - h.work
+  const limit = (): Staged => ({
+    ok: false,
+    refusal: { ...o, reason: WORK_LIMIT, work },
+    direct: o.direct,
+    work
   });
+  if (work >= st.opts.maxWork) {
+    return limit();
+  }
+  const a = h.ends.start?.handover ?? from;
+  const b = h.ends.end?.handover ?? to;
+  const harbourParts = (route: Part[]): Part[] => [
+    ...(h.ends.start ? [h.ends.start.part] : []),
+    ...route,
+    ...(h.ends.end ? [h.ends.end.part] : [])
+  ];
+  // Both ends hand over at the same point: the harbour parts meet there, with no route between.
+  if (h.ends.start && h.ends.end && same(a, b)) {
+    return { ok: true, parts: harbourParts([]), direct: o.direct, work, squares: h.squares };
+  }
+  const inner = await run(a, b, { maxWork: st.opts.maxWork - work });
   if (!inner.ok) {
     return inner;
   }
@@ -212,10 +250,10 @@ export async function stages(
   if (!inner.value.ok) {
     return { ok: false, refusal: { ...inner.value, work }, direct: o.direct, work };
   }
-  const parts = [
-    ...(h.ends.start ? [h.ends.start.part] : []),
-    routePart(inner.value, xteLimit),
-    ...(h.ends.end ? [h.ends.end.part] : [])
-  ];
+  // Every stage draws on the one budget: the plan answers with the limit once it is spent.
+  if (work >= st.opts.maxWork) {
+    return limit();
+  }
+  const parts = harbourParts([routePart(inner.value, xteLimit)]);
   return { ok: true, parts, direct: o.direct, work, squares: h.squares + inner.value.squares };
 }

@@ -61,12 +61,14 @@ function rectDist(px: number, py: number, x0: number, y0: number, x1: number, y1
 
 /** What water within `near` of the corridor gets: land, shallows, unverified or clear. */
 function judge(chart: Chart, near: (c: Circle) => boolean): Verdict {
-  if (chart.obstacles.some(near)) {
-    return { status: "fail", risk: 0.9, flags: ["LAND"] };
-  }
+  // A closed area's flag is reported with land's, as the route check reports every flag.
   const closed = (chart.closed ?? []).find(near);
+  const rule = closed ? [closed.flag] : [];
+  if (chart.obstacles.some(near)) {
+    return { status: "fail", risk: 0.9, flags: ["LAND", ...rule] };
+  }
   if (closed) {
-    return { status: "fail", risk: 0, flags: [closed.flag] };
+    return { status: "fail", risk: 0, flags: rule };
   }
   if ((chart.shallows ?? []).some(near)) {
     return { status: "fail", risk: 0.9, flags: [] };

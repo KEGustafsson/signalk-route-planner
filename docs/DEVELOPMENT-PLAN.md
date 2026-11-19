@@ -164,20 +164,21 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     the API's box limit (`MAX_BOX_KM2` in `src/search/quadtree.ts`), so no query is refused. A
     region across the 180° meridian or over a pole is refused.
 12. **Harbour stage.** A guest harbour, a river berth or a marina is often narrower than the
-    request's corridor, so the search cannot join that end. It then names the free water within
-    `harbourMetres` (3 km) of the end, and a harbour stage plans the end out to it at
-    `harbourXte` (0 m: the planning API's 10 m buffer alone), in a session of its own. Handovers
-    not much farther than the nearest (1.5×, or 300 m more) are tried most-on-the-way first, so
-    the route does not double back from the nearest free water. The main search then runs
-    between the handover points. Each part is proved by its own route check at its own corridor,
-    from the time the boat reaches it, and every leg names its part and corridor.
+    request's corridor, so the search cannot join that end. It then names the free water near the
+    end (`harbourMetres`), and a harbour stage plans the end out to it at the narrow harbour
+    corridor (`harbourXte`), in a session of its own. Handovers about as near as the nearest are
+    tried most-on-the-way first, so the route does not double back from the nearest free water
+    (`src/plan/handover.ts`). The main search then runs between the handover points, and every
+    stage draws on the plan's one work budget. Each part is proved by its own route check at its
+    own corridor, from the time the boat reaches it, and every leg names its part and corridor.
 13. **Berth legs.** Alongside a quay, even the harbour corridor touches the quay. The harbour
-    stage then joins the end by the shortest stub, at most `berthMetres` (40 m), beyond which a
-    checked leg joins, found by bisection. The berth leg is returned as its own leg with the
-    route check's status (usually `fail`, `LAND`) and `berth: true`; the reply's `underway`
-    status covers every other leg, and `status` stays the worst of all. A strict plan is not
-    refused for its berth legs. The planner cannot check a berth leg, so the panel says to steer
-    it by eye.
+    stage then joins the end by the shortest stub (at most `berthMetres`), beyond which a checked
+    leg joins. The berth leg is returned as its own leg with the route check's status (usually
+    `fail`, `LAND`) and `berth: true`; the reply's `underway` status covers every other leg, and
+    `status` stays the worst of all. A strict plan is not refused for the quay a berth leg
+    touches, but a berth leg is never taken into water a hard rule or no chart closes. The
+    planner cannot check a berth leg, so the panel says to steer it by eye. Defaults are in
+    `src/plan/options.ts`.
 
 ### 4.2 R2: planning beyond the chart box
 
