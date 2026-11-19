@@ -95,30 +95,84 @@ const sleep = (ms: number): Promise<"waiting"> =>
   new Promise((resolve) => setTimeout(() => resolve("waiting"), ms).unref?.());
 
 /**
- * The index for the whole search region, or, when that is too large to build on the machine
- * (413), for the trip's least region: past it the chart reads no coverage, `unverified`, and the
- * search keeps to the water it can check.
+ * A build asked of the provider: the region it is building now, its result, and `narrowed`,
+ * settled when a 413 turned it to its trip's least region.
+ */
+interface Build {
+  region: Bbox;
+  result: Promise<PrepareResult>;
+  narrowed: Promise<"narrowed">;
+}
+
+/**
+ * The index for `first`, the whole search region, or, when that is too large to build on the
+ * machine (413), for the trip's least region, `narrow` told first: past it the chart reads no
+ * coverage, `unverified`, and the search keeps to the water it can check.
  */
 async function prepareTrip(
   api: PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>,
-  whole: Bbox,
+  first: Bbox,
   least: Bbox,
-  stop: AbortSignal
+  stop: AbortSignal,
+  narrow: () => void
 ): Promise<PrepareResult> {
-  const r = await api.prepare(holds(least, whole) ? least : whole, stop);
-  return !r.ok && r.status === 413 && !holds(least, whole) ? api.prepare(least, stop) : r;
+  const r = await api.prepare(first, stop);
+  if (r.ok || r.status !== 413 || first === least) {
+    return r;
+  }
+  narrow();
+  return api.prepare(least, stop);
 }
 
-/** One trip's index at a time asked for, the build carried on past the request that asked. */
+/** The trips' indexes being built, each carried on past the request that asked for it. */
 export class Preparer {
-  private inflight: { region: Bbox; result: Promise<PrepareResult> } | undefined;
+  private readonly builds = new Set<Build>();
 
   constructor(private readonly waitMs = PREPARE_WAIT_MS) {}
+
+  /** A build whose region holds `least`, else a new one for the trip. */
+  private buildFor(
+    api: PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>,
+    from: LonLat,
+    to: LonLat,
+    least: Bbox,
+    stop: AbortSignal
+  ): Build {
+    for (const b of this.builds) {
+      if (holds(b.region, least)) {
+        return b;
+      }
+    }
+    const whole = searchRegion(from, to);
+    const first = holds(least, whole) ? least : whole;
+    let narrowTo: () => void = () => undefined;
+    const narrowed = new Promise<"narrowed">((resolve) => {
+      narrowTo = () => resolve("narrowed");
+    });
+    const narrow = (): void => {
+      build.region = least;
+      narrowTo();
+    };
+    const build: Build = {
+      region: first,
+      narrowed,
+      result: prepareTrip(api, first, least, stop, narrow)
+        .catch((err: Error): PrepareResult => ({ ok: false, status: 503, error: err.message }))
+        .then((r) => {
+          this.builds.delete(build);
+          return r;
+        })
+    };
+    this.builds.add(build);
+    return build;
+  }
 
   /**
    * The planning API over an index for the trip `from`–`to`; `api` itself when it serves no
    * `prepare`; BUILDING while the index is still being built after `waitMs`; the provider's
-   * refusal as a reply. The build runs until `stop` (the plugin stopping), not the request.
+   * refusal as a reply. A build whose region holds the trip's least region is shared; one that
+   * fell back past the trip to its own least region is not, and the trip gets its own. The build
+   * runs until `stop` (the plugin stopping), not the request.
    */
   async forTrip(
     api: PlanningApiV1,
@@ -129,29 +183,27 @@ export class Preparer {
     if (!canPrepare(api)) {
       return api;
     }
-    // The least the trip needs; the whole search region is asked for first.
-    const region = tripRegion(from, to);
-    let job = this.inflight;
-    if (!job || !holds(job.region, region)) {
-      const result = prepareTrip(api, searchRegion(from, to), region, stop).catch(
-        (err: Error): PrepareResult => ({ ok: false, status: 503, error: err.message })
-      );
-      job = { region, result };
-      this.inflight = job;
-      const mine = job;
-      void result.finally(() => {
-        if (this.inflight === mine) {
-          this.inflight = undefined;
+    const least = tripRegion(from, to);
+    const waited = sleep(this.waitMs);
+    for (;;) {
+      const build = this.buildFor(api, from, to, least, stop);
+      let r = await Promise.race([build.result, build.narrowed, waited]);
+      if (r === "narrowed") {
+        if (!holds(build.region, least)) {
+          continue;
         }
-      });
+        r = await Promise.race([build.result, waited]);
+      }
+      if (r === "waiting") {
+        return BUILDING;
+      }
+      if (!holds(build.region, least)) {
+        continue;
+      }
+      if (!r.ok) {
+        return { status: r.status, body: { errors: [r.error] } };
+      }
+      return onPrepared(api, r.value);
     }
-    const r = await Promise.race([job.result, sleep(this.waitMs)]);
-    if (r === "waiting") {
-      return BUILDING;
-    }
-    if (!r.ok) {
-      return { status: r.status, body: { errors: [r.error] } };
-    }
-    return onPrepared(api, r.value);
   }
 }

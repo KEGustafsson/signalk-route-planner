@@ -206,8 +206,10 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
 - A build can take minutes on a Pi. `/plan` waits 20 s for it, then answers 503 with
   `preparing: true` and `Retry-After: 30` while the build runs on until the plugin stops. The
   panel plans again while the build continues, then asks to plan again later if it is still
-  unfinished; it writes the plan only into a route unchanged since it was read. One trip's region
-  is asked for at a time; a request for a region inside it waits for the same build.
+  unfinished; it writes the plan only into a route unchanged since it was read. A trip whose
+  least region lies inside a build's region waits for that build; others start their own, and
+  every build is kept until it settles. A build a 413 turned to its own trip's least region is
+  no longer shared past it: a trip it no longer holds asks for its own.
 - A trip `plan()` refuses (over `maxDistance`, or start and destination the same point) builds
   nothing; a region larger than underkeel builds on the machine, even the least, is 413 with its
   reason. How large that is is underkeel's policy.

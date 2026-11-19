@@ -141,6 +141,70 @@ describe("Preparer", () => {
     expect(p.calls).toHaveLength(2);
   });
 
+  /** A provider whose every `prepare` call is settled on its own. */
+  function each() {
+    const calls: { region: number[]; settle: (r: PrepareResult) => void }[] = [];
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    const api: PlanningApiV1 = {
+      ...p.api,
+      prepare: (region) =>
+        new Promise((resolve) => {
+          calls.push({ region, settle: resolve });
+        })
+    };
+    const ok = (): PrepareResult => ({ ok: true, value: p.prepared });
+    return { api, calls, ok };
+  }
+
+  test("trips inside a build's region share it while others get their own, all kept", async () => {
+    const e = each();
+    const prep = new Preparer(1000);
+    const stop = new AbortController().signal;
+    const a = prep.forTrip(e.api, at(0, 0), at(20_000, 0), stop);
+    // Inside the first trip's search region, not its least region: the same build.
+    const b = prep.forTrip(e.api, at(0, 10_000), at(5000, 10_000), stop);
+    await flush();
+    expect(e.calls.map((c) => c.region)).toEqual([searchRegion(at(0, 0), at(20_000, 0))]);
+    // Far past it: a second build, and the first is not lost.
+    const c = prep.forTrip(e.api, at(0, 80_000), at(5000, 80_000), stop);
+    await flush();
+    expect(e.calls).toHaveLength(2);
+    const d = prep.forTrip(e.api, at(1000, 1000), at(4000, 1000), stop);
+    await flush();
+    expect(e.calls).toHaveLength(2);
+    e.calls[0]?.settle(e.ok());
+    e.calls[1]?.settle(e.ok());
+    for (const r of await Promise.all([a, b, c, d])) {
+      expect("version" in r).toBe(true);
+    }
+  });
+
+  test("a build narrowed by a 413 past a trip sharing it: the trip gets its own", async () => {
+    const e = each();
+    const prep = new Preparer(1000);
+    const stop = new AbortController().signal;
+    const a = prep.forTrip(e.api, at(0, 0), at(20_000, 0), stop);
+    const b = prep.forTrip(e.api, at(0, 10_000), at(5000, 10_000), stop);
+    await flush();
+    e.calls[0]?.settle({ ok: false, status: 413, error: "too large" });
+    await flush();
+    // The first build turned to its own trip's least region; the second trip asks for its own.
+    expect(e.calls.map((c) => c.region)).toEqual([
+      searchRegion(at(0, 0), at(20_000, 0)),
+      tripRegion(at(0, 0), at(20_000, 0)),
+      searchRegion(at(0, 10_000), at(5000, 10_000))
+    ]);
+    // A trip inside the narrowed build's region still shares it.
+    const c = prep.forTrip(e.api, at(1000, 0), at(4000, 0), stop);
+    await flush();
+    expect(e.calls).toHaveLength(3);
+    e.calls[1]?.settle(e.ok());
+    e.calls[2]?.settle(e.ok());
+    for (const r of await Promise.all([a, b, c])) {
+      expect("version" in r).toBe(true);
+    }
+  });
+
   test("the prepared index serves the sessions and the route check", async () => {
     const inner = syntheticApi({ obstacles: [] });
     const p = preparing(inner);

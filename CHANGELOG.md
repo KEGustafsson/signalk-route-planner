@@ -32,11 +32,11 @@ All notable changes to signalk-route-planner are documented here.
   offered leaving at the earliest departure up to then that the route check passes, with the
   wait; the planner asks the planning API about each gated leg over 15-minute windows.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
-  index of the whole search region, or of the trip's least region (both ends with 3.5 km around
-  them) when that is too large to build: the chart box around the vessel when it covers the
-  region, else a planning box underkeel builds. While the build runs past
-  20 s, `/plan` answers 503 with `preparing: true` and `Retry-After`. The panel plans again while
-  the build continues, then asks to plan again later if it is still unfinished, and does not
-  write a plan over a route edited while it waited.
+  index of the whole search region, or of the trip's least region (both ends with the search's
+  least margin and a harbour stage around them) when that is too large to build: the chart box
+  around the vessel when it covers the region, else a planning box underkeel builds. While the
+  build runs past a short wait, `/plan` answers 503 with `preparing: true` and `Retry-After`.
+  The panel plans again while the build continues, then asks to plan again later if it is still
+  unfinished, and does not write a plan over a route edited while it waited.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.
