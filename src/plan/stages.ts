@@ -52,8 +52,13 @@ const routePart = (o: Extract<SearchOutcome, { ok: true }>, xteLimit?: number): 
 const MAX_HANDOVERS = 3;
 
 type HarbourFound =
-  | { found: Extract<SearchOutcome, { ok: true }>; handover: LonLat; work: number }
-  | { refused: string; work: number };
+  | {
+      found: Extract<SearchOutcome, { ok: true }>;
+      handover: LonLat;
+      work: number;
+      squares: number;
+    }
+  | { refused: string; work: number; squares: number };
 
 /** The harbour stage at one end: a route from `point` to the first handover it reaches. */
 function harbourStage(
@@ -71,18 +76,21 @@ function harbourStage(
       // Each handover in a small region of its own: it bounds what a fallback search crosses.
       const search = { ...opts, minMargin: opts.harbourMargin, harbourMetres: 0 };
       let reason = "no handover";
+      // Every handover tried counts its squares, the ones that found no way included.
+      let squares = 0;
       for (const h of candidates.slice(0, MAX_HANDOVERS)) {
         const [a, b]: [LonLat, LonLat] = end === "start" ? [point, h] : [h, point];
         const o = await searchRoute(s, a, b, search, st.rule, st.fallback, opts.berthMetres);
+        squares += o.squares;
         if (o.ok) {
-          return { found: o, handover: h, work: s.work() };
+          return { found: o, handover: h, work: s.work(), squares };
         }
         reason = o.reason;
         if (/work limit/.test(o.reason)) {
           break;
         }
       }
-      return { refused: reason, work: s.work() };
+      return { refused: reason, work: s.work(), squares };
     }
   );
 }
@@ -130,12 +138,12 @@ async function harbours(
       return h;
     }
     work += h.value.work;
+    squares += h.value.squares;
     if ("refused" in h.value) {
       const what = end === "start" ? "start" : "destination";
       const reason = `${o.reason}; the harbour stage found no way out from the ${what} at xte ${st.opts.harbourXte} m: ${h.value.refused}`;
-      return { ok: false, refusal: { ...o, reason, work }, direct: o.direct, work };
+      return { ok: false, refusal: { ...o, reason, work, squares }, direct: o.direct, work };
     }
-    squares += h.value.found.squares;
     ends[end] = {
       part: harbourPart(end, h.value.found, st.opts.harbourXte),
       handover: h.value.handover
@@ -169,14 +177,16 @@ async function lastResort(
     // Its work counts, and so does its running out of it: the harbour refusal otherwise.
     const work = refused.work + whole.value.work;
     const reason = whole.value.reason === WORK_LIMIT ? WORK_LIMIT : refused.refusal.reason;
-    return { ...refused, refusal: { ...refused.refusal, reason, work }, work };
+    const squares = refused.refusal.squares + whole.value.squares;
+    return { ...refused, refusal: { ...refused.refusal, reason, work, squares }, work };
   }
   return {
     ok: true,
     parts: [routePart(whole.value, xteLimit)],
     direct: refused.direct,
     work: refused.work + whole.value.work,
-    squares: whole.value.squares
+    // Every stage's squares: the first search's, the harbour stages' and this one's.
+    squares: refused.refusal.squares + whole.value.squares
   };
 }
 

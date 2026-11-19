@@ -61,6 +61,29 @@ describe("plan", () => {
     expect((r.body as { status: string }).status).toBe("marginal");
   });
 
+  test("a marginal leg the route check flags as closed water refuses the strict plan", async () => {
+    const api = syntheticApi(ISLAND, {
+      routeCheck: (body) => {
+        const coords = (body as { route: { coordinates: unknown[] } }).route.coordinates;
+        const legs = coords.slice(1).map((_, i) => ({
+          index: i,
+          status: i === 0 ? "marginal" : "ok",
+          length: 100,
+          risk: 0.005,
+          flags: i === 0 ? ["ENTRY_PROHIBITED"] : []
+        }));
+        return Promise.resolve({ status: 200, body: { legs } });
+      }
+    });
+    const r = await plan(
+      api,
+      { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3 },
+      NEVER,
+      NOW
+    );
+    expect(r.status).toBe(422);
+  });
+
   test.each([
     ["fail", 0.9, []],
     ["unverified", 0, ["NO_COVERAGE"]]

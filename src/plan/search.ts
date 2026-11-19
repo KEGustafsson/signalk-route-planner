@@ -147,7 +147,7 @@ export interface Mode {
 
 const strictMode = (rule: PassRule): Mode => ({
   enter: (n) => Number.isFinite(strictWeight(n)),
-  joins: (v) => passes(v, rule) || v.status === "marginal",
+  joins: (v) => passes(v, rule) || (v.status === "marginal" && crossable(v)),
   weight: strictWeight
 });
 

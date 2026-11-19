@@ -312,8 +312,9 @@ is counted, never timed, so a request gives the same answer on any machine.
 **Where the work goes** (`npm run trial -- --profile`): nine tenths of it is boxes under 50 m, at
 the shores the search meets. R2 cuts those by asking about fewer of them:
 
-- the start and destination joins and the harbour handovers take the nearest squares best
-  first (`QuadTree.nearest`), instead of classifying every square within 500 m or 3 km;
+- the start and destination joins and the harbour handovers search the squares near an end in
+  order of distance and stop once they have enough candidates (`QuadTree.nearest`), instead of
+  classifying every square within the access or harbour radius (`src/plan/options.ts`);
 - A\* classifies a square when it reaches it, not when it reaches a neighbour (lazy A\*);
 - A\* is weighted (`greed` 1.25);
 - the strict search crosses marginal water at a cost instead of failing and handing the whole

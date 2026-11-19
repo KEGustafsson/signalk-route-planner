@@ -96,8 +96,19 @@ export function riskyShortcut(
     const [ax, ay] = tree.units(a);
     const [bx, by] = tree.units(b);
     const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
-    // A free square's piece is not risky, whatever its verdict's own risk.
-    return leaf?.state === "free" ? undefined : (leaf?.verdict?.risk ?? 0);
+    // A search piece runs within one square, from its entry to its centre and on; a piece
+    // that leaves it, such as a checked leg joining an end, passed its own check, so it is
+    // not risky, and nor is a free square's piece, whatever its verdict's own risk.
+    const inside = (x: number, y: number): boolean =>
+      !!leaf &&
+      x >= leaf.x - 1e-6 &&
+      x <= leaf.x + leaf.size + 1e-6 &&
+      y >= leaf.y - 1e-6 &&
+      y <= leaf.y + leaf.size + 1e-6;
+    if (!leaf || leaf.state === "free" || !inside(ax, ay) || !inside(bx, by)) {
+      return undefined;
+    }
+    return leaf.verdict?.risk ?? 0;
   });
   return (v, i, j) => {
     const span = risk.slice(i, j);

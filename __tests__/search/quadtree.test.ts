@@ -116,8 +116,23 @@ describe("weighted A*", () => {
     });
     expect(r.found).toBe(true);
     const points = r.found ? r.points : [];
-    // Up the west side, along the top and down the east: every point on a free square's edge.
-    expect(points.every(([x, y]) => x <= 1 || y >= 7 || x >= 7)).toBe(true);
+    // Up the west side, along the top and down the east: from start to goal, and every
+    // segment within one free strip (a strip is a rectangle, so a segment with both ends in
+    // it stays in it), so none cuts across the blocked interior.
+    const strips = [
+      ([x]: number[]) => (x as number) <= 1,
+      ([, y]: number[]) => (y as number) >= 7,
+      ([x]: number[]) => (x as number) >= 7
+    ];
+    const inOne = points.slice(1).every((b, k) => {
+      const a = points[k] as number[];
+      return strips.some((s) => s(a) && s(b));
+    });
+    expect({ start: points[0], goal: points.at(-1), inOne }).toEqual({
+      start: [0.5, 0.5],
+      goal: [7.5, 0.5],
+      inOne: true
+    });
   });
 });
 

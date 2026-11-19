@@ -92,6 +92,8 @@ export async function prove(
     own.forEach((l, i) => {
       legs.push({
         ...l,
+        // Every flag rule reads the flags: a leg the reply sends without them has none.
+        flags: l.flags ?? [],
         index: legs.length,
         part: part.kind,
         ...(part.xteLimit !== undefined && { xteLimit: part.xteLimit }),

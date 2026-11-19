@@ -170,6 +170,8 @@ export class QuadTree {
    * distance to their squares, within `radius` units. Best first: a square is
    * classified only when nothing nearer is left, so the query costs the squares
    * nearer than the k-th leaf it returns, not the whole disc. It stops once `stop` holds.
+   * With `via`, a second unit point, they come in order of the way from (ux, uy) through
+   * the square on to `via` instead: still only squares within `radius` of (ux, uy).
    */
   nearest(
     ux: number,
@@ -177,22 +179,30 @@ export class QuadTree {
     radius: number,
     accept: (n: QuadNode) => boolean,
     k: number,
-    stop: () => boolean = () => false
+    stop: () => boolean = () => false,
+    via?: [number, number]
   ): QuadNode[] {
-    const away = (n: QuadNode): number =>
+    const to = (n: QuadNode, px: number, py: number): number =>
       Math.hypot(
-        Math.max(n.x - ux, 0, ux - (n.x + n.size)),
-        Math.max(n.y - uy, 0, uy - (n.y + n.size))
+        Math.max(n.x - px, 0, px - (n.x + n.size)),
+        Math.max(n.y - py, 0, py - (n.y + n.size))
       );
+    // A lower bound for every point of the square, so the order holds as squares split.
+    const key = (n: QuadNode): number => to(n, ux, uy) + (via ? to(n, via[0], via[1]) : 0);
     const open = new Heap<QuadNode>();
-    open.push(this.root, away(this.root));
+    const push = (n: QuadNode): void => {
+      if (to(n, ux, uy) <= radius) {
+        open.push(n, key(n));
+      }
+    };
+    push(this.root);
     const out: QuadNode[] = [];
-    while (open.size > 0 && out.length < k && open.peekKey() <= radius && !stop()) {
+    while (open.size > 0 && out.length < k && !stop()) {
       const n = open.pop();
       this.resolve(n);
       if (n.state === "split") {
         for (const c of n.children as QuadNode[]) {
-          open.push(c, away(c));
+          push(c);
         }
       } else if (accept(n)) {
         out.push(n);

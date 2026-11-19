@@ -98,7 +98,10 @@ function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
     return { status: "unverified", risk: 0, flags };
   }
   if ((chart.marginal ?? []).some(near)) {
-    return { status: "marginal", risk: 0.005, flags: [] };
+    // As underkeel: a flag that leaves the water unchecked makes it unverified, not marginal.
+    return chart.notForNavigation
+      ? { status: "unverified", risk: 0.005, flags: ["NOT_FOR_NAVIGATION"] }
+      : { status: "marginal", risk: 0.005, flags: [] };
   }
   return chart.notForNavigation
     ? { status: "unverified", risk: 0, flags: ["NOT_FOR_NAVIGATION"] }
