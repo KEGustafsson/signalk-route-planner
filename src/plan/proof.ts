@@ -55,7 +55,8 @@ const pathLength = (c: readonly LonLat[]): number =>
   c.slice(1).reduce((s, p, i) => s + haversine(c[i] as LonLat, p), 0);
 
 /** Whether leg i of `part` is its berth leg: from the end point to the berth point, or back. */
-function isBerth(part: Part, i: number): boolean {
+/** True when leg `i` of `part` is its berth leg, from or to the end point. */
+export function isBerth(part: Part, i: number): boolean {
   const c = part.coordinates;
   return part.end === "start"
     ? i === 0 && same(c[1], part.berth)

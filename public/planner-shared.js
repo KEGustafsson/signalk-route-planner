@@ -48,6 +48,22 @@
     return (metres / 1852).toFixed(1) + " nm";
   }
 
+  /**
+   * "Leave at 14:15 UTC, waiting 3 h 15 min for the tide. " for a tide-gated plan; why waiting
+   * found no departure when it did not (a fallback reply still offers its marked route); else "".
+   */
+  function gateText(gate) {
+    if (gate && gate.reason) {
+      return "Waiting for the tide found no passing route: " + gate.reason + ". ";
+    }
+    if (!gate || !gate.departure) {
+      return "";
+    }
+    const m = gate.waitMinutes || 0;
+    const wait = m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min";
+    return "Leave at " + gate.departure.slice(11, 16) + " UTC, waiting " + wait + " for the tide. ";
+  }
+
   /** One line for the panel from a `/plan` reply (status code and body). */
   function summary(status, body) {
     const b = body || {};
@@ -56,6 +72,7 @@
       return {
         kind: b.status,
         text:
+          gateText(b.gate) +
           "Planned " +
           nm(b.length || 0) +
           " in " +
@@ -77,7 +94,8 @@
       };
     }
     if (status === 422) {
-      return { kind: "fail", text: "No route: " + (b.reason || "no route found") };
+      const gate = b.gate && b.gate.reason ? "; " + b.gate.reason : "";
+      return { kind: "fail", text: "No route: " + (b.reason || "no route found") + gate };
     }
     const errors = Array.isArray(b.errors) ? b.errors.join("; ") : "the planner did not answer";
     return { kind: "unverified", text: "Not planned: " + errors };

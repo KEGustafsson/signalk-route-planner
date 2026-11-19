@@ -91,6 +91,27 @@
         "reason": "harbour stage",
         "workAtMost": 3000000
       }
+    },
+    {
+      "name": "miami-meloy-channel-tide",
+      "area": "miami",
+      "about": "Into Meloy Channel off Miami Beach Marina with a modelled tide (0.0–0.7 m above MLLW, high water 6 h after the request) and up to 12 h to wait: the last leg touches a 0 m band at the bank, which no tide clears, and the gate says so",
+      "from": [-80.125431, 25.760871],
+      "to": [-80.1424, 25.7705],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "tide": {
+        "mean": 0.35,
+        "amplitude": 0.35,
+        "periodHours": 12.42,
+        "highWaterHours": 6
+      },
+      "waitHours": 12,
+      "expect": {
+        "status": 422,
+        "gate": "no departure up to",
+        "workAtMost": 6000000
+      }
     }
   ]
 }

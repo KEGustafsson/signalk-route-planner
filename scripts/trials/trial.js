@@ -95,7 +95,28 @@ async function indexFor(areas, c) {
   return indexes.get(key);
 }
 
-function apiFor(index, draft) {
+/**
+ * The water level over [start, end], at its lowest: chart datum, or a case's modelled tide,
+ * mean + amplitude · cos(2π (t − high water) / period), sampled every 5 minutes.
+ */
+function waterLevel(tide, departure) {
+  if (!tide) {
+    return () => ({ h: 0, sigma: 0.2, source: "manual" });
+  }
+  const high = departure + tide.highWaterHours * 3_600_000;
+  const at = (t) =>
+    tide.mean +
+    tide.amplitude * Math.cos((2 * Math.PI * (t - high)) / (tide.periodHours * 3_600_000));
+  return (start, end) => {
+    let h = at(end);
+    for (let t = start; t < end; t += 300_000) {
+      h = Math.min(h, at(t));
+    }
+    return { h, sigma: 0.2, source: "trial tide" };
+  };
+}
+
+function apiFor(index, draft, tide, departure) {
   const { parseConfig } = uk("config");
   const { RequestQueue } = uk("route-service");
   const { planningApi } = uk("planning-api");
@@ -104,8 +125,8 @@ function apiFor(index, draft) {
     indexReason: undefined,
     config: parseConfig({}),
     vessel: () => ({ draft, length: 11, beam: 3.6 }),
-    // Chart datum, σ 0.2 m: the trials do not depend on the tide or the day.
-    waterLevel: () => ({ h: 0, sigma: 0.2, source: "manual" }),
+    // Chart datum, σ 0.2 m, unless the case models a tide: the trials do not depend on the day.
+    waterLevel: waterLevel(tide, departure),
     waveHeight: () => undefined,
     getRoute: () => Promise.reject(new Error("none")),
     now: () => Date.now(),
@@ -184,6 +205,7 @@ function summarise(reply) {
     parts,
     statuses: count,
     berths: (b.berths ?? []).length,
+    ...(b.gate && { waitMinutes: b.gate.waitMinutes }),
     work: b.work
   };
 }
@@ -192,6 +214,9 @@ function failures(s, e, reply) {
   const out = [];
   if (s.status !== e.status) {
     out.push(`status ${s.status}, expected ${e.status}`);
+  }
+  if (e.gate && !((reply.body.gate ?? {}).reason ?? "").includes(e.gate)) {
+    out.push(`gate does not say "${e.gate}"`);
   }
   if (e.workAtMost !== undefined && (s.work ?? 0) > e.workAtMost) {
     out.push(`work ${s.work} over ${e.workAtMost}`);
@@ -257,7 +282,8 @@ async function main() {
   let bad = 0;
   for (const c of run) {
     const profile = {};
-    const base = apiFor(await indexFor(areas, c), c.draft);
+    const departure = Date.now();
+    const base = apiFor(await indexFor(areas, c), c.draft, c.tide, departure);
     const api = PROFILE ? profiled(base, profile) : base;
     const t = Date.now();
     const reply = await plan(
@@ -265,7 +291,8 @@ async function main() {
       {
         from: c.from,
         to: c.to,
-        departure: Date.now(),
+        departure,
+        ...(c.waitHours && { latestDeparture: departure + c.waitHours * 3_600_000 }),
         speed: 3,
         draft: c.draft,
         xteLimit: c.xteLimit,

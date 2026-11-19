@@ -65,6 +65,32 @@ describe("panel model", () => {
     ).toBe(
       "Planned 2.0 nm in 3 legs: fail (see the legs below). Underway ok; a berth leg lies alongside the quay, inside the corridor: steer it by eye"
     );
+    expect(
+      P.summary(200, {
+        status: "ok",
+        length: 1852,
+        check: { legs: [{}] },
+        gate: { departure: "2026-11-18T13:15:00.000Z", waitMinutes: 375 }
+      }).text
+    ).toBe("Leave at 13:15 UTC, waiting 6 h 15 min for the tide. Planned 1.0 nm in 1 leg: ok");
+    // A fallback reply whose wait found no departure says so, with its marked route.
+    expect(
+      P.summary(200, {
+        status: "fail",
+        length: 1852,
+        check: { legs: [{}] },
+        fallback: "no route passes",
+        gate: { reason: "no departure up to 12:00 passes leg 2" }
+      }).text
+    ).toMatch(
+      /^Waiting for the tide found no passing route: no departure up to 12:00 passes leg 2\. Planned/
+    );
+    expect(
+      P.summary(422, {
+        reason: "no route",
+        gate: { reason: "no departure up to 12:00 passes leg 2" }
+      }).text
+    ).toBe("No route: no route; no departure up to 12:00 passes leg 2");
     expect(P.legLabel({ status: "fail", part: "harbour", berth: true })).toBe("fail (berth)");
     expect(P.legLabel({ status: "ok", part: "harbour" })).toBe("ok (harbour)");
     expect(P.legLabel({ status: "ok", part: "route" })).toBe("ok");

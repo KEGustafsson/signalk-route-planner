@@ -191,6 +191,28 @@ worker at low priority, from the same cell cache, released after use. API v1 gai
 
 ### 4.3 R3: time-dependent search and tide gates
 
+**R3a, the departure gate (built).** A request may give `latestDeparture`, at most 24 h after
+`departure`. The planner never reads a tide table; it asks the planning API about legs over time
+windows, at the lowest water in each.
+
+1. The search runs over the whole horizon, from `departure` to `latestDeparture` plus the trip,
+   so a leg it passes passes whenever the boat leaves.
+2. When the plan does not pass as planned (refused, or offered only through the fallback), its
+   route, or the fallback's route searched for the purpose, is the candidate.
+3. A candidate leg that passes at the lowest water of the horizon is not gated. Each gated leg
+   is asked about over every 15-minute window of the horizon, at its own corridor width.
+4. The departure is the earliest on the 15-minute grid, up to `latestDeparture`, at which every
+   gated leg lies, as the boat reaches it, in windows it may be passed in.
+5. The route check proves the route leaving then, leg by leg at each arrival. The plan is offered
+   only if it passes, with `departure` and `gate` (the requested and chosen departures, the wait
+   and the gated legs); else the refusal carries `gate.reason`, why no departure qualified: legs
+   no state of the water level passes, or gated legs whose windows each pass but at no common
+   departure.
+
+The work of step 3 draws on what the search left of `maxWork`.
+
+**R3b, waiting en route (not built).**
+
 - State (leaf, arrival slot); slots are 15 minutes, the water level forecast's step.
 - An edge is open when `session.segment` passes over the slot's window.
 - **Waiting** is allowed only at permitted places: charted anchorage areas (`ACHARE`), user
@@ -239,7 +261,8 @@ worker at low priority, from the same cell cache, released after use. API v1 gai
   "speed": 3.1, // m/s; default underkeel's route-check speed
   "xteLimit": 30, // optional
   "probability": 0.01, // optional
-  "draft": 1.9 // optional override
+  "draft": 1.9, // optional override
+  "latestDeparture": "2026-11-18T19:00:00Z" // optional: wait for the tide up to this, ≤ 24 h
 }
 ```
 
@@ -265,6 +288,9 @@ Reply 200:
     "parts": [{ "part": "harbour", "end": "start", "xteLimit": 0, "legs": [0, 4] }]
   },
   "underway": "ok", // with berth legs: the worst status of the other legs
+  // With latestDeparture, when the plan waits for the tide (§4.3):
+  "departure": "2026-11-18T13:15:00.000Z",
+  "gate": { "requested": "…", "departure": "…", "waitMinutes": 375, "legs": [3] },
   "berths": [{ "end": "start", "leg": 0, "length": 12 }],
   "direct": { "status": "fail", "worst": [22.21, 60.24] }, // the straight line's check
   "work": 182340

@@ -33,6 +33,13 @@
     <select id="route"></select>
     <label class="check"><input id="accept" type="checkbox" /> Plan on depth data marked not for navigation (its legs stay unverified)</label>
     <label class="check"><input id="fallback" type="checkbox" /> If no route passes, show the lowest risk-weighted route, its risky legs marked</label>
+    <label for="wait">Wait for the tide, at most</label>
+    <select id="wait">
+      <option value="0">do not wait</option>
+      <option value="6">6 hours</option>
+      <option value="12">12 hours</option>
+      <option value="24">24 hours</option>
+    </select>
     <button id="plan" type="button">Plan through safe water</button>
     <div id="result" role="status"></div>
     <table id="legs" hidden>

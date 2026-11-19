@@ -28,5 +28,8 @@ All notable changes to signalk-route-planner are documented here.
   only when it reaches it and weights its heuristic by 1.25, the strict search crosses marginal
   water at a cost, and an end the search cannot join goes to its harbour stage before any
   whole-route fallback.
+- Tide gates: with `latestDeparture`, a route that passes only at some states of the tide is
+  offered leaving at the earliest departure up to then that the route check passes, with the
+  wait; the planner asks the planning API about each gated leg over 15-minute windows.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.
