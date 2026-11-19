@@ -13,6 +13,11 @@ export interface PlanOptions {
   maxSideUnits: number;
   /** Smallest square, metres, at least; also at least half the corridor half-width. */
   minCell: number;
+  /**
+   * Smallest square of a corridor's region, metres, at least: a long trip's shores are long,
+   * and each halving of the square doubles the boxes asked along them.
+   */
+  corridorCell: number;
   /** Largest square the chart is asked about, metres, before its corridor buffer. */
   maxLeafMetres: number;
   /** The region reaches past start and goal by half their distance, and at least this, metres. */
@@ -47,6 +52,7 @@ export const DEFAULT_PLAN: PlanOptions = {
   greed: 1.25,
   maxSideUnits: 4096,
   minCell: 10,
+  corridorCell: 40,
   maxLeafMetres: 4000,
   minMargin: 2000,
   accessMetres: 500,

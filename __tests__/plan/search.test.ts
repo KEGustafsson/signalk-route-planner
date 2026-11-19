@@ -171,17 +171,20 @@ describe("tree shape", () => {
 
   test("a corridor's region is the square around its boxes when that is smaller, and finer", () => {
     const from = at(0, 0);
-    const to = at(60000, 0);
+    const to = at(120000, 0);
     const square = shapeFor(from, to, 10, DEFAULT_PLAN);
     // A band 4 km wide along the trip, past both ends by 2 km.
     const sw = at(-2000, -2000);
-    const ne = at(62000, 2000);
+    const ne = at(122000, 2000);
     const band: Bbox[] = [[sw[0], sw[1], ne[0], ne[1]]];
     const corridor = shapeFor(from, to, 10, DEFAULT_PLAN, band);
     if (typeof square === "string" || typeof corridor === "string") {
       throw new Error("no shape");
     }
     expect(corridor.unit).toBeLessThan(square.unit);
+    // No finer than a corridor's smallest square.
+    expect(corridor.unit).toBeGreaterThanOrEqual(DEFAULT_PLAN.corridorCell);
+    expect(corridor.side * corridor.unit).toBeLessThan(square.side * square.unit);
     // It holds the corridor's box, centred on it.
     const extent = (corridor.side * corridor.unit) / 2;
     for (const p of [sw, ne, [sw[0], ne[1]] as LonLat, [ne[0], sw[1]] as LonLat]) {
@@ -191,7 +194,12 @@ describe("tree shape", () => {
     }
     // A corridor wider than the square leaves the square as it is.
     const wide: Bbox[] = [
-      [at(-90000, -90000)[0], at(-90000, -90000)[1], at(150000, 90000)[0], at(150000, 90000)[1]]
+      [
+        at(-150000, -150000)[0],
+        at(-150000, -150000)[1],
+        at(270000, 150000)[0],
+        at(270000, 150000)[1]
+      ]
     ];
     const same = shapeFor(from, to, 10, DEFAULT_PLAN, wide);
     if (typeof same === "string") {

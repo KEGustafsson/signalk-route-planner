@@ -29,7 +29,10 @@ export function shapeFor(
   const half = d / 2 + Math.max(d / 2, opts.minMargin);
   const corridor = within && within.length > 0 ? squareAround(within, [from, to]) : undefined;
   return corridor && corridor.half < half
-    ? regionShape(corridor.middle, corridor.half, halfWidth, opts)
+    ? regionShape(corridor.middle, corridor.half, halfWidth, {
+        ...opts,
+        minCell: Math.max(opts.minCell, opts.corridorCell)
+      })
     : regionShape(midpoint(from, to), half, halfWidth, opts);
 }
 
