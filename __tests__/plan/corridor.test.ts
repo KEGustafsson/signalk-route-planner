@@ -12,7 +12,8 @@ import {
   boxOf,
   coarseRoute,
   CORRIDOR_HALF,
-  corridorFor,
+  CORRIDOR_WIDTHS,
+  corridorsFor,
   corridorParts,
   surveyRegion
 } from "../../src/plan/corridor";
@@ -99,7 +100,7 @@ describe("corridor", () => {
   const to = centre(g, 380, 280);
 
   test("bands holding the coarse route with its reach each side, and both ends' harbours", () => {
-    const parts = corridorFor(g, from, to, 2) ?? [];
+    const parts = corridorsFor(g, from, to, 2)?.[0] ?? [];
     expect(parts.length).toBeGreaterThan(10);
     const path = coarseRoute(g, from, to, 2) ?? [];
     for (const i of path) {
@@ -124,7 +125,7 @@ describe("corridor", () => {
   test("the reach each side: 1 km off the route is in, 3 km off is not", () => {
     const a = centre(g, 20, 150);
     const b = centre(g, 380, 150);
-    const parts = corridorFor(g, a, b, 2) ?? [];
+    const parts = corridorsFor(g, a, b, 2)?.[0] ?? [];
     const has = (p: LonLat) => parts.some((x) => inside(x, p));
     expect(has(centre(g, 200, 160))).toBe(true);
     expect(has(centre(g, 200, 140))).toBe(true);
@@ -197,6 +198,34 @@ describe("Preparer with a survey", () => {
     ]);
     expect(p.surveys).toEqual([surveyRegion(from, to)]);
     expect(p.asked[2]?.corridor?.length).toBeGreaterThan(10);
+  });
+
+  test("narrower corridors in turn while the widest is too large to build", async () => {
+    const p = provider(g, 1000);
+    const widest = p.api;
+    const r0 = await new Preparer(1000).forTrip(widest, from, to, new AbortController().signal);
+    expect("version" in r0).toBe(true);
+    const area = (parts: readonly Bbox[]) =>
+      parts.reduce(
+        (a, b) =>
+          a +
+          (b[2] - b[0]) *
+            Math.cos((b[1] * Math.PI) / 180) *
+            (b[3] - b[1]) *
+            (M_PER_DEG / 1000) ** 2,
+        0
+      );
+    const wide = area(p.asked[2]?.corridor ?? []);
+    // A cap between the narrowest corridor's area and the widest's: the narrower ones are asked.
+    const q = provider(g, wide * 0.6);
+    const r = await new Preparer(1000).forTrip(q.api, from, to, new AbortController().signal);
+    const corridors = q.asked.filter((a) => a.corridor).map((a) => area(a.corridor ?? []));
+    expect(corridors.length).toBeGreaterThan(1);
+    expect(corridors.length).toBeLessThanOrEqual(CORRIDOR_WIDTHS.length);
+    for (let i = 1; i < corridors.length; i++) {
+      expect(corridors[i]).toBeLessThan(corridors[i - 1] as number);
+    }
+    expect("version" in r).toBe(true);
   });
 
   test("without a survey, the least region's refusal is the reply", async () => {

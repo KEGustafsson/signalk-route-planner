@@ -4,7 +4,7 @@ import type { PlanOptions } from "./options";
 import { DEFAULT_PLAN } from "./options";
 import type { Bbox, PlanningApiV1, Prepared, PrepareResult, Reply } from "../oracle/contract";
 import { canPrepare, canSurvey } from "../oracle/contract";
-import { boxOf, corridorFor, SURVEY_CELL, surveyRegion } from "./corridor";
+import { boxOf, corridorsFor, SURVEY_CELL, surveyRegion } from "./corridor";
 
 /**
  * Charts for a trip past the chart box around the vessel (plan §4.2, R2): signalk-underkeel's
@@ -128,18 +128,18 @@ async function corridor(
   to: LonLat,
   draft: number,
   stop: AbortSignal
-): Promise<Bbox[] | undefined> {
+): Promise<Bbox[][] | undefined> {
   if (!canSurvey(api)) {
     return undefined;
   }
   const s = await api.survey(surveyRegion(from, to), SURVEY_CELL, stop);
-  return s.ok ? corridorFor(s.value, from, to, draft) : undefined;
+  return s.ok ? corridorsFor(s.value, from, to, draft) : undefined;
 }
 
 /**
  * The index for `first`, the whole search region; when that is too large to build on the
  * machine (413), for the trip's least region; and when that is too, for a corridor on the
- * depth survey. `narrow` is told each region it turns to, undefined for the corridor: past the
+ * depth survey, narrower in turn (`CORRIDOR_WIDTHS`) while it is too. `narrow` is told each region it turns to, undefined for the corridor: past the
  * region the chart reads no coverage, `unverified`, and the search keeps to the water it can
  * check.
  */
@@ -158,12 +158,19 @@ async function prepareTrip(
   if (r.ok || r.status !== 413) {
     return r;
   }
-  const parts = await corridor(api, trip.from, trip.to, trip.draft, stop);
-  if (!parts) {
+  const corridors = await corridor(api, trip.from, trip.to, trip.draft, stop);
+  if (!corridors) {
     return r;
   }
   narrow(undefined);
-  return api.prepare(boxOf(parts), stop, parts);
+  // Narrower in turn while the machine refuses a corridor as too large to build.
+  for (const parts of corridors) {
+    r = await api.prepare(boxOf(parts), stop, parts);
+    if (r.ok || r.status !== 413) {
+      return r;
+    }
+  }
+  return r;
 }
 
 /** The trips' indexes being built, each carried on past the request that asked for it. */

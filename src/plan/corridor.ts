@@ -15,10 +15,23 @@ export const SURVEY_CELL = 100;
 /** The survey reaches past the trip's box by a quarter of the trip, within these, metres. */
 export const SURVEY_MIN_REACH = 3000;
 export const SURVEY_MAX_REACH = 15_000;
-/** The corridor reaches this far each side of the coarse route, metres. */
-export const CORRIDOR_HALF = 1500;
-/** Around each end it reaches this far, for the harbour stage, metres. */
-export const END_REACH = 3500;
+/** The corridor's reach each side of the coarse route and around each end, metres. */
+export interface CorridorWidth {
+  half: number;
+  /** For the harbour stage. */
+  end: number;
+}
+
+/**
+ * The widths tried in turn, widest first: a narrower one when underkeel refuses a wider as too
+ * large to build on the machine (413).
+ */
+export const CORRIDOR_WIDTHS: readonly CorridorWidth[] = [
+  { half: 1500, end: 3500 },
+  { half: 1000, end: 2500 },
+  { half: 600, end: 1500 }
+];
+export const CORRIDOR_HALF = (CORRIDOR_WIDTHS[0] as CorridorWidth).half;
 /** The corridor's boxes are cut from bands this tall, metres. */
 const BAND = 1000;
 /** An end is joined to the nearest cell that takes the draft within this, metres. */
@@ -198,14 +211,15 @@ function pathTo(came: Int32Array, i: number): number[] {
 }
 
 /**
- * The corridor around the coarse route `path`: CORRIDOR_HALF each side of it and END_REACH
+ * The corridor around the coarse route `path`: `width.half` each side of it and `width.end`
  * around `from` and `to`, cut into boxes of BAND-tall bands, each band's runs of cells one box.
  */
 export function corridorParts(
   g: Survey,
   path: readonly number[],
   from: LonLat,
-  to: LonLat
+  to: LonLat,
+  width: CorridorWidth = CORRIDOR_WIDTHS[0] as CorridorWidth
 ): Bbox[] {
   const mask = new Uint8Array(g.cols * g.rows);
   const fill = (c: number, r: number, k: number): void => {
@@ -213,11 +227,11 @@ export function corridorParts(
       mask.fill(1, y * g.cols + Math.max(0, c - k), y * g.cols + Math.min(g.cols - 1, c + k) + 1);
     }
   };
-  const half = Math.ceil(CORRIDOR_HALF / g.cellMetres);
+  const half = Math.ceil(width.half / g.cellMetres);
   for (const i of path) {
     fill(i % g.cols, Math.floor(i / g.cols), half);
   }
-  const end = Math.ceil(END_REACH / g.cellMetres);
+  const end = Math.ceil(width.end / g.cellMetres);
   for (const p of [from, to]) {
     const [c, r] = cellOf(g, p);
     fill(Math.min(g.cols - 1, Math.max(0, c)), Math.min(g.rows - 1, Math.max(0, r)), end);
@@ -271,13 +285,16 @@ export function boxOf(parts: readonly Bbox[]): Bbox {
   ]);
 }
 
-/** The corridor for the trip `from`–`to` on the survey `g`, or undefined when it joins them by none. */
-export function corridorFor(
+/**
+ * The corridors for the trip `from`–`to` on the survey `g`, one for each of CORRIDOR_WIDTHS,
+ * widest first; undefined when the survey joins the ends by none.
+ */
+export function corridorsFor(
   g: Survey,
   from: LonLat,
   to: LonLat,
   draft: number
-): Bbox[] | undefined {
+): Bbox[][] | undefined {
   const path = coarseRoute(g, from, to, draft);
-  return path && corridorParts(g, path, from, to);
+  return path && CORRIDOR_WIDTHS.map((w) => corridorParts(g, path, from, to, w));
 }
