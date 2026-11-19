@@ -219,9 +219,9 @@ export class Preparer {
    * The planning API over an index for the trip `from`–`to`; `api` itself when it serves no
    * `prepare`; BUILDING while the index is still being built after `waitMs`; the provider's
    * refusal as a reply. A build whose region holds the trip's least region is shared; one that
-   * turned past the trip to a smaller region is not, and the trip gets its own. A corridor
-   * serves its own trip alone. The build runs until `stop` (the plugin stopping), not the
-   * request.
+   * turned past the trip to a smaller region is not, and the trip gets its own, as it does when
+   * another trip's region it shared is refused as too large (413). A corridor serves its own
+   * trip alone. The build runs until `stop` (the plugin stopping), not the request.
    */
   async forTrip(
     api: PlanningApiV1,
@@ -247,6 +247,10 @@ export class Preparer {
       }
       if (r === "waiting") {
         return BUILDING;
+      }
+      // A 413 for another trip's region it shared is no answer for this trip's own: asked again.
+      if (!r.ok && r.status === 413 && build.trip !== trip) {
+        continue;
       }
       if (!r.ok) {
         return { status: r.status, body: { errors: [r.error] } };
