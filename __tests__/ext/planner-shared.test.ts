@@ -104,4 +104,26 @@ describe("panel model", () => {
     });
     expect(P.summary(500, undefined).text).toBe("Not planned: the planner did not answer");
   });
+
+  test("while the trip's chart index is built the panel waits as asked, and says so", () => {
+    const building = { errors: ["building"], preparing: true };
+    expect(P.preparingWait(503, building, "45")).toBe(45);
+    expect(P.preparingWait(503, building, null)).toBe(30);
+    expect(P.preparingWait(503, building, "9999")).toBe(300);
+    expect(P.preparingWait(503, { errors: ["no index"] }, "30")).toBeNull();
+    expect(P.preparingWait(200, building, "30")).toBeNull();
+    expect(P.summary(503, building)).toEqual({
+      kind: "muted",
+      text: expect.stringMatching(/^Building the chart index for this trip's region/)
+    });
+    expect(P.MAX_PREPARING).toBeGreaterThan(0);
+  });
+
+  test("a route is written only when its points are as they were read", () => {
+    const pts = [{ position: [22, 60] }, { position: [22.1, 60.1], name: "x" }];
+    expect(P.samePoints(pts, [{ position: [22, 60] }, { position: [22.1, 60.1] }])).toBe(true);
+    expect(P.samePoints(pts, [{ position: [22, 60] }, { position: [22.2, 60.1] }])).toBe(false);
+    expect(P.samePoints(pts, [{ position: [22, 60] }])).toBe(false);
+    expect(P.samePoints(pts, undefined)).toBe(false);
+  });
 });

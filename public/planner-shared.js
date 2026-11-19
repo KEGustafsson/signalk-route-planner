@@ -64,9 +64,43 @@
     return "Leave at " + gate.departure.slice(11, 16) + " UTC, waiting " + wait + " for the tide. ";
   }
 
+  /** Whether two lists of host route points have the same positions, in order. */
+  function samePoints(a, b) {
+    const pa = a || [];
+    const pb = b || [];
+    return (
+      pa.length === pb.length &&
+      pa.every(function (p, i) {
+        const q = pb[i];
+        const x = p && p.position;
+        const y = q && q.position;
+        return !!x && !!y && x[0] === y[0] && x[1] === y[1];
+      })
+    );
+  }
+
+  /** A panel plans again this many times at most while the trip's chart index is built. */
+  const MAX_PREPARING = 60;
+
+  /** Seconds to wait before planning again while the chart index is built, else null. */
+  function preparingWait(status, body, retryAfter) {
+    if (status !== 503 || !body || body.preparing !== true) {
+      return null;
+    }
+    const s = Number(retryAfter);
+    return isFinite(s) && s > 0 ? Math.min(s, 300) : 30;
+  }
+
   /** One line for the panel from a `/plan` reply (status code and body). */
   function summary(status, body) {
     const b = body || {};
+    if (status === 503 && b.preparing === true) {
+      return {
+        kind: "muted",
+        text:
+          "Building the chart index for this trip's region in signalk-underkeel; this can take minutes. Planning again shortly…"
+      };
+    }
     if (status === 200) {
       const legs = (b.check && b.check.legs) || [];
       return {
@@ -107,6 +141,9 @@
     planPoints: planPoints,
     nm: nm,
     summary: summary,
+    preparingWait: preparingWait,
+    samePoints: samePoints,
+    MAX_PREPARING: MAX_PREPARING,
     legLabel: legLabel
   };
   if (typeof module !== "undefined" && module.exports) {

@@ -3,7 +3,10 @@ import type { ApiProvider } from "./api/routes";
 import { publicReason } from "./foundation/public-text";
 import type { PlanningApiV1, Reply } from "./oracle/contract";
 import { planningApi } from "./oracle/contract";
+import { haversine } from "./foundation/geo";
+import { DEFAULT_PLAN } from "./plan/options";
 import { plan } from "./plan/plan";
+import { Preparer } from "./plan/prepare";
 
 /** The REST handlers bound to the planning API signalk-underkeel publishes (plan §5). */
 
@@ -22,7 +25,11 @@ export function ready(): PlanningApiV1 | string {
   return api.unavailable() ?? api;
 }
 
-export function apiFor(clock: Clock, running: () => AbortSignal | undefined): ApiProvider {
+export function apiFor(
+  clock: Clock,
+  running: () => AbortSignal | undefined,
+  preparer = new Preparer()
+): ApiProvider {
   return {
     status: () => {
       const api = ready();
@@ -30,20 +37,27 @@ export function apiFor(clock: Clock, running: () => AbortSignal | undefined): Ap
         ? { state: "off", reason: publicReason(api) }
         : { state: "ready", provider: api.provider };
     },
-    plan(body: unknown, client: AbortSignal): Promise<Reply> {
+    async plan(body: unknown, client: AbortSignal): Promise<Reply> {
       const stop = running();
       if (!stop) {
-        return Promise.resolve({ status: 503, body: { errors: ["plugin not started"] } });
+        return { status: 503, body: { errors: ["plugin not started"] } };
       }
       const parsed = parsePlanRequest(body, clock.now());
       if (!parsed.ok) {
-        return Promise.resolve({ status: 400, body: { errors: parsed.errors } });
+        return { status: 400, body: { errors: parsed.errors } };
       }
-      const api = ready();
-      if (typeof api === "string") {
-        return Promise.resolve({ status: 503, body: { errors: [api] } });
+      const found = ready();
+      if (typeof found === "string") {
+        return { status: 503, body: { errors: [found] } };
       }
       const req = parsed.value;
+      // A trip plan() refuses (too long, or no distance at all) builds no index.
+      const dist = haversine(req.from, req.to);
+      const near = dist >= 1 && dist <= DEFAULT_PLAN.maxDistance;
+      const api = near ? await preparer.forTrip(found, req.from, req.to, stop) : found;
+      if (!("version" in api)) {
+        return api;
+      }
       const d = api.defaults();
       return plan(
         api,

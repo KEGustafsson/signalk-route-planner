@@ -91,6 +91,9 @@ the planner relies on:
   underkeel's.
 - Every verdict carries its status (`ok`, `marginal`, `fail`, `unverified`), P(UKC < 0), flags
   and the worst point: the planner never makes a status up.
+- With `features` listing `"prepare"`, `prepare(region, signal)` answers with a `session` and
+  `routeCheck` over an index whose queries are judged on the charts wherever their corridor lies in
+  `region` (§4.2). A provider without it is planned on as before.
 
 ## 3. Safety invariants
 
@@ -185,9 +188,35 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
 ### 4.2 R2: planning beyond the chart box
 
 `signalk-underkeel` indexes a box around the vessel (default 10 km). R2 adds a planning box to
-underkeel: an index built on request for the corridor between start and destination, in its build
-worker at low priority, from the same cell cache, released after use. API v1 gains
-`prepare(region, signal)`; the version stays 1 and the capability is listed in `features`.
+underkeel: an index built on request for a region, in a build process of its own at the lowest
+CPU priority, from the same cell cache, always behind the chart box around the vessel, one at a
+time and released once unused, on underkeel's policy (its plan §4.11). API v1 gains
+`prepare(region, signal)`; the version stays 1 and `features` lists it.
+
+**Built:**
+
+- `/plan` asks for every place the search may ask about: the square its region is cut from
+  around the midpoint (§4.1) and a harbour stage's region around each end, each with a
+  corridor's reach (`searchRegion`, `src/plan/prepare.ts`). When that is too large to build on
+  the machine (413), it asks for the trip's least region: both ends with the search's least
+  margin and a harbour stage around them (`tripRegion`). Underkeel answers with the chart box
+  when it covers the region, the whole index when there is no box, or a planning box built for
+  it. The search and the proof then run on that index; past it the chart reads no coverage,
+  `unverified`, never `ok` (invariant 2), so the search keeps to the water it can check.
+- A build can take minutes on a Pi. `/plan` waits 20 s for it, then answers 503 with
+  `preparing: true` and `Retry-After: 30` while the build runs on until the plugin stops. The
+  panel plans again while the build continues, then asks to plan again later if it is still
+  unfinished; it writes the plan only into a route unchanged since it was read. A trip whose
+  least region lies inside a build's region waits for that build; others start their own, and
+  every build is kept until it settles. A build a 413 turned to its own trip's least region is
+  no longer shared past it: a trip it no longer holds asks for its own.
+- A trip `plan()` refuses (over `maxDistance`, or start and destination the same point) builds
+  nothing; a region larger than underkeel builds on the machine, even the least, is 413 with its
+  reason. How large that is is underkeel's policy.
+
+**Still open:** a 50 nm diagonal trip's box is far beyond what a small machine builds. It needs a planning box along
+the trip's corridor rather than its bounding box, and the search held to that corridor, before
+R2's exit criterion (§8) is met.
 
 ### 4.3 R3: time-dependent search and tide gates
 
@@ -299,7 +328,9 @@ Reply 200:
 
 Reply 422 when no route exists, with `reason` and, when the search met water the check cannot
 verify, `unverifiedSquares`: how many one-unit squares it was. Reply 503 when the planning API
-is missing or the index is not ready.
+is missing or the index is not ready, and with `preparing: true` and `Retry-After` while
+underkeel builds the trip's planning box (§4.2). Reply 413 when the trip's region is too large
+for underkeel to build on the machine.
 
 ## 6. Performance budget
 

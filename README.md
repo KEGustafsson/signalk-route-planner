@@ -20,6 +20,13 @@ commands.
 Without signalk-underkeel the plugin status reads "Waiting: signalk-underkeel 0.7.0 or later is
 not running" and `/plan` answers 503 with that reason.
 
+With a signalk-underkeel that serves planning boxes (it lists `prepare` in its planning API's
+`features`), a trip past its chart box around the vessel is planned on a planning box it builds
+for the trip's region, from the same charts, behind the chart box. The first plan of a new region
+waits for that build, which can take minutes on a Raspberry Pi: the panel says so and plans again
+by itself while the build runs. Without `prepare` the planner plans on the chart box alone, and
+legs past it come back `unverified`.
+
 ## Use
 
 1. In Freeboard, draw a route from where you are to where you want to go. Two points are enough.
@@ -63,6 +70,10 @@ A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departur
 signalk-underkeel's route-check settings. `accept: ["NOT_FOR_NAVIGATION"]` plans on depth data
 marked not for navigation (its legs stay `unverified`), and `fallback: true` returns, when no
 route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart.
+
+While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
+`preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the
+machine is 413 with underkeel's reason.
 
 An end in a harbour narrower than the corridor (a guest harbour in a river, a marina) is planned
 out to open water in a harbour stage at a 10 m corridor, and a point alongside a quay leaves by a
