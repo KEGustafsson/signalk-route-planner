@@ -1,7 +1,7 @@
 import fc from "fast-check";
 import type { LonLat } from "../../src/foundation/geo";
 import { plan } from "../../src/plan/plan";
-import { crossable } from "../../src/search/fallback";
+import { berthable, crossable } from "../../src/search/fallback";
 import type { Chart, Circle } from "../helpers/synthetic-oracle";
 import { at, legVerdict, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -86,6 +86,13 @@ describe("fallback", () => {
       "ENTRY_PROHIBITED"
     ]) {
       expect(crossable({ flags: ["UNASSESSED", flag] })).toBe(false);
+    }
+  });
+
+  test("a berth leg may touch its quay, but nothing a hard rule or no chart closes", () => {
+    expect(berthable({ flags: ["LAND", "UNASSESSED"] })).toBe(true);
+    for (const flag of ["ENTRY_PROHIBITED", "NO_COVERAGE", "BOX_TOO_LARGE"]) {
+      expect(berthable({ flags: ["LAND", flag] })).toBe(false);
     }
   });
 

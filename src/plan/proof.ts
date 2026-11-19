@@ -42,7 +42,7 @@ export interface Proof {
 }
 
 /** The same point: within 1e-9° (0.1 mm), well under any chart's precision. */
-const same = (a: LonLat | undefined, b: LonLat | undefined): boolean =>
+export const same = (a: LonLat | undefined, b: LonLat | undefined): boolean =>
   a !== undefined &&
   b !== undefined &&
   Math.abs(a[0] - b[0]) < 1e-9 &&
