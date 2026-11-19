@@ -54,6 +54,20 @@ describe("panel model", () => {
     ).toBe(
       "Planned 1.0 nm in 1 leg: fail (see the legs below). No route passes the check: this is the lowest risk-weighted route, no route the check passes connects the points"
     );
+    expect(
+      P.summary(200, {
+        status: "fail",
+        underway: "ok",
+        length: 3704,
+        berths: [{ end: "start", leg: 0, length: 12 }],
+        check: { legs: [{}, {}, {}] }
+      }).text
+    ).toBe(
+      "Planned 2.0 nm in 3 legs: fail (see the legs below). Underway ok; a berth leg lies alongside the quay, inside the corridor: steer it by eye"
+    );
+    expect(P.legLabel({ status: "fail", part: "harbour", berth: true })).toBe("fail (berth)");
+    expect(P.legLabel({ status: "ok", part: "harbour" })).toBe("ok (harbour)");
+    expect(P.legLabel({ status: "ok", part: "route" })).toBe("ok");
     expect(P.summary(422, { reason: "land, shoals or obstacles close every way" })).toEqual({
       kind: "fail",
       text: "No route: land, shoals or obstacles close every way"

@@ -1,0 +1,91 @@
+{
+  "areas": {
+    "turku": {
+      "about": "Turku guest harbour to Nauvo guest harbour, Finland: Traficom INSPIRE WFS depth data (not for navigation, no survey quality: the CATZOC is assumed per case)",
+      "source": "traficom-wfs",
+      "bbox": [21.8, 60.15, 22.32, 60.47]
+    },
+    "miami": {
+      "about": "Miami, Florida: from sea off South Pointe through Government Cut, NOAA ENC cells (official, public domain)",
+      "source": "noaa-enc",
+      "cells": ["US4FL2AI", "US5MIACC", "US5MIACB"]
+    }
+  },
+  "cases": [
+    {
+      "name": "turku-guest-harbours-b",
+      "area": "turku",
+      "catzoc": 3,
+      "from": [22.2447535, 60.4399228],
+      "to": [21.91184, 60.1947716],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "accept": ["NOT_FOR_NAVIGATION"],
+      "fallback": true,
+      "expect": {
+        "status": 200,
+        "lengthNm": [18, 21.5],
+        "parts": ["harbour:start", "route", "harbour:end"]
+      }
+    },
+    {
+      "name": "turku-guest-harbours-a1",
+      "area": "turku",
+      "catzoc": 1,
+      "from": [22.2447535, 60.4399228],
+      "to": [21.91184, 60.1947716],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "accept": ["NOT_FOR_NAVIGATION"],
+      "fallback": true,
+      "expect": {
+        "status": 200,
+        "lengthNm": [18, 20.5],
+        "parts": ["harbour:start", "route", "harbour:end"],
+        "routeStatuses": ["unverified"]
+      }
+    },
+    {
+      "name": "miami-fisher-island-basin",
+      "area": "miami",
+      "from": [-80.125431, 25.760871],
+      "to": [-80.14331, 25.76565],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "fallback": true,
+      "expect": {
+        "status": 200,
+        "lengthNm": [0.9, 1.3],
+        "parts": ["route"],
+        "routeStatuses": ["ok", "marginal"]
+      }
+    },
+    {
+      "name": "miami-bayside",
+      "area": "miami",
+      "from": [-80.125431, 25.760871],
+      "to": [-80.183, 25.778],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "fallback": true,
+      "expect": {
+        "status": 200,
+        "lengthNm": [3.2, 4.4]
+      }
+    },
+    {
+      "name": "miami-beach-marina",
+      "area": "miami",
+      "about": "Meloy Channel is dredged to 1.7 m (2025): refused for 1.8 m at chart datum",
+      "from": [-80.125431, 25.760871],
+      "to": [-80.1406, 25.77035],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "fallback": true,
+      "expect": {
+        "status": 422,
+        "reason": "harbour stage"
+      }
+    }
+  ]
+}

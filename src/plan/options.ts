@@ -20,6 +20,20 @@ export interface PlanOptions {
   windowFactor: number;
   /** ...and at least this long, ms. */
   minWindow: number;
+  /**
+   * An end the corridor cannot reach is planned out to open water in a harbour stage, at
+   * this cross-track limit (the planning API's buffer alone at 0), metres.
+   */
+  harbourXte: number;
+  /** The harbour stage reaches at most this far from its end, metres. */
+  harbourMetres: number;
+  /** The harbour stage's region reaches past its end and its handover by this, metres. */
+  harbourMargin: number;
+  /**
+   * A berth leg: the last stretch alongside a quay or pier, inside even the harbour corridor,
+   * at most this long, metres. 0 turns berth legs off.
+   */
+  berthMetres: number;
 }
 
 export const DEFAULT_PLAN: PlanOptions = {
@@ -32,5 +46,9 @@ export const DEFAULT_PLAN: PlanOptions = {
   accessMetres: 500,
   maxDistance: 60_000,
   windowFactor: 3,
-  minWindow: 3_600_000
+  minWindow: 3_600_000,
+  harbourXte: 0,
+  harbourMetres: 3000,
+  harbourMargin: 300,
+  berthMetres: 40
 };

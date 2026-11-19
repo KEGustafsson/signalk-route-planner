@@ -4,11 +4,12 @@ import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
-import { crossable, fallbackWeight } from "../search/fallback";
+import { berthable, crossable, fallbackShortcut, fallbackWeight } from "../search/fallback";
 import type { Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode, TreeShape } from "../search/quadtree";
 import { centre, MAX_BOX_KM2, QuadTree } from "../search/quadtree";
+import { stuckEnds } from "./handover";
 import type { PlanOptions } from "./options";
 
 /**
@@ -26,6 +27,8 @@ export type SearchOutcome =
       work: number;
       /** Set when no route passed and this is the lowest risk-weighted route: why none passed. */
       fallback?: string;
+      /** Where a berth leg (`berthMetres`) leaves the start or reaches the destination. */
+      berths?: Berths;
     }
   | {
       ok: false;
@@ -35,7 +38,24 @@ export type SearchOutcome =
       /** One-unit squares the check could not verify that the search met. */
       unverified: number;
       work: number;
+      /**
+       * Set when the start or destination could not be joined: free water near each such
+       * end, nearest first, where a harbour stage may hand over (plan §4.1, harbour stage).
+       */
+      stuck?: Stuck;
     };
+
+/** The berth leg's inner point at the start or the destination. */
+export interface Berths {
+  start?: LonLat;
+  end?: LonLat;
+}
+
+/** Handover candidates for each end that could not be joined. */
+export interface Stuck {
+  start?: LonLat[];
+  end?: LonLat[];
+}
 
 /** A box with its corridor buffer at the frame's origin stays under MAX_BOX_KM2. */
 const MAX_BOX_SIDE = Math.sqrt(MAX_BOX_KM2 * 1e6);
@@ -98,10 +118,12 @@ interface Access {
   at: [number, number];
   /** The start or goal point itself, when it joins the leaf by a checked leg. */
   joined?: LonLat;
+  /** Where the berth leg from `joined` ends, when only a berth leg reaches it. */
+  berth?: LonLat;
 }
 
 /** What a search may cross: strictly passing water, or for the fallback, charted water at a cost. */
-interface Mode {
+export interface Mode {
   enter(n: QuadNode): boolean;
   /** True when a checked leg may join the start or goal to a square. */
   joins(v: Verdict): boolean;
@@ -119,7 +141,7 @@ const FALLBACK: Mode = {
   weight: fallbackWeight
 };
 
-const WORK_LIMIT =
+export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
 
 /**
@@ -134,7 +156,8 @@ function access(
   goal: boolean,
   opts: PlanOptions,
   mode: Mode,
-  exhausted: () => boolean
+  exhausted: () => boolean,
+  berth = 0
 ): Access | string {
   const [ux, uy] = tree.units(p);
   const own = tree.leafAt(ux, uy);
@@ -165,15 +188,124 @@ function access(
       return { leaf: n, at: c, joined: p };
     }
   }
+  const stub =
+    berth > 0
+      ? berthJoin(
+          tree,
+          session,
+          { p, goal, berth, mode, exhausted },
+          near.map((x) => x.n)
+        )
+      : undefined;
+  // A stub found past the work limit is not offered: the search answers with the limit.
   if (exhausted()) {
     return WORK_LIMIT;
+  }
+  if (stub) {
+    return stub;
   }
   const what = goal ? "destination" : "start";
   const flags = own?.verdict?.flags.length ? ` (${own.verdict.flags.join(", ")})` : "";
   return `no water the route check passes within ${opts.accessMetres} m of the ${what}${flags}`;
 }
 
-type Attempt = { path: LonLat[] } | { reason: string };
+/** The point `d` metres from `p` toward `q`; short distances, so linear in degrees. */
+function toward(p: LonLat, q: LonLat, d: number): LonLat {
+  const t = Math.min(1, d / Math.max(haversine(p, q), 1e-9));
+  return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+}
+
+/**
+ * A berth leg (plan §4.1): when no checked leg joins `p` because the quay or pier it lies
+ * at is inside the corridor, the shortest stub from `p` toward a square's centre, at most
+ * `berth` metres, beyond which a checked leg joins. The stub may touch its quay (`LAND`), but
+ * one a hard rule or no chart closes is not taken (`berthable`); the route check marks it.
+ * Each check stops at the work limit.
+ */
+function berthJoin(
+  tree: QuadTree,
+  session: Session,
+  end: { p: LonLat; goal: boolean; berth: number; mode: Mode; exhausted: () => boolean },
+  near: QuadNode[]
+): Access | undefined {
+  const { p, goal, berth, mode, exhausted } = end;
+  for (const n of near) {
+    const c = centre(n);
+    const cl = tree.lonLat(c[0], c[1]);
+    const joinsAt = (d: number): boolean => {
+      if (exhausted()) {
+        return false;
+      }
+      const q = toward(p, cl, d);
+      return mode.joins(goal ? checkLeg(session, cl, q) : checkLeg(session, q, cl));
+    };
+    let hi = Math.min(berth, 0.9 * haversine(p, cl));
+    if (hi <= 0 || !joinsAt(hi)) {
+      continue;
+    }
+    let lo = 0;
+    for (let k = 0; k < 5; k++) {
+      const mid = (lo + hi) / 2;
+      if (joinsAt(mid)) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+    // The stub lies alongside the quay, but never in water a hard rule or no chart closes.
+    const q = toward(p, cl, hi);
+    if (!berthable(goal ? checkLeg(session, q, p) : checkLeg(session, p, q))) {
+      continue;
+    }
+    return { leaf: n, at: c, joined: p, berth: q };
+  }
+  return undefined;
+}
+
+/**
+ * The search's points with its first and last replaced by the given ends, when the search
+ * starts or ends at them: the frame's round trip moves them in the last bits, and a part that
+ * hands over must meet the next at the very same coordinate.
+ */
+function exactEnds(points: LonLat[], first?: LonLat, last?: LonLat): LonLat[] {
+  const out = [...points];
+  if (first && out.length > 0) {
+    out[0] = first;
+  }
+  if (last && out.length > 0) {
+    out[out.length - 1] = last;
+  }
+  return out;
+}
+
+type Attempt =
+  { path: LonLat[]; berths: Berths } | { reason: string; stuck?: { start: boolean; end: boolean } };
+
+/** The path through the search's points, with the joined ends and their berth legs. */
+function pathOf(
+  tree: QuadTree,
+  [start, goal]: [Access, Access],
+  ends: [LonLat, LonLat],
+  points: [number, number][]
+): { path: LonLat[]; berths: Berths } {
+  return {
+    path: [
+      ...(start.joined ? [start.joined] : []),
+      ...(start.berth ? [start.berth] : []),
+      ...exactEnds(
+        points.map(([x, y]) => tree.lonLat(x, y)),
+        start.joined ? undefined : ends[0],
+        goal.joined ? undefined : ends[1]
+      ),
+      ...(goal.berth ? [goal.berth] : []),
+      ...(goal.joined ? [goal.joined] : [])
+    ],
+    berths: {
+      ...(start.berth && { start: start.berth }),
+      ...(goal.berth && { end: goal.berth })
+    }
+  };
+}
 
 /** One search from `from` to `to` in `mode`: the raw path, or why there is none. */
 async function attempt(
@@ -181,15 +313,24 @@ async function attempt(
   session: Session,
   ends: [LonLat, LonLat],
   opts: PlanOptions,
-  mode: Mode
+  mode: Mode,
+  berth = 0
 ): Promise<Attempt> {
   const searchWork = opts.maxWork * opts.searchShare;
   const exhausted = (): boolean => session.work() >= searchWork;
-  const start = access(tree, session, ends[0], false, opts, mode, exhausted);
+  const start = access(tree, session, ends[0], false, opts, mode, exhausted, berth);
   const goal =
-    typeof start === "string" ? start : access(tree, session, ends[1], true, opts, mode, exhausted);
+    start === WORK_LIMIT
+      ? start
+      : access(tree, session, ends[1], true, opts, mode, exhausted, berth);
+  if (start === WORK_LIMIT || goal === WORK_LIMIT) {
+    return { reason: WORK_LIMIT };
+  }
   if (typeof start === "string" || typeof goal === "string") {
-    return { reason: typeof start === "string" ? start : (goal as string) };
+    return {
+      reason: typeof start === "string" ? start : (goal as string),
+      stuck: { start: typeof start === "string", end: typeof goal === "string" }
+    };
   }
   const found =
     start.leaf === goal.leaf
@@ -210,70 +351,62 @@ async function attempt(
             : "no route the check passes connects the points: land, shoals or obstacles close every way"
     };
   }
-  return {
-    path: [
-      ...(start.joined ? [start.joined] : []),
-      ...found.points.map(([x, y]) => tree.lonLat(x, y)),
-      ...(goal.joined ? [goal.joined] : [])
-    ]
-  };
+  return pathOf(tree, [start, goal], ends, found.points);
 }
 
-/**
- * A fallback shortcut that does not pass may replace path points i..j only when every
- * piece of the path between them already crosses a square the check does not pass,
- * the shortcut crosses only water the fallback may cross (so never a leg too long to
- * check, land or uncharted water), and it is no riskier than the
- * riskiest of those squares: pulling straightens a risky stretch within itself and
- * never draws passing water into it.
- */
-function fallbackShortcut(tree: QuadTree, path: readonly LonLat[]): Shortcut {
-  const risk = path.slice(1).map((b, k) => {
-    const a = path[k] as LonLat;
-    const [ax, ay] = tree.units(a);
-    const [bx, by] = tree.units(b);
-    const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
-    // A free square's piece is not risky, whatever its verdict's own risk.
-    return leaf?.state === "free" ? undefined : (leaf?.verdict?.risk ?? 0);
-  });
-  return (v, i, j) => {
-    const span = risk.slice(i, j);
-    return (
-      crossable(v) &&
-      span.every((r) => r !== undefined) &&
-      v.risk <= Math.max(...(span as number[]))
-    );
-  };
-}
+type Searched =
+  | { path: LonLat[]; berths: Berths; shortcut?: Shortcut; fallback?: string }
+  | { reason: string; stuck?: Stuck };
 
 /**
- * The strict search, then, when asked and the strict one found no way short of the work
- * limit, the fallback: its path with the strict reason, or its own reason, which may be
- * the work limit.
+ * The strict attempt, then with `fallback` the fallback over the same squares. A refusal at an
+ * end names the free water near it: strictly passing, else what the fallback may cross.
  */
-async function strictThenFallback(
+async function searchTree(
   tree: QuadTree,
   session: Session,
   ends: [LonLat, LonLat],
   opts: PlanOptions,
-  rule: PassRule,
-  fallback: boolean
-): Promise<{ path: LonLat[]; fallback?: string } | { reason: string }> {
-  const strict = await attempt(tree, session, ends, opts, strictMode(rule));
-  if ("path" in strict || !fallback || strict.reason === WORK_LIMIT) {
+  how: { rule: PassRule; fallback: boolean; berth: number }
+): Promise<Searched> {
+  const strict = await attempt(tree, session, ends, opts, strictMode(how.rule), how.berth);
+  if ("path" in strict) {
     return strict;
   }
-  const again = await attempt(tree, session, ends, opts, FALLBACK);
-  return "path" in again ? { path: again.path, fallback: strict.reason } : again;
+  const again =
+    how.fallback && strict.reason !== WORK_LIMIT
+      ? await attempt(tree, session, ends, opts, FALLBACK, how.berth)
+      : undefined;
+  if (again && "path" in again) {
+    return { ...again, shortcut: fallbackShortcut(tree, again.path), fallback: strict.reason };
+  }
+  // The fallback stopped at the work limit: say so, not why the strict search found no way.
+  if (again?.reason === WORK_LIMIT) {
+    return { reason: WORK_LIMIT };
+  }
+  const exhausted = () => session.work() >= opts.maxWork * opts.searchShare;
+  const near =
+    stuckEnds(tree, ends, strict.stuck, opts, { ...strictMode(how.rule), exhausted }) ??
+    (again ? stuckEnds(tree, ends, again.stuck, opts, { ...FALLBACK, exhausted }) : undefined);
+  if (near === "work") {
+    return { reason: WORK_LIMIT };
+  }
+  return { reason: strict.reason, ...(near && { stuck: near }) };
 }
 
+/**
+ * The search between `from` and `to`. `berth` > 0 lets each end join by a berth leg of at
+ * most that many metres (the harbour stage); `opts.harbourMetres` > 0 makes a refusal at an
+ * end name the free water near it (`stuck`).
+ */
 export async function searchRoute(
   session: Session,
   from: LonLat,
   to: LonLat,
   opts: PlanOptions,
   rule: PassRule = OK_ONLY,
-  fallback = false
+  fallback = false,
+  berth = 0
 ): Promise<SearchOutcome> {
   const direct = checkLeg(session, from, to);
   if (passes(direct, rule)) {
@@ -281,27 +414,28 @@ export async function searchRoute(
   }
   const shape = shapeFor(from, to, session.halfWidth, opts);
   const tree = typeof shape === "string" ? undefined : new QuadTree(shape, session, rule);
-  const refuse = (reason: string): SearchOutcome => ({
+  const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,
     reason,
     direct,
     squares: tree?.classified ?? 0,
     unverified: tree?.unverified ?? 0,
-    work: session.work()
+    work: session.work(),
+    ...(stuck && { stuck })
   });
   if (!tree) {
     return refuse(shape as string);
   }
-  const found = await strictThenFallback(tree, session, [from, to], opts, rule, fallback);
-  if (!("path" in found)) {
-    return refuse(found.reason);
+  const found = await searchTree(tree, session, [from, to], opts, { rule, fallback, berth });
+  if ("reason" in found) {
+    return refuse(found.reason, found.stuck);
   }
   const coordinates = await pull(
     found.path,
     (a, b) => checkLeg(session, a, b),
     { exhausted: () => session.work() >= opts.maxWork, pause: () => session.pause() },
     rule,
-    found.fallback === undefined ? undefined : fallbackShortcut(tree, found.path)
+    found.shortcut
   );
   // The last shortcut checked may have taken the work past the limit.
   if (coordinates === "work" || session.work() >= opts.maxWork) {
@@ -313,6 +447,7 @@ export async function searchRoute(
     direct,
     squares: tree.classified,
     work: session.work(),
-    ...(found.fallback !== undefined && { fallback: found.fallback })
+    ...(found.fallback !== undefined && { fallback: found.fallback }),
+    ...((found.berths.start || found.berths.end) && { berths: found.berths })
   };
 }

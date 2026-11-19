@@ -109,7 +109,7 @@ These hold in every change. A change that weakens one needs an explicit decision
 | Change area     | Validation                                                               |
 | --------------- | ------------------------------------------------------------------------ |
 | Any TypeScript  | `npm run check:ts`, `npm run check:ts:tests`, targeted `npx jest <file>` |
-| Search / plan   | targeted tests plus property tests; `npm test`                           |
+| Search / plan   | targeted tests plus property tests; `npm test`; `npm run trial`          |
 | Routes          | route tests with a fake router and a fake planning API                   |
 | Package/release | `npm run verify:ci-local`, then `docs/release-checklist.md`              |
 

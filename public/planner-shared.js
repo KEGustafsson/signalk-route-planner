@@ -37,6 +37,12 @@
     });
   }
 
+  /** A leg's status for the leg table, with its part when it is not the open route. */
+  function legLabel(leg) {
+    const l = leg || {};
+    return l.berth ? l.status + " (berth)" : l.part === "harbour" ? l.status + " (harbour)" : l.status;
+  }
+
   /** Metres as nautical miles with one decimal. */
   function nm(metres) {
     return (metres / 1852).toFixed(1) + " nm";
@@ -58,6 +64,15 @@
           ": " +
           b.status +
           (b.status === "ok" ? "" : " (see the legs below)") +
+          (b.berths && b.berths.length
+            ? ". Underway " +
+              b.underway +
+              "; " +
+              (b.berths.length === 1 ? "a berth leg lies" : "berth legs lie") +
+              " alongside the quay, inside the corridor: steer " +
+              (b.berths.length === 1 ? "it" : "them") +
+              " by eye"
+            : "") +
           (b.fallback ? ". No route passes the check: this is the lowest risk-weighted route, " + b.fallback : "")
       };
     }
@@ -68,7 +83,14 @@
     return { kind: "unverified", text: "Not planned: " + errors };
   }
 
-  const api = { API: API, endsOf: endsOf, planPoints: planPoints, nm: nm, summary: summary };
+  const api = {
+    API: API,
+    endsOf: endsOf,
+    planPoints: planPoints,
+    nm: nm,
+    summary: summary,
+    legLabel: legLabel
+  };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
   } else {

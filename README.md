@@ -64,12 +64,17 @@ signalk-underkeel's route-check settings. `accept: ["NOT_FOR_NAVIGATION"]` plans
 marked not for navigation (its legs stay `unverified`), and `fallback: true` returns, when no
 route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart.
 
+An end in a harbour narrower than the corridor (a guest harbour in a river, a marina) is planned
+out to open water in a harbour stage at a 10 m corridor, and a point alongside a quay leaves by a
+short berth leg the reply marks (`berths`, and `underway` for the status of every other leg).
+
 ## Documentation map
 
 | Document                    | Contents                                          |
 | --------------------------- | ------------------------------------------------- |
 | `docs/DEVELOPMENT-PLAN.md`  | design, safety invariants, algorithms, milestones |
 | `docs/release-checklist.md` | the checks to run before a release                |
+| `docs/trials.md`            | field trials on Turku and Miami chart data        |
 | `AGENTS.md`                 | how to work in this repository                    |
 
 ## Licence
