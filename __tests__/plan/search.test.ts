@@ -2,8 +2,9 @@ import type { LonLat } from "../../src/foundation/geo";
 import { EARTH_RADIUS, frameAt, grownBoxKm2, haversine } from "../../src/foundation/geo";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { SearchOutcome } from "../../src/plan/search";
-import { searchRoute, shapeFor } from "../../src/plan/search";
-import type { Session } from "../../src/oracle/contract";
+import { shapeFor } from "../../src/plan/region";
+import { searchRoute } from "../../src/plan/search";
+import type { Bbox, Session } from "../../src/oracle/contract";
 import { QuadTree } from "../../src/search/quadtree";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi } from "../helpers/synthetic-oracle";
@@ -166,6 +167,40 @@ describe("tree shape", () => {
     expect((s.maxLeaf * s.unit + 200) ** 2).toBeLessThanOrEqual(25e6);
     // The region holds both ends with margin.
     expect(s.side * s.unit).toBeGreaterThanOrEqual(80000);
+  });
+
+  test("a corridor's region is the square around its boxes when that is smaller, and finer", () => {
+    const from = at(0, 0);
+    const to = at(60000, 0);
+    const square = shapeFor(from, to, 10, DEFAULT_PLAN);
+    // A band 4 km wide along the trip, past both ends by 2 km.
+    const sw = at(-2000, -2000);
+    const ne = at(62000, 2000);
+    const band: Bbox[] = [[sw[0], sw[1], ne[0], ne[1]]];
+    const corridor = shapeFor(from, to, 10, DEFAULT_PLAN, band);
+    if (typeof square === "string" || typeof corridor === "string") {
+      throw new Error("no shape");
+    }
+    expect(corridor.unit).toBeLessThan(square.unit);
+    // It holds the corridor's box, centred on it.
+    const extent = (corridor.side * corridor.unit) / 2;
+    for (const p of [sw, ne, [sw[0], ne[1]] as LonLat, [ne[0], sw[1]] as LonLat]) {
+      const [x, y] = corridor.frame.toXY(p);
+      expect(Math.abs(x)).toBeLessThanOrEqual(extent);
+      expect(Math.abs(y)).toBeLessThanOrEqual(extent);
+    }
+    // A corridor wider than the square leaves the square as it is.
+    const wide: Bbox[] = [
+      [at(-90000, -90000)[0], at(-90000, -90000)[1], at(150000, 90000)[0], at(150000, 90000)[1]]
+    ];
+    const same = shapeFor(from, to, 10, DEFAULT_PLAN, wide);
+    if (typeof same === "string") {
+      throw new Error(same);
+    }
+    const { frame, ...rest } = same;
+    const { frame: squareFrame, ...squareRest } = square;
+    expect(rest).toEqual(squareRest);
+    expect(frame.origin).toEqual(squareFrame.origin);
   });
 
   test("a region across the 180° meridian or over a pole is refused", () => {

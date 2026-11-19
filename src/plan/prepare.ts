@@ -61,7 +61,7 @@ export function tripRegion(from: LonLat, to: LonLat, margin = PREPARE_MARGIN): B
 
 /**
  * Every place the search may ask about: the square its region is cut from, half side
- * d/2 + max(d/2, minMargin) around the midpoint (`shapeFor`), and a harbour stage's region around
+ * d/2 + max(d/2, minMargin) around the midpoint (`shapeFor`, `region.ts`), and a harbour stage's region around
  * each end, each with a corridor's reach.
  */
 export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAULT_PLAN): Bbox {
