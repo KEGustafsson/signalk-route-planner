@@ -1,5 +1,5 @@
 import type { Frame, LonLat } from "../foundation/geo";
-import { grownBoxKm2 } from "../foundation/geo";
+import { coveredShare, grownBox, grownBoxKm2 } from "../foundation/geo";
 import type { Session, Status } from "../oracle/contract";
 import { Heap } from "./heap";
 import type { PassRule } from "./passes";
@@ -23,6 +23,15 @@ export const MAX_BOX_KM2 = 24;
 
 /** A one-unit square too large to ask about: never free, counted as unverified. */
 const TOO_LARGE = { status: "unverified" as const, risk: 0, flags: ["BOX_TOO_LARGE"] };
+
+/**
+ * A square whose box reaches past a corridor's boxes (`Session.within`): the chart reads no
+ * coverage there, as the planning API says it, so it is not asked.
+ */
+const PAST_CORRIDOR = { status: "unverified" as const, risk: 0, flags: ["NO_COVERAGE"] };
+
+/** Covered shares this close to 1 are whole: the corridor's boxes meet edge to edge. */
+const WHOLE = 1 - 1e-9;
 
 export type NodeState = "unknown" | "free" | "marginal" | "blocked" | "unverified" | "split";
 
@@ -55,7 +64,7 @@ export class QuadTree {
   private nextId = 0;
   /** Squares classified so far. */
   classified = 0;
-  /** One-unit squares found unverified. */
+  /** Squares found unverified: one unit on a side, or past a corridor (`Session.within`). */
   unverified = 0;
 
   constructor(
@@ -94,6 +103,20 @@ export class QuadTree {
     ];
   }
 
+  /**
+   * Classifies `n` as `verdict` says, unasked: split while it is larger than one unit and
+   * `split` holds, else unverified.
+   */
+  private unasked(n: QuadNode, verdict: typeof TOO_LARGE, split = true): void {
+    if (split && n.size > 1) {
+      this.split(n);
+      return;
+    }
+    n.verdict = { ...verdict, flags: [...verdict.flags] };
+    n.state = "unverified";
+    this.unverified++;
+  }
+
   /** Classifies an unknown square: free, blocked, unverified, or split. */
   resolve(n: QuadNode): void {
     if (n.state !== "unknown") {
@@ -107,14 +130,22 @@ export class QuadTree {
     const ne = this.lonLat(n.x + n.size, n.y + n.size);
     // A box's longitude span widens away from the frame's origin latitude.
     if (grownBoxKm2(sw, ne, this.session.halfWidth) > MAX_BOX_KM2) {
-      if (n.size > 1) {
-        this.split(n);
-      } else {
-        n.verdict = { ...TOO_LARGE, flags: [...TOO_LARGE.flags] };
-        n.state = "unverified";
-        this.unverified++;
-      }
+      this.unasked(n, TOO_LARGE);
       return;
+    }
+    // Past a corridor's boxes the chart reads no coverage: never free, so not asked. A square
+    // across their edge is split until its parts lie inside or outside them.
+    const within = this.session.within;
+    if (within) {
+      const share = coveredShare(grownBox(sw, ne, this.session.halfWidth), within);
+      if (share <= 0) {
+        this.unasked(n, PAST_CORRIDOR, false);
+        return;
+      }
+      if (share < WHOLE) {
+        this.unasked(n, PAST_CORRIDOR);
+        return;
+      }
     }
     const v = this.session.box(sw, ne);
     this.classified++;
