@@ -75,17 +75,21 @@ the start, as the plugin runs them. Run it in a memory limit to measure a machin
 build processes size their heaps from it, and `TRIAL_CGROUP` names the cgroup whose peak is
 reported. The script's header says what it keeps between runs.
 
-| Run (2026-11-19), 2 GB limit, 512 MB build heap | Result                                                     |
-| ----------------------------------------------- | ---------------------------------------------------------- |
-| Planning boxes                                  | search region 33 039 km², trip region 4 972 km²: both 413  |
-| Depth survey                                    | 258 s, about 30 000 depth areas                            |
-| Corridor (1.5 km each side, 3.5 km at the ends) | 81 boxes, 497 km² (cap 784 km²), built in 298 s            |
-| Plan                                            | 200: 53.3 nm, 58 legs, 10.1 M work, 6.5 s                  |
-| Memory                                          | peak 375 MB for the plugin process and its build processes |
+| Run (2026-11-19), 2 GB limit, 512 MB build heap | Result                                                                 |
+| ----------------------------------------------- | ---------------------------------------------------------------------- |
+| Planning boxes                                  | search region 33 039 km², trip region 4 972 km²: both 413              |
+| Depth survey                                    | 258 s, about 30 000 depth areas                                        |
+| Corridor (1.5 km each side, 3.5 km at the ends) | 81 boxes, 497 km² (cap 784 km²), built in 219–298 s                    |
+| Plan                                            | 200: 53.2 nm, 79 legs, 7.7 M work of the 10.5 M its limits give, 4.8 s |
+| Memory                                          | peak 441 MB for the plugin process and its build processes             |
 
 - The route runs down the fairway past Nauvo and Korpo and across the open sea to Utö, its
   route legs `unverified` (the WFS is not for navigation).
 - At the start, the harbour stage and the route's first two legs come back `fail` in the Aura
   river, a single 0–10 m depth area in the WFS, as in the Turku → Nauvo cases.
-- The trip is past `DEFAULT_PLAN.maxDistance` and its work budget; the trial raises both.
+- The trial plans with the limits `/plan` gives the trip (`limitsFor`): a corridor's reach, and
+  work in proportion to its length. Before the search asked about no square past the corridor and
+  searched the square around its boxes, the same plan took 10.1 M work.
+- `--profile` shows where the work goes: most of it is boxes under 50 m along the archipelago's
+  shores, and the harbour stages at the start.
 - The download is most of the time: the WFS answers a box with whole areas, about 1 MB/s.
