@@ -20,10 +20,12 @@ commands.
 Without signalk-underkeel the plugin status reads "Waiting: signalk-underkeel 0.7.0 or later is
 not running" and `/plan` answers 503 with that reason.
 
-A trip past signalk-underkeel's chart box around the vessel is planned on a planning box it builds
+With a signalk-underkeel that serves planning boxes (it lists `prepare` in its planning API's
+`features`), a trip past its chart box around the vessel is planned on a planning box it builds
 for the trip's region, from the same charts, behind the chart box. The first plan of a new region
 waits for that build, which can take minutes on a Raspberry Pi: the panel says so and plans again
-by itself once the build is done.
+by itself while the build runs. Without `prepare` the planner plans on the chart box alone, and
+legs past it come back `unverified`.
 
 ## Use
 

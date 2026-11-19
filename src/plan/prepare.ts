@@ -1,5 +1,7 @@
 import type { LonLat } from "../foundation/geo";
-import { EARTH_RADIUS } from "../foundation/geo";
+import { EARTH_RADIUS, haversine, midpoint } from "../foundation/geo";
+import type { PlanOptions } from "./options";
+import { DEFAULT_PLAN } from "./options";
 import type { Bbox, PlanningApiV1, Prepared, PrepareResult, Reply } from "../oracle/contract";
 import { canPrepare } from "../oracle/contract";
 
@@ -12,10 +14,13 @@ import { canPrepare } from "../oracle/contract";
  */
 
 /**
- * The trip's region reaches past start and destination by this, metres: the search's margin
- * and a harbour stage around each end, with their corridors.
+ * The least a trip's region reaches past start and destination, metres: the search's least
+ * margin and a harbour stage around each end, with their corridors. Asked for when the whole
+ * search region is too large to build.
  */
 export const PREPARE_MARGIN = 3500;
+/** A corridor's reach past the squares and legs the search asks about, metres. */
+const CORRIDOR_REACH = 200;
 /** A request waits this long for the index before it is answered 503, ms. */
 export const PREPARE_WAIT_MS = 20_000;
 /** Seconds the 503 asks the client to wait before it plans again. */
@@ -23,13 +28,39 @@ export const RETRY_AFTER_S = 30;
 
 const DEG = Math.PI / 180;
 
+/** The box of `points` grown by `margin` metres on every side, within ±85°. */
+function around(points: readonly LonLat[], margin: number): Bbox {
+  const lons = points.map((p) => p[0]);
+  const lats = points.map((p) => p[1]);
+  const dLat = margin / (EARTH_RADIUS * DEG);
+  const s = Math.max(-85, Math.min(...lats) - dLat);
+  const n = Math.min(85, Math.max(...lats) + dLat);
+  const dLon = dLat / Math.cos(Math.max(Math.abs(s), Math.abs(n)) * DEG);
+  return [Math.min(...lons) - dLon, s, Math.max(...lons) + dLon, n];
+}
+
+const union = (a: Bbox, b: Bbox): Bbox => [
+  Math.min(a[0], b[0]),
+  Math.min(a[1], b[1]),
+  Math.max(a[2], b[2]),
+  Math.max(a[3], b[3])
+];
+
 /** The box of `from` and `to` grown by `margin` metres on every side, within ±85°. */
 export function tripRegion(from: LonLat, to: LonLat, margin = PREPARE_MARGIN): Bbox {
-  const dLat = margin / (EARTH_RADIUS * DEG);
-  const s = Math.max(-85, Math.min(from[1], to[1]) - dLat);
-  const n = Math.min(85, Math.max(from[1], to[1]) + dLat);
-  const dLon = dLat / Math.cos(Math.max(Math.abs(s), Math.abs(n)) * DEG);
-  return [Math.min(from[0], to[0]) - dLon, s, Math.max(from[0], to[0]) + dLon, n];
+  return around([from, to], margin);
+}
+
+/**
+ * Every place the search may ask about: the square its region is cut from, half side
+ * d/2 + max(d/2, minMargin) around the midpoint (`shapeFor`), and a harbour stage's region around
+ * each end, each with a corridor's reach.
+ */
+export function searchRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAULT_PLAN): Bbox {
+  const d = haversine(from, to);
+  const half = d / 2 + Math.max(d / 2, opts.minMargin) + CORRIDOR_REACH;
+  const harbour = opts.harbourMetres + opts.harbourMargin + CORRIDOR_REACH;
+  return union(around([midpoint(from, to)], half), around([from, to], harbour));
 }
 
 const holds = (o: Bbox, i: Bbox): boolean =>
@@ -63,6 +94,21 @@ export const BUILDING: Reply = {
 const sleep = (ms: number): Promise<"waiting"> =>
   new Promise((resolve) => setTimeout(() => resolve("waiting"), ms).unref?.());
 
+/**
+ * The index for the whole search region, or, when that is too large to build on the machine
+ * (413), for the trip's least region: past it the chart reads no coverage, `unverified`, and the
+ * search keeps to the water it can check.
+ */
+async function prepareTrip(
+  api: PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">>,
+  whole: Bbox,
+  least: Bbox,
+  stop: AbortSignal
+): Promise<PrepareResult> {
+  const r = await api.prepare(holds(least, whole) ? least : whole, stop);
+  return !r.ok && r.status === 413 && !holds(least, whole) ? api.prepare(least, stop) : r;
+}
+
 /** One trip's index at a time asked for, the build carried on past the request that asked. */
 export class Preparer {
   private inflight: { region: Bbox; result: Promise<PrepareResult> } | undefined;
@@ -83,12 +129,13 @@ export class Preparer {
     if (!canPrepare(api)) {
       return api;
     }
+    // The least the trip needs; the whole search region is asked for first.
     const region = tripRegion(from, to);
     let job = this.inflight;
     if (!job || !holds(job.region, region)) {
-      const result = api
-        .prepare(region, stop)
-        .catch((err: Error): PrepareResult => ({ ok: false, status: 503, error: err.message }));
+      const result = prepareTrip(api, searchRegion(from, to), region, stop).catch(
+        (err: Error): PrepareResult => ({ ok: false, status: 503, error: err.message })
+      );
       job = { region, result };
       this.inflight = job;
       const mine = job;

@@ -1,6 +1,13 @@
 import type { PlanningApiV1, Prepared, PrepareResult } from "../../src/oracle/contract";
 import { canPrepare, PLANNING_API } from "../../src/oracle/contract";
-import { BUILDING, onPrepared, PREPARE_MARGIN, Preparer, tripRegion } from "../../src/plan/prepare";
+import {
+  BUILDING,
+  onPrepared,
+  PREPARE_MARGIN,
+  Preparer,
+  searchRegion,
+  tripRegion
+} from "../../src/plan/prepare";
 import { apiFor } from "../../src/plugin-api";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
@@ -56,7 +63,47 @@ describe("tripRegion", () => {
   });
 });
 
+const holds = (o: number[], i: number[]) =>
+  (o[0] as number) <= (i[0] as number) &&
+  (o[1] as number) <= (i[1] as number) &&
+  (o[2] as number) >= (i[2] as number) &&
+  (o[3] as number) >= (i[3] as number);
+
+describe("searchRegion", () => {
+  test("holds the trip's least region, and for a long trip the search's wider square", () => {
+    const short = [at(0, 0), at(1000, 0)] as const;
+    expect(holds(tripRegion(...short), searchRegion(...short))).toBe(true);
+    const long = [at(0, 0), at(20_000, 0)] as const;
+    const whole = searchRegion(...long);
+    expect(holds(whole, tripRegion(...long))).toBe(true);
+    // The search reaches d/2 + max(d/2, minMargin) from the midpoint: 20 km north and south.
+    expect(holds(whole, tripRegion(at(10_000, 19_000), at(10_000, -19_000), 0))).toBe(true);
+  });
+});
+
 describe("Preparer", () => {
+  test("asks for the whole search region, then the least when that is too large to build", async () => {
+    const asked: number[][] = [];
+    const inner = syntheticApi({ obstacles: [] });
+    const api: PlanningApiV1 = {
+      ...inner,
+      features: ["prepare"],
+      prepare: (region) => {
+        asked.push(region);
+        return Promise.resolve(
+          asked.length === 1
+            ? { ok: false, status: 413, error: "too large" }
+            : { ok: false, status: 503, error: "no cells" }
+        );
+      }
+    };
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    const r = await new Preparer(1000).forTrip(api, from, to, new AbortController().signal);
+    expect(asked).toEqual([searchRegion(from, to), tripRegion(from, to)]);
+    expect(r).toEqual({ status: 503, body: { errors: ["no cells"] } });
+  });
+
   test("a provider without prepare is used as it is", async () => {
     const api = syntheticApi({ obstacles: [] });
     expect(canPrepare(api)).toBe(false);
@@ -82,13 +129,16 @@ describe("Preparer", () => {
     expect("version" in got && got.coverage()).toEqual([21, 59, 23, 61]);
   });
 
-  test("a refusal is the reply: 413 for a region too large", async () => {
+  test("a refusal is the reply: 413 when even the least region is too large", async () => {
     const p = preparing(syntheticApi({ obstacles: [] }));
     const prep = new Preparer(1000);
     const r = prep.forTrip(p.api, at(0, 0), at(5000, 0), new AbortController().signal);
     await flush();
     p.settle({ ok: false, status: 413, error: "too large" });
-    expect(await r).toEqual({ status: 413, body: { errors: ["too large"] } });
+    await flush();
+    p.settle({ ok: false, status: 413, error: "still too large" });
+    expect(await r).toEqual({ status: 413, body: { errors: ["still too large"] } });
+    expect(p.calls).toHaveLength(2);
   });
 
   test("the prepared index serves the sessions and the route check", async () => {
@@ -131,6 +181,15 @@ describe("/plan with prepare", () => {
     const r = await again;
     expect(r.status).toBe(200);
     expect(r.body).toMatchObject({ status: "ok" });
+  });
+
+  test("start and destination at one point build nothing: plan() answers 400", async () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    g[PLANNING_API] = p.api;
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+    const r = await api.plan({ from: at(0, 0), to: at(0, 0) }, new AbortController().signal);
+    expect(r.status).toBe(400);
+    expect(p.calls).toHaveLength(0);
   });
 
   test("a trip too long to plan builds nothing", async () => {

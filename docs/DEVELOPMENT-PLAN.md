@@ -190,24 +190,29 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
 `signalk-underkeel` indexes a box around the vessel (default 10 km). R2 adds a planning box to
 underkeel: an index built on request for a region, in a build process of its own at the lowest
 CPU priority, from the same cell cache, always behind the chart box around the vessel, one at a
-time and released after 10 minutes unused (underkeel's plan §4.11). API v1 gains
+time and released once unused, on underkeel's policy (its plan §4.11). API v1 gains
 `prepare(region, signal)`; the version stays 1 and `features` lists it.
 
 **Built:**
 
-- `/plan` asks for the trip's region: the box of start and destination grown by 3.5 km, the
-  search's margin plus a harbour stage at each end (`src/plan/prepare.ts`). Underkeel answers
-  with the chart box when it covers the region, the whole index when there is no box, or a
-  planning box built for it. The search and the proof then run on that index; past it the chart
-  reads no coverage, `unverified`, never `ok` (invariant 2).
+- `/plan` asks for every place the search may ask about: the square its region is cut from
+  around the midpoint (§4.1) and a harbour stage's region around each end, each with a
+  corridor's reach (`searchRegion`, `src/plan/prepare.ts`). When that is too large to build on
+  the machine (413), it asks for the trip's least region: both ends with the search's least
+  margin and a harbour stage around them (`tripRegion`). Underkeel answers with the chart box
+  when it covers the region, the whole index when there is no box, or a planning box built for
+  it. The search and the proof then run on that index; past it the chart reads no coverage,
+  `unverified`, never `ok` (invariant 2), so the search keeps to the water it can check.
 - A build can take minutes on a Pi. `/plan` waits 20 s for it, then answers 503 with
-  `preparing: true` and `Retry-After: 30` while the build runs on until the plugin stops; the
-  panel plans again until it is done. One trip's region is asked for at a time; a request for a
-  region inside it waits for the same build.
-- A trip over `maxDistance` builds nothing; a region larger than underkeel builds on the machine
-  (the chart box's area at its cap, 400 km² on a 1 GB Pi 3) is 413 with its reason.
+  `preparing: true` and `Retry-After: 30` while the build runs on until the plugin stops. The
+  panel plans again while the build continues, then asks to plan again later if it is still
+  unfinished; it writes the plan only into a route unchanged since it was read. One trip's region
+  is asked for at a time; a request for a region inside it waits for the same build.
+- A trip `plan()` refuses (over `maxDistance`, or start and destination the same point) builds
+  nothing; a region larger than underkeel builds on the machine, even the least, is 413 with its
+  reason. How large that is is underkeel's policy.
 
-**Still open:** a 50 nm diagonal trip's box is far beyond that cap. It needs a planning box along
+**Still open:** a 50 nm diagonal trip's box is far beyond what a small machine builds. It needs a planning box along
 the trip's corridor rather than its bounding box, and the search held to that corridor, before
 R2's exit criterion (§8) is met.
 

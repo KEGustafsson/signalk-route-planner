@@ -120,6 +120,14 @@ async function planSelected() {
       show("unverified", "Not planned: the chart index for this trip's region is still being built; plan again later.");
       return;
     }
+    if (res.status === 200) {
+      // Planning can wait minutes for the chart index: a route edited meanwhile is not overwritten.
+      const now = await client.call("route.get", { routeId });
+      if (!P.samePoints(route.points, now && now.points)) {
+        show("unverified", "Not written: the route changed while it was planned. Plan it again.");
+        return;
+      }
+    }
     const s = P.summary(res.status, body);
     show(s.kind, s.text);
     if (res.status === 200) {

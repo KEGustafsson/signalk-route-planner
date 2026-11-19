@@ -51,8 +51,9 @@ export function apiFor(
         return { status: 503, body: { errors: [found] } };
       }
       const req = parsed.value;
-      // A trip too long to plan is refused by plan() without an index built for it.
-      const near = haversine(req.from, req.to) <= DEFAULT_PLAN.maxDistance;
+      // A trip plan() refuses (too long, or no distance at all) builds no index.
+      const dist = haversine(req.from, req.to);
+      const near = dist >= 1 && dist <= DEFAULT_PLAN.maxDistance;
       const api = near ? await preparer.forTrip(found, req.from, req.to, stop) : found;
       if (!("version" in api)) {
         return api;

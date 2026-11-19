@@ -118,4 +118,12 @@ describe("panel model", () => {
     });
     expect(P.MAX_PREPARING).toBeGreaterThan(0);
   });
+
+  test("a route is written only when its points are as they were read", () => {
+    const pts = [{ position: [22, 60] }, { position: [22.1, 60.1], name: "x" }];
+    expect(P.samePoints(pts, [{ position: [22, 60] }, { position: [22.1, 60.1] }])).toBe(true);
+    expect(P.samePoints(pts, [{ position: [22, 60] }, { position: [22.2, 60.1] }])).toBe(false);
+    expect(P.samePoints(pts, [{ position: [22, 60] }])).toBe(false);
+    expect(P.samePoints(pts, undefined)).toBe(false);
+  });
 });

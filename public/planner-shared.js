@@ -64,6 +64,21 @@
     return "Leave at " + gate.departure.slice(11, 16) + " UTC, waiting " + wait + " for the tide. ";
   }
 
+  /** Whether two lists of host route points have the same positions, in order. */
+  function samePoints(a, b) {
+    const pa = a || [];
+    const pb = b || [];
+    return (
+      pa.length === pb.length &&
+      pa.every(function (p, i) {
+        const q = pb[i];
+        const x = p && p.position;
+        const y = q && q.position;
+        return !!x && !!y && x[0] === y[0] && x[1] === y[1];
+      })
+    );
+  }
+
   /** A panel plans again this many times at most while the trip's chart index is built. */
   const MAX_PREPARING = 60;
 
@@ -127,6 +142,7 @@
     nm: nm,
     summary: summary,
     preparingWait: preparingWait,
+    samePoints: samePoints,
     MAX_PREPARING: MAX_PREPARING,
     legLabel: legLabel
   };
