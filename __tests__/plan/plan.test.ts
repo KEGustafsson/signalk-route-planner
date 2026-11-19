@@ -46,9 +46,13 @@ describe("plan", () => {
     const api = syntheticApi(ISLAND, {
       routeCheck: (body) => {
         const coords = (body as { route: { coordinates: unknown[] } }).route.coordinates;
-        const legs = coords
-          .slice(1)
-          .map((_, i) => ({ index: i, status: i === 0 ? "marginal" : "ok", length: 100 }));
+        const legs = coords.slice(1).map((_, i) => ({
+          index: i,
+          status: i === 0 ? "marginal" : "ok",
+          length: 100,
+          risk: 0.005,
+          flags: []
+        }));
         return Promise.resolve({ status: 200, body: { legs } });
       }
     });
@@ -81,7 +85,39 @@ describe("plan", () => {
       NEVER,
       NOW
     );
-    expect(r.status).toBe(422);
+    // Refused by the proof, for the flagged leg, not by the search before it.
+    const body = r.body as { reason: string; check?: { legs: { flags: string[] }[] } };
+    expect({
+      status: r.status,
+      proof: /route check does not pass 1 of/.test(body.reason),
+      flags: body.check?.legs[0]?.flags
+    }).toEqual({ status: 422, proof: true, flags: ["ENTRY_PROHIBITED"] });
+  });
+
+  test("a leg that is not ok and comes without flags is never crossed as unrestricted", async () => {
+    const api = syntheticApi(ISLAND, {
+      routeCheck: (body) => {
+        const coords = (body as { route: { coordinates: unknown[] } }).route.coordinates;
+        const legs = coords.slice(1).map((_, i) => ({
+          index: i,
+          status: i === 0 ? "marginal" : "ok",
+          length: 100,
+          risk: 0.005
+        }));
+        return Promise.resolve({ status: 200, body: { legs } });
+      }
+    });
+    const r = await plan(
+      api,
+      { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3 },
+      NEVER,
+      NOW
+    );
+    const body = r.body as { check?: { legs: { flags: string[] }[] } };
+    expect({ status: r.status, flags: body.check?.legs[0]?.flags }).toEqual({
+      status: 422,
+      flags: ["FLAGS_MISSING"]
+    });
   });
 
   test.each([
