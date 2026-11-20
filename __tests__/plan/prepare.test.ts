@@ -239,6 +239,29 @@ describe("Preparer", () => {
     expect(inner.sessions).toHaveLength(1);
     expect(on.defaults()).toEqual(inner.defaults());
   });
+
+  test("a corridor's sessions list the chart objects the provider's do", async () => {
+    const inner = syntheticApi({
+      obstacles: [],
+      lines: [
+        {
+          class: "NAVLNE",
+          points: [
+            [0, 0],
+            [1000, 0]
+          ]
+        }
+      ]
+    });
+    const p = preparing(inner);
+    const corridor = onPrepared(p.api, p.prepared, [[21, 59, 23, 61]]);
+    const r = await corridor.session(
+      { departure: NOW, until: NOW + 1000, speed: 3 },
+      new AbortController().signal,
+      async (s) => s.objects?.(at(-100, -100), at(1100, 100)).length
+    );
+    expect(r).toEqual({ ok: true, value: 1 });
+  });
 });
 
 describe("/plan with prepare", () => {
