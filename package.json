@@ -38,7 +38,8 @@
     "prepare": "husky",
     "bench": "jest --runInBand --testPathIgnorePatterns /node_modules/ --testMatch \"**/__tests__/benchmarks/**/*.bench.ts\"",
     "trial": "node scripts/trials/trial.js",
-    "trial:r2": "node scripts/trials/r2-exit.js"
+    "trial:r2": "node scripts/trials/r2-exit.js",
+    "trial:panel": "node scripts/trials/panel-trial.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

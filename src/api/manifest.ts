@@ -2,8 +2,9 @@ import type { ResourceProvider } from "@signalk/server-api";
 
 /**
  * Plotter Extensions manifest contribution (plan §4.5): a panel that plans a
- * route between the ends of a selected route and writes it back as an
- * unsaved draft, and a toolbar button that opens it. The pages are served
+ * route between the ends of a selected route, or from the boat, and writes it
+ * back as an unsaved draft, a toolbar button that opens it, a data overlay for
+ * the alternatives, and `routePlan` in the navigationSafety services. The pages are served
  * from ASSET_BASE (see assets.ts).
  */
 
@@ -19,6 +20,15 @@ export interface Manifest {
   apiVersion: "1";
   requires: string[];
   optional: string[];
+  overlays: {
+    id: string;
+    title: string;
+    type: "data";
+    band: "aboveResources";
+    visible: boolean;
+    opacity: number;
+    style: string;
+  }[];
   panels: { id: string; title: string; type: "iframe"; url: string; lifecycle: "onOpen" }[];
   buttons: {
     id: string;
@@ -27,7 +37,15 @@ export interface Manifest {
     icon: string;
     action: { type: "togglePanel"; panel: string };
   }[];
+  /**
+   * The provider-neutral services Freeboard calls (plan §4.5): `routePlan` is `POST {base}/plan`
+   * with the request and reply of plan §5.
+   */
+  services: { navigationSafety: { apiVersion: "1"; base: string; provides: ["routePlan"] } };
 }
+
+/** The plugin's REST base, outside the pages: it needs a login where the server is secured. */
+export const API_BASE = `/plugins/${PLUGIN_ID}/v1`;
 
 export function buildManifest(version: string): Record<string, Manifest> {
   return {
@@ -38,7 +56,24 @@ export function buildManifest(version: string): Record<string, Manifest> {
       version,
       apiVersion: "1",
       requires: ["panels.iframe", "routes"],
-      optional: ["buttons", "nightMode"],
+      optional: [
+        "buttons",
+        "nightMode",
+        "overlays.data",
+        "signalk.stream",
+        "x-freeboard.services.navigationSafety"
+      ],
+      overlays: [
+        {
+          id: "alternatives",
+          title: "Route planner alternatives",
+          type: "data",
+          band: "aboveResources",
+          visible: true,
+          opacity: 0.9,
+          style: `${ASSET_BASE}/alternatives-style.json`
+        }
+      ],
       panels: [
         {
           id: "planner",
@@ -56,7 +91,10 @@ export function buildManifest(version: string): Record<string, Manifest> {
           icon: "alt_route",
           action: { type: "togglePanel", panel: "planner" }
         }
-      ]
+      ],
+      services: {
+        navigationSafety: { apiVersion: "1", base: API_BASE, provides: ["routePlan"] }
+      }
     }
   };
 }

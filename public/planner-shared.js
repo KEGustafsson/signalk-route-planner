@@ -152,8 +152,130 @@
     return { kind: "unverified", text: "Not planned: " + errors };
   }
 
+  /**
+   * The one point of a route that moved, its index, when `after` is `before` with a single
+   * point dragged: the same length, every other position the same. Else -1.
+   */
+  function movedPoint(before, after) {
+    const a = before || [];
+    const b = after || [];
+    if (a.length !== b.length || a.length < 2) {
+      return -1;
+    }
+    let moved = -1;
+    for (let i = 0; i < a.length; i++) {
+      const x = a[i] && a[i].position;
+      const y = b[i] && b[i].position;
+      if (!x || !y) {
+        return -1;
+      }
+      if (x[0] !== y[0] || x[1] !== y[1]) {
+        if (moved !== -1) {
+          return -1;
+        }
+        moved = i;
+      }
+    }
+    return moved;
+  }
+
+  /**
+   * The route with point `i` kept where it was dragged and the legs on either side of it
+   * replaced by `left` (from point i - 1 to it) and `right` (from it to point i + 1), each a
+   * planned line of coordinates; an end point has only the leg on its one side. Every point
+   * the plan did not move keeps its name and link.
+   */
+  function spliceLegs(points, i, left, right) {
+    const between = function (line) {
+      return (line || []).slice(1, -1).map(function (c) {
+        return { position: [c[0], c[1]] };
+      });
+    };
+    const before = i > 0 ? points.slice(0, i).concat(between(left)) : [];
+    const after = i < points.length - 1 ? between(right).concat(points.slice(i + 1)) : [];
+    return before.concat([points[i]], after);
+  }
+
+  /** What each flag the route check gives a leg says, for the leg table. */
+  const FLAG_NOTES = {
+    LAND: "touches land",
+    AIR_DRAFT: "a bridge or overhead cable too low for the mast",
+    CLEARANCE_UNKNOWN: "a bridge or cable whose clearance is not known",
+    CLEARANCE_RISE_ASSUMED: "a bridge passed on an assumed rise of the water",
+    ENTRY_PROHIBITED: "an area entry is prohibited in",
+    TSS_WRONG_WAY: "a traffic lane against its direction",
+    TRAFFIC_LANE: "a traffic lane",
+    ENTRY_RESTRICTED: "an area entry is restricted in",
+    AREA_TO_BE_AVOIDED: "an area to be avoided",
+    NO_COVERAGE: "no chart coverage",
+    UNASSESSED: "unassessed survey",
+    NOT_FOR_NAVIGATION: "depth data not for navigation",
+    DREDGED: "dredged",
+    SWEPT: "swept",
+    WATER_LEVEL_FALLBACK: "no current water level"
+  };
+
+  /** A leg's flags in words, joined; "" without any. */
+  function legNote(leg) {
+    const flags = (leg && leg.flags) || [];
+    return flags
+      .map(function (f) {
+        return FLAG_NOTES[f] || f;
+      })
+      .join("; ");
+  }
+
+  /** One line for an alternative of a `/plan` reply with `alternatives`. */
+  function alternativeText(a) {
+    if (!a) {
+      return "";
+    }
+    if (a.reason) {
+      return a.name + ": not offered, " + a.reason;
+    }
+    const tail = a.sameAs
+      ? ", the same as " + a.sameAs
+      : a.dominatedBy
+        ? ", no safer than " + a.dominatedBy
+        : "";
+    return a.name + ": " + nm(a.length) + ", risk " + (a.risk * 100).toFixed(2) + " %, " + a.status + tail;
+  }
+
+  /** The offered alternatives as an overlay's GeoJSON, `chosen` marked, the repeats left out. */
+  function alternativesGeoJSON(alternatives, chosen) {
+    return {
+      type: "FeatureCollection",
+      features: (alternatives || [])
+        .filter(function (a) {
+          return a && a.route && !a.sameAs;
+        })
+        .map(function (a) {
+          return {
+            type: "Feature",
+            geometry: a.route,
+            properties: { name: a.name, status: a.status, chosen: a.name === chosen }
+          };
+        })
+    };
+  }
+
+  /** The trip's ends with the start at the boat's position, when it is known. */
+  function fromBoat(ends, position) {
+    if (!ends) {
+      return null;
+    }
+    const p = position && [position.longitude, position.latitude];
+    return p && isFinite(p[0]) && isFinite(p[1]) ? { from: p, to: ends.to } : ends;
+  }
+
   const api = {
     API: API,
+    movedPoint: movedPoint,
+    spliceLegs: spliceLegs,
+    legNote: legNote,
+    alternativeText: alternativeText,
+    alternativesGeoJSON: alternativesGeoJSON,
+    fromBoat: fromBoat,
     endsOf: endsOf,
     planPoints: planPoints,
     nm: nm,

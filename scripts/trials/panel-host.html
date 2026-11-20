@@ -1,0 +1,121 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Panel trial host</title>
+    <style>
+      body {
+        margin: 0;
+        display: flex;
+        font:
+          13px system-ui,
+          sans-serif;
+      }
+      iframe {
+        width: 420px;
+        height: 900px;
+        border: 0;
+        border-right: 1px solid #ccc;
+      }
+      pre {
+        margin: 8px;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="panel" src="/plotterext/signalk-route-planner/panel.html"></iframe>
+    <pre id="log"></pre>
+    <script type="module">
+      // A chart host for the planner panel (panel-trial.js): the Plotter Extensions bus host
+      // with the routes, data overlays and Signal K stream the panel uses, over one route.
+      import { HostConnection, windowPort } from "/bus/host.js";
+
+      const log = (text) => (document.getElementById("log").textContent += text + "\n");
+      const routes = new Map();
+      const overlays = {};
+      const route = (r) => ({ ...r, points: r.points.map((p) => ({ ...p })) });
+      const frame = document.getElementById("panel");
+      let conn;
+      const params = new URLSearchParams(location.search);
+      routes.set("trip", {
+        routeId: "trip",
+        name: "Trip",
+        description: null,
+        rev: 1,
+        saved: true,
+        dirty: false,
+        points: JSON.parse(params.get("points"))
+      });
+      const boat = params.get("boat") && JSON.parse(params.get("boat"));
+
+      function changed(r, reason) {
+        r.rev += 1;
+        r.dirty = true;
+        conn.publish("route.dirty", { routeId: r.routeId, rev: r.rev, reason });
+      }
+
+      conn = new HostConnection({
+        port: windowPort(frame.contentWindow),
+        hostInfo: {
+          host: "panel-trial",
+          hostVersion: "1",
+          apiVersion: "1",
+          capabilities: ["panels.iframe", "routes", "overlays.data", "signalk.stream"]
+        },
+        context: { kind: "panel", id: "planner" },
+        methods: {
+          "route.list": () => ({
+            routes: [...routes.values()].map((r) => ({
+              routeId: r.routeId,
+              name: r.name,
+              rev: r.rev,
+              pointCount: r.points.length,
+              saved: r.saved,
+              dirty: r.dirty
+            }))
+          }),
+          "route.get": ({ routeId }) => route(routes.get(routeId)),
+          "route.replace": ({ routeId, points }) => {
+            const r = routes.get(routeId);
+            r.points = points.map((p) => ({ ...p }));
+            log(`route.replace ${points.length} points`);
+            changed(r, "replace");
+            return { rev: r.rev };
+          },
+          "overlay.setData": ({ overlayId, source, data }) => {
+            overlays[overlayId] = { source, data };
+            log(`overlay.setData ${overlayId} ${data.features.length} features`);
+            return {};
+          },
+          "signalk.subscribe": ({ paths }) => {
+            if (boat && paths.includes("navigation.position")) {
+              setTimeout(
+                () =>
+                  conn.publish("sk.navigation.position", {
+                    path: "navigation.position",
+                    value: boat
+                  }),
+                50
+              );
+            }
+            return { subscriptionId: "sk-1" };
+          },
+          "signalk.unsubscribe": () => ({})
+        }
+      });
+
+      // What the trial reads and does: the routes, the overlays, and a waypoint dragged by hand.
+      window.trial = {
+        routes: () => [...routes.values()].map(route),
+        overlays: () => overlays,
+        drag(routeId, i, position) {
+          const r = routes.get(routeId);
+          r.points[i] = { ...r.points[i], position };
+          log(`dragged point ${i}`);
+          changed(r, "edit");
+        }
+      };
+    </script>
+  </body>
+</html>

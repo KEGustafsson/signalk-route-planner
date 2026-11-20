@@ -100,3 +100,14 @@ reported. The script's header says what it keeps between runs.
 - `--profile` shows where the work goes: most of it is boxes under 50 m along the archipelago's
   shores, and the harbour stages at the start.
 - The download is most of the time: the WFS answers a box with whole areas, about 1 MB/s.
+
+## The panel in a chart host (R5)
+
+`npm run trial:panel` runs the panel in Chromium, hosted by signalk-plotterext-bus's own host
+implementation (`scripts/trials/panel-host.html`) over one route from Fisher Island to the basin
+in Miami, and answers `/plan` with the planner on the field trials' NOAA cells through
+signalk-underkeel's planning API. It plans with alternatives and finds them drawn (shortest,
+balanced and safest) and listed, every leg in the table; writes the balanced one with **Use**;
+then drags the first planned waypoint 22 m north and waits for the legs beside it to be planned
+again and spliced in, the dragged point kept. Screenshots: `data/trials/panel-planned.png` and
+`panel-replanned.png`.
