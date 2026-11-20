@@ -38,8 +38,10 @@ const CROSSABLE = new Set([
   "NOT_FOR_NAVIGATION",
   "WATER_LEVEL_FALLBACK",
   // Named by the route check and changing no status: a traffic lane, which a leg is held to
-  // when it crosses it, and restricted areas that only ask for care.
+  // when it crosses it, restricted areas that only ask for care, and a clearance passed on the
+  // rise signalk-underkeel allows where it cannot relate it to the water level.
   "TRAFFIC_LANE",
+  "CLEARANCE_RISE_ASSUMED",
   "ENTRY_RESTRICTED",
   "AREA_TO_BE_AVOIDED"
 ]);

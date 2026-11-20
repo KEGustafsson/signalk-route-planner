@@ -98,9 +98,11 @@ describe("air height under a bridge", () => {
     expect(crossable({ flags: ["ENTRY_PROHIBITED"] })).toBe(false);
     expect(crossable({ flags: ["TSS_WRONG_WAY", "TRAFFIC_LANE"] })).toBe(false);
     // What the route check only names may be crossed.
-    expect(crossable({ flags: ["TRAFFIC_LANE", "AREA_TO_BE_AVOIDED", "ENTRY_RESTRICTED"] })).toBe(
-      true
-    );
+    expect(
+      crossable({
+        flags: ["TRAFFIC_LANE", "AREA_TO_BE_AVOIDED", "ENTRY_RESTRICTED", "CLEARANCE_RISE_ASSUMED"]
+      })
+    ).toBe(true);
   });
 
   test("airHeight is 0.1..100 m", () => {
