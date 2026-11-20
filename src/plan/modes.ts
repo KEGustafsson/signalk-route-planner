@@ -84,8 +84,17 @@ export function linesIn(
   const [a, b] = [tree.lonLat(0, 0), tree.lonLat(side, side)];
   const sw: LonLat = [Math.min(a[0], b[0]), Math.min(a[1], b[1])];
   const ne: LonLat = [Math.max(a[0], b[0]), Math.max(a[1], b[1])];
-  const lines: PreferredLine[] = session
-    .objects(sw, ne)
+  let objects;
+  try {
+    objects = session.objects(sw, ne);
+  } catch (err) {
+    // A region too large to list is planned without lines: they only ever add a preference.
+    if (err instanceof RangeError) {
+      return undefined;
+    }
+    throw err;
+  }
+  const lines: PreferredLine[] = objects
     .filter((o) => PREFERRED.has(o.class) && o.geometry.type === "LineString")
     .map((o) => ({
       coordinates: o.geometry.coordinates as LonLat[],

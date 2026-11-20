@@ -94,4 +94,26 @@ describe("preference lines", () => {
     expect(furthest(east.points)).toBeLessThan(-60);
     expect(furthest(west.points)).toBeGreaterThan(60);
   });
+
+  test("a region too large for the provider to list is planned without lines", async () => {
+    const api = syntheticApi(bent(300), { features: ["objects"] });
+    const session = api.session.bind(api);
+    api.session = (params, signal, job) =>
+      session(params, signal, (s) =>
+        job({
+          ...s,
+          objects: () => {
+            throw new RangeError("objects box over 40000 km²");
+          }
+        })
+      );
+    const r = await plan(
+      api,
+      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3 },
+      NEVER,
+      NOW
+    );
+    expect(r.status).toBe(200);
+    expect((r.body as Body).route?.coordinates).toHaveLength(2);
+  });
 });
