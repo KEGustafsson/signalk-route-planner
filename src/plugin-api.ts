@@ -81,7 +81,8 @@ export function apiFor(
           waitEnRoute: req.waitEnRoute,
           riskWeight: req.riskWeight,
           riskBudget: req.riskBudget,
-          alternatives: req.alternatives
+          alternatives: req.alternatives,
+          preferLines: req.preferLines
         },
         AbortSignal.any([client, stop]),
         clock.now(),

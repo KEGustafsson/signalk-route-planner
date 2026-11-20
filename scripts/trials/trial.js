@@ -61,13 +61,15 @@ async function noaaCells(area) {
   return files;
 }
 
-async function wfsCell(area, catzoc) {
-  const { downloadWfsCell, DEFAULT_WFS_URL } = uk("ingest/wfs");
-  const dir = path.join(DATA, "turku", `catzoc-${catzoc}`, "FI1WFS01");
+/** The Traficom WFS cell for the area, with the FTIA's navigation lines when `lines` is set. */
+async function wfsCell(area, catzoc, lines) {
+  const { downloadWfsCell, DEFAULT_WFS_URL, FTIA_WFS_URL } = uk("ingest/wfs");
+  const dir = path.join(DATA, "turku", `catzoc-${catzoc}${lines ? "-lines" : ""}`, "FI1WFS01");
   if (!fs.existsSync(path.join(dir, "DEPARE.geojson"))) {
     await downloadWfsCell({
       fetch: (url, init) => fetch(url, init),
       url: DEFAULT_WFS_URL,
+      ...(lines && { linesUrl: FTIA_WFS_URL }),
       bbox: area.bbox,
       dir,
       now: new Date(),
@@ -81,11 +83,13 @@ const indexes = new Map();
 
 /** The chart index for an area (and assumed CATZOC), built once. */
 async function indexFor(areas, c) {
-  const key = `${c.area}:${c.catzoc ?? ""}`;
+  const key = `${c.area}:${c.catzoc ?? ""}:${c.lines ? "lines" : ""}`;
   if (!indexes.has(key)) {
     const area = areas[c.area];
     const sources =
-      area.source === "noaa-enc" ? await noaaCells(area) : await wfsCell(area, c.catzoc ?? 3);
+      area.source === "noaa-enc"
+        ? await noaaCells(area)
+        : await wfsCell(area, c.catzoc ?? 3, c.lines === true);
     const { readCell } = uk("ingest/cell-source");
     const cells = [];
     for (const [i, s] of sources.entries()) {
@@ -264,7 +268,8 @@ async function main() {
         xteLimit: c.xteLimit,
         ...(c.accept && { accept: c.accept }),
         ...(c.fallback && { fallback: true }),
-        ...(c.alternatives && { alternatives: true })
+        ...(c.alternatives && { alternatives: true }),
+        ...(c.lines && { preferLines: true })
       },
       new AbortController().signal,
       Date.now(),

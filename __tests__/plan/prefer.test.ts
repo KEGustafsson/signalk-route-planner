@@ -1,4 +1,5 @@
 import type { LonLat } from "../../src/foundation/geo";
+import { parsePlanRequest } from "../../src/api/plan-request";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
 import type { Chart } from "../helpers/synthetic-oracle";
@@ -22,7 +23,7 @@ interface Body {
 async function planned(chart: Chart, from: [number, number], to: [number, number], over = {}) {
   const r = await plan(
     syntheticApi(chart, { features: ["objects"] }),
-    { from: at(...from), to: at(...to), departure: NOW, speed: 3 },
+    { from: at(...from), to: at(...to), departure: NOW, speed: 3, preferLines: true },
     NEVER,
     NOW,
     { ...DEFAULT_PLAN, ...over }
@@ -72,6 +73,17 @@ describe("preference lines", () => {
   test("without the preference the line is not followed", async () => {
     const { points } = await planned(bent(300), [0, 0], [4000, 0], { preferWeight: 0 });
     expect(points).toHaveLength(2);
+    // Lines are kept to only when the request asks: by default a plan is as without them.
+    const plain = await plan(
+      syntheticApi(bent(300), { features: ["objects"] }),
+      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3 },
+      NEVER,
+      NOW
+    );
+    expect((plain.body as Body).route?.coordinates).toHaveLength(2);
+    expect(parsePlanRequest({ from: [22, 60], to: [22.1, 60.1], preferLines: "yes" }, NOW).ok).toBe(
+      false
+    );
   });
 
   test("a two-way line is kept to starboard: south of it going east, north going west", async () => {
@@ -109,11 +121,29 @@ describe("preference lines", () => {
       );
     const r = await plan(
       api,
-      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3 },
+      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3, preferLines: true },
       NEVER,
       NOW
     );
     expect(r.status).toBe(200);
     expect((r.body as Body).route?.coordinates).toHaveLength(2);
+  });
+
+  test("a fairway's navigation line laid out for less than the boat's draft is not kept to", async () => {
+    const shallow: Chart = {
+      obstacles: [],
+      lines: [
+        { ...(bent(300).lines?.[0] as NonNullable<Chart["lines"]>[number]), designDraft: 1.5 }
+      ]
+    };
+    const deep = await plan(
+      syntheticApi(shallow, { features: ["objects"] }),
+      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3, draft: 2.2, preferLines: true },
+      NEVER,
+      NOW
+    );
+    expect((deep.body as Body).route?.coordinates).toHaveLength(2);
+    const { points } = await planned(shallow, [0, 0], [4000, 0]);
+    expect(furthest(points)).toBeGreaterThan(300 - 40);
   });
 });

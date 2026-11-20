@@ -20,6 +20,9 @@ export interface PreferredLine {
 export interface Preferred {
   /** Lines in the tree's unit coordinates. */
   readonly lines: readonly XY[][];
+  /** Their segments, and a grid of the segments near each cell, `GRID` units on a side. */
+  readonly segments: readonly [XY, XY][];
+  readonly grid: ReadonlyMap<string, readonly number[]>;
   /** How near a line water counts as on it, units. */
   readonly reach: number;
   /** Cost per metre added off the lines. */
@@ -57,6 +60,53 @@ function toStarboard(line: XY[], d: number, travel: XY): XY[] {
   return out;
 }
 
+/** Grid cell side, units: a query visits the cells its reach meets. */
+const GRID = 64;
+
+const cellKey = (x: number, y: number): string => `${x},${y}`;
+
+/** The segments of `lines`, and each grid cell's segments. */
+function gridOf(lines: readonly XY[][]): Pick<Preferred, "segments" | "grid"> {
+  const segments: [XY, XY][] = lines.flatMap((l) =>
+    l.slice(1).map((b, i): [XY, XY] => [l[i] as XY, b])
+  );
+  const grid = new Map<string, number[]>();
+  segments.forEach(([a, b], k) => {
+    const x0 = Math.floor(Math.min(a[0], b[0]) / GRID);
+    const x1 = Math.floor(Math.max(a[0], b[0]) / GRID);
+    const y0 = Math.floor(Math.min(a[1], b[1]) / GRID);
+    const y1 = Math.floor(Math.max(a[1], b[1]) / GRID);
+    for (let x = x0; x <= x1; x++) {
+      for (let y = y0; y <= y1; y++) {
+        const at = grid.get(cellKey(x, y));
+        if (at) {
+          at.push(k);
+        } else {
+          grid.set(cellKey(x, y), [k]);
+        }
+      }
+    }
+  });
+  return { segments, grid };
+}
+
+/** The segments with a part within `r` units of `p`, each once. */
+function segmentsNear(pref: Preferred, p: XY, r: number): [XY, XY][] {
+  const seen = new Set<number>();
+  const x0 = Math.floor((p[0] - r) / GRID);
+  const x1 = Math.floor((p[0] + r) / GRID);
+  const y0 = Math.floor((p[1] - r) / GRID);
+  const y1 = Math.floor((p[1] + r) / GRID);
+  for (let x = x0; x <= x1; x++) {
+    for (let y = y0; y <= y1; y++) {
+      for (const k of pref.grid.get(cellKey(x, y)) ?? []) {
+        seen.add(k);
+      }
+    }
+  }
+  return [...seen].map((k) => pref.segments[k] as [XY, XY]);
+}
+
 /** The lines in `tree`'s units, the two-way ones moved to starboard for a trip from → to. */
 export function preferredIn(
   tree: QuadTree,
@@ -80,21 +130,20 @@ export function preferredIn(
   }
   return {
     lines: out,
+    ...gridOf(out),
     reach: how.reachMetres / unit,
     weight: how.weight,
     cell: how.cellMetres / unit
   };
 }
 
-/** Distance from `p`, units, to the nearest preferred line. */
-export function lineDistance(pref: Preferred, p: XY): number {
+/** Distance from `p`, units, to the nearest preferred line within `limit`; Infinity past it. */
+export function lineDistance(pref: Preferred, p: XY, limit: number): number {
   let best = Infinity;
-  for (const line of pref.lines) {
-    for (let i = 1; i < line.length; i++) {
-      best = Math.min(best, segmentDistance(p, line[i - 1] as XY, line[i] as XY));
-    }
+  for (const [a, b] of segmentsNear(pref, p, limit)) {
+    best = Math.min(best, segmentDistance(p, a, b));
   }
-  return best;
+  return best <= limit ? best : Infinity;
 }
 
 function corners(n: Pick<QuadNode, "x" | "y" | "size">): XY[] {
@@ -110,7 +159,8 @@ function corners(n: Pick<QuadNode, "x" | "y" | "size">): XY[] {
 function touches(pref: Preferred, n: Pick<QuadNode, "x" | "y" | "size">): boolean {
   const c: XY = [n.x + n.size / 2, n.y + n.size / 2];
   // Within the square's half-diagonal of its centre, plus reach, a line can touch it.
-  return lineDistance(pref, c) <= pref.reach + (n.size * Math.SQRT2) / 2;
+  const r = pref.reach + (n.size * Math.SQRT2) / 2;
+  return lineDistance(pref, c, r) <= r;
 }
 
 /**
@@ -119,10 +169,9 @@ function touches(pref: Preferred, n: Pick<QuadNode, "x" | "y" | "size">): boolea
  */
 function within(pref: Preferred, n: Pick<QuadNode, "x" | "y" | "size">): boolean {
   const cs = corners(n);
-  return pref.lines.some((line) =>
-    line
-      .slice(1)
-      .some((b, i) => cs.every((p) => segmentDistance(p, line[i] as XY, b) <= pref.reach))
+  const c: XY = [n.x + n.size / 2, n.y + n.size / 2];
+  return segmentsNear(pref, c, pref.reach + (n.size * Math.SQRT2) / 2).some(([a, b]) =>
+    cs.every((p) => segmentDistance(p, a, b) <= pref.reach)
   );
 }
 
@@ -137,18 +186,24 @@ export function splitsForLines(pref: Preferred, n: Pick<QuadNode, "x" | "y" | "s
  */
 export function offLine(pref: Preferred, n: QuadNode): number {
   const c: XY = [n.x + n.size / 2, n.y + n.size / 2];
-  return lineDistance(pref, c) <= pref.reach ? 0 : pref.weight;
+  return lineDistance(pref, c, pref.reach) <= pref.reach ? 0 : pref.weight;
 }
 
-/** The share of the segment a–b, unit coordinates, off the lines, sampled every half reach. */
-export function offShare(pref: Preferred, a: XY, b: XY): number {
+/**
+ * The share of the segment a–b, unit coordinates, off the lines, sampled every half reach. A
+ * sample in a leaf of `tree` is on a line as the search counts its leaf (`offLine`), so a
+ * shortcut is priced as the squares it crosses are; elsewhere, by its own distance to one.
+ */
+export function offShare(pref: Preferred, a: XY, b: XY, tree?: QuadTree): number {
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const n = Math.max(1, Math.ceil(len / Math.max(pref.reach / 2, 1e-9)));
   let off = 0;
   for (let k = 0; k <= n; k++) {
     const t = k / n;
     const p: XY = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
-    if (lineDistance(pref, p) > pref.reach) {
+    const leaf = tree?.leafAt(p[0], p[1]);
+    const away = leaf ? offLine(pref, leaf) > 0 : lineDistance(pref, p, pref.reach) > pref.reach;
+    if (away) {
       off++;
     }
   }

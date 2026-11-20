@@ -46,7 +46,7 @@ export interface Chart {
    */
   bridges?: (Circle & { clearance: number })[];
   /** Lines a session lists as chart objects (feature "objects"), metres east and north. */
-  lines?: { class: string; points: [number, number][]; twoWay?: boolean }[];
+  lines?: { class: string; points: [number, number][]; twoWay?: boolean; designDraft?: number }[];
   /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
   closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
@@ -231,7 +231,8 @@ export function syntheticApi(
                 type: "LineString" as const,
                 coordinates: l.points.map(([x, y]) => at(x, y))
               },
-              ...(l.twoWay && { twoWay: true })
+              ...(l.twoWay && { twoWay: true }),
+              ...(l.designDraft !== undefined && { designDraft: l.designDraft })
             }));
         },
         work: () => work,

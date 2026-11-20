@@ -100,6 +100,9 @@ interface Access {
   berth?: LonLat;
 }
 
+/** A*'s heuristic weight where a weight carries a preference (`Mode.fine`). */
+const FINE_GREED = 1.05;
+
 export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
 
@@ -296,8 +299,9 @@ async function attempt(
           pause: () => session.pause(),
           every: 64,
           weight: mode.weight,
-          // A risk cost is a preference smaller than weighted A*'s slack: plain A* keeps it.
-          greed: mode.fine ? 1 : opts.greed
+          // A risk cost or a line is a preference smaller than weighted A*'s slack: a slack of
+          // FINE_GREED keeps every one worth more than it.
+          greed: mode.fine ? Math.min(opts.greed, FINE_GREED) : opts.greed
         });
   if (!found.found) {
     return {
@@ -334,7 +338,9 @@ async function searchTree(
   const strict = await attempt(tree, session, ends, opts, strictWith, how.berth);
   // With a risk cost or lines, pulling keeps to what the search paid for, by one price for all.
   const pulling = (path: LonLat[], mode: Mode, fallback: boolean) => {
-    if (!cost && !pref) {
+    // A fallback route is straightened by its own rule (`riskyShortcut`) unless it carries a
+    // risk cost: priced at a whole leg's verdict, its shortcuts through risky water never pass.
+    if (!cost && (!pref || fallback)) {
       return {};
     }
     const priced = costShortcut(
@@ -343,7 +349,7 @@ async function searchTree(
       (n) => mode.weight?.(n) ?? 1,
       (v, a, b) =>
         verdictWeight(v, how.rule, { fallback, cost }) +
-        (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b)) : 0),
+        (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0),
       cost
     );
     return { priced };
