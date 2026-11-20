@@ -73,6 +73,21 @@ describe("panel model", () => {
         gate: { departure: "2026-11-18T13:15:00.000Z", waitMinutes: 375 }
       }).text
     ).toBe("Leave at 13:15 UTC, waiting 6 h 15 min for the tide. Planned 1.0 nm in 1 leg: ok");
+    // Each wait on the way, after the departure's.
+    expect(
+      P.summary(200, {
+        status: "ok",
+        length: 1852,
+        check: { legs: [{}, {}] },
+        gate: {
+          departure: "2026-11-18T08:45:00.000Z",
+          waitMinutes: 105,
+          waits: [{ at: [22.04248, 59.99793], arrive: "2026-11-18T09:11:31.728Z", minutes: 678 }]
+        }
+      }).text
+    ).toBe(
+      "Leave at 08:45 UTC, waiting 1 h 45 min for the tide; then wait 11 h 18 min from 09:11 UTC at 59.9979, 22.0425. Planned 1.0 nm in 2 legs: ok"
+    );
     // A fallback reply whose wait found no departure says so, with its marked route.
     expect(
       P.summary(200, {

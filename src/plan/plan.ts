@@ -12,6 +12,7 @@ import type { Part } from "./stages";
 import type { Staged } from "./stages";
 import { stages } from "./stages";
 import { timeDeparture } from "./gate";
+import { scheduleWithWaits } from "./waits";
 
 /**
  * One plan (plan §4.1): the search in planning sessions (`stages.ts`), then the proof:
@@ -36,6 +37,11 @@ export interface PlanInput {
    * states of the tide, the plan names the earliest departure up to this that passes (`gate.ts`).
    */
   latestDeparture?: number;
+  /**
+   * When no single departure up to `latestDeparture` passes, the boat may wait on the way, at
+   * places along the route with room to swing (`waits.ts`), as long in all as it may wait to leave.
+   */
+  waitEnRoute?: boolean;
 }
 
 const RANK: Record<Status, number> = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
@@ -242,10 +248,16 @@ async function gated(
   const budget = Math.max(0, opts.maxWork - used);
   const timed = await timeDeparture(api, g, candidate.parts, { rule: first.rule, signal, budget });
   used += timed.work;
-  const note = (reason: string): Reply =>
-    withWork({ ...first.reply, body: { ...(first.reply.body as object), gate: { reason } } }, used);
+  const note = (reason: string, total = used): Reply =>
+    withWork(
+      { ...first.reply, body: { ...(first.reply.body as object), gate: { reason } } },
+      total
+    );
   if (!timed.ok) {
-    return note(timed.reason);
+    if (input.waitEnRoute !== true) {
+      return note(timed.reason);
+    }
+    return enRoute(api, input, signal, { opts, first, candidate, used, note });
   }
   // Timed, the parts are held to the strict rule: no leg is left to the fallback.
   const parts = candidate.parts.map(({ fallback: _, ...p }) => p);
@@ -270,6 +282,88 @@ async function gated(
         departure: new Date(timed.departure).toISOString(),
         waitMinutes: Math.round((timed.departure - input.departure) / 60_000),
         legs: timed.gated
+      }
+    }
+  };
+}
+
+/** When no single departure passes: the plan that waits for the water on the way, if any. */
+async function enRoute(
+  api: PlanningApiV1,
+  input: PlanInput & { latestDeparture: number },
+  signal: AbortSignal,
+  w: {
+    opts: PlanOptions;
+    first: Planned;
+    candidate: Extract<Staged, { ok: true }>;
+    used: number;
+    note: (reason: string, used: number) => Reply;
+  }
+): Promise<Reply> {
+  const { opts, first, candidate } = w;
+  const g = {
+    ...input,
+    latest: input.latestDeparture,
+    swing: opts.waitSwing,
+    spacing: opts.waitSpacing
+  };
+  const budget = Math.max(0, opts.maxWork - w.used);
+  const s = await scheduleWithWaits(api, g, candidate.parts, { rule: first.rule, signal, budget });
+  const used = w.used + s.work;
+  if (!s.ok) {
+    return w.note(s.reason, used);
+  }
+  return waited(api, input, signal, {
+    first,
+    candidate,
+    used,
+    scheduled: s,
+    note: (r) => w.note(r, used)
+  });
+}
+
+/** The plan that waits on the way: its parts proved, each from when the boat leaves for it. */
+async function waited(
+  api: PlanningApiV1,
+  input: PlanInput,
+  signal: AbortSignal,
+  w: {
+    first: Planned;
+    candidate: Extract<Staged, { ok: true }>;
+    used: number;
+    scheduled: Extract<Awaited<ReturnType<typeof scheduleWithWaits>>, { ok: true }>;
+    note: (reason: string) => Reply;
+  }
+): Promise<Reply> {
+  const { first, candidate, scheduled: s } = w;
+  const parts = s.parts.map(({ fallback: _, ...p }) => p);
+  const found = { ...candidate, parts };
+  const at = { ...input, departure: s.departure };
+  const r = await proved(api, at, signal, { base: first.base, rule: first.rule, found });
+  const iso = (t: number): string => new Date(t).toISOString();
+  if (r.status !== 200) {
+    return w.note(
+      `the route check does not pass the route leaving at ${iso(s.departure)} with its waits`
+    );
+  }
+  const waits = s.waits.map((x) => ({
+    at: x.at,
+    arrive: iso(x.arrive),
+    leave: iso(x.leave),
+    minutes: Math.round((x.leave - x.arrive) / 60_000)
+  }));
+  return {
+    status: 200,
+    body: {
+      ...(r.body as object),
+      work: w.used,
+      departure: iso(s.departure),
+      gate: {
+        requested: iso(input.departure),
+        departure: iso(s.departure),
+        waitMinutes: Math.round((s.departure - input.departure) / 60_000),
+        legs: s.gated,
+        waits
       }
     }
   };

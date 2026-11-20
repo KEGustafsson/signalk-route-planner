@@ -86,6 +86,7 @@ export async function prove(
   let first: Record<string, unknown> | undefined;
   let at = input.departure;
   for (const part of parts) {
+    at += part.wait ?? 0;
     const r = await api.routeCheck(checkBody(input, part, at), signal);
     if (r.status !== 200) {
       return r;

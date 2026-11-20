@@ -31,6 +31,11 @@ All notable changes to signalk-route-planner are documented here.
 - Tide gates: with `latestDeparture`, a route that passes only at some states of the tide is
   offered leaving at the earliest departure up to then that the route check passes, with the
   wait; the planner asks the planning API about each gated leg over 15-minute windows.
+- Waiting en route: with `waitEnRoute` too, when no single departure passes, the plan waits for
+  the water on the way, at places along the route the planning API passes with room to swing at
+  anchor at the trip's lowest water, at most as long in all as the boat may wait to leave. The
+  route is split where it waits, each piece proved from when the boat leaves for it, and the
+  reply lists the waits (`gate.waits`); the panel offers it as a check box.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
   index of the whole search region, or of the trip's least region (both ends with the search's
   least margin and a harbour stage around them) when that is too large to build: the chart box

@@ -64,16 +64,18 @@ function showLegs(legs) {
 
 /**
  * The departure and the latest departure, `hours` after it, as request fields, both from one
- * reading of the clock so the wait never exceeds the server's limit; none for 0.
+ * reading of the clock so the wait never exceeds the server's limit, and `waitEnRoute` when
+ * the boat may wait on the way too; none for 0.
  */
-function latest(hours) {
+function latest(hours, enRoute) {
   if (!(hours > 0)) {
     return {};
   }
   const now = Date.now();
   return {
     departure: new Date(now).toISOString(),
-    latestDeparture: new Date(now + hours * 3_600_000).toISOString()
+    latestDeparture: new Date(now + hours * 3_600_000).toISOString(),
+    ...(enRoute && { waitEnRoute: true })
   };
 }
 
@@ -103,7 +105,10 @@ async function planSelected() {
           ...ends,
           ...(document.getElementById("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
           ...(document.getElementById("fallback").checked && { fallback: true }),
-          ...latest(Number(document.getElementById("wait").value))
+          ...latest(
+            Number(document.getElementById("wait").value),
+            document.getElementById("waitEnRoute").checked
+          )
         })
       });
       body = await res.json().catch(() => ({}));

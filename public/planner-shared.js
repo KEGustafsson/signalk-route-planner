@@ -48,9 +48,15 @@
     return (metres / 1852).toFixed(1) + " nm";
   }
 
+  /** Minutes as "3 h 15 min" or "40 min". */
+  function duration(m) {
+    return m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min";
+  }
+
   /**
-   * "Leave at 14:15 UTC, waiting 3 h 15 min for the tide. " for a tide-gated plan; why waiting
-   * found no departure when it did not (a fallback reply still offers its marked route); else "".
+   * "Leave at 14:15 UTC, waiting 3 h 15 min for the tide. " for a tide-gated plan, with each
+   * wait on the way after it; why waiting found no departure when it did not (a fallback reply
+   * still offers its marked route); else "".
    */
   function gateText(gate) {
     if (gate && gate.reason) {
@@ -59,9 +65,20 @@
     if (!gate || !gate.departure) {
       return "";
     }
-    const m = gate.waitMinutes || 0;
-    const wait = m >= 60 ? Math.floor(m / 60) + " h " + (m % 60) + " min" : m + " min";
-    return "Leave at " + gate.departure.slice(11, 16) + " UTC, waiting " + wait + " for the tide. ";
+    const leave = "Leave at " + gate.departure.slice(11, 16) + " UTC, waiting ";
+    const on = (gate.waits || []).map(
+      (w) =>
+        "wait " +
+        duration(w.minutes) +
+        " from " +
+        w.arrive.slice(11, 16) +
+        " UTC at " +
+        w.at[1].toFixed(4) +
+        ", " +
+        w.at[0].toFixed(4)
+    );
+    const then = on.length > 0 ? "; then " + on.join("; then ") : "";
+    return leave + duration(gate.waitMinutes || 0) + " for the tide" + then + ". ";
   }
 
   /** Whether two lists of host route points have the same positions, in order. */
