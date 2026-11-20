@@ -30,6 +30,23 @@
       }
     },
     {
+      "name": "turku-guest-harbours-b-lines",
+      "area": "turku",
+      "catzoc": 3,
+      "lines": true,
+      "from": [22.2447535, 60.4399228],
+      "to": [21.91184, 60.1947716],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "accept": ["NOT_FOR_NAVIGATION"],
+      "fallback": true,
+      "expect": {
+        "status": 200,
+        "lengthNm": [18, 22.5],
+        "parts": ["harbour:start", "route", "harbour:end"]
+      }
+    },
+    {
       "name": "turku-guest-harbours-a1",
       "area": "turku",
       "catzoc": 1,

@@ -77,7 +77,7 @@ export function linesIn(
   ends: [LonLat, LonLat],
   opts: PlanOptions
 ): Preferred | undefined {
-  if (!session.objects || opts.preferWeight <= 0) {
+  if (!opts.preferLines || !session.objects || opts.preferWeight <= 0) {
     return undefined;
   }
   const side = tree.shape.side;
@@ -96,6 +96,7 @@ export function linesIn(
   }
   const lines: PreferredLine[] = objects
     .filter((o) => PREFERRED.has(o.class) && o.geometry.type === "LineString")
+    .filter((o) => !(o.designDraft !== undefined && (opts.preferDraft ?? 0) > o.designDraft))
     .map((o) => ({
       coordinates: o.geometry.coordinates as LonLat[],
       ...(o.twoWay === true && { twoWay: true })
@@ -104,8 +105,10 @@ export function linesIn(
     reachMetres: opts.preferReach,
     weight: opts.preferWeight,
     starboardMetres: opts.starboardOffset,
-    // Squares no larger than the reach, so their centres along a line lie within it.
-    cellMetres: opts.preferReach
+    // Squares split along a line down to the risk cost's resolution, about the reach: a square
+    // whose centre is near the line is on it, and a finer band would ask the chart about many
+    // more squares along every line in the region.
+    cellMetres: opts.riskCell
   });
 }
 

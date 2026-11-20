@@ -329,19 +329,28 @@ the candidate route.
   flag. A box in a lane has no course, so the search may plan along a lane the wrong way, and the
   proof refuses it at the leg. Flags that only name water (`TRAFFIC_LANE`, `ENTRY_RESTRICTED`,
   `AREA_TO_BE_AVOIDED`) are crossed as their verdicts allow.
-- **Preference lines (R4c):** the lines a session lists (`objects`) of class `NAVLNE`, `RECTRC`,
-  `NAVLINE` (a fairway's navigation line, such as the FTIA's) and `TRACK` (the boat's own
-  passages) are kept to (`src/search/prefer.ts`). Water whose square's centre lies within
-  `preferReach` (30 m) of a line costs what it would anyway, and any other `preferWeight` (0.15)
-  more per metre: a discount on the lines that keeps every weight at least 1, as A*'s heuristic
-  needs, so a route keeps to a line where that costs less than about 15 % more distance. A free
-  square only partly near a line is split down to the reach, A\* is plain, and string pulling
-  prices a shortcut by the share of it off the lines. A two-way line (`twoWay`) is moved
+- **Preference lines (R4c),** asked for with `preferLines`: the lines a session lists
+  (`objects`) of class `NAVLNE`, `RECTRC`, `NAVLINE` (a fairway's navigation line, such as the
+  FTIA's) and `TRACK` (the boat's own passages) are kept to (`src/search/prefer.ts`), but not a
+  navigation line laid out for less than the request's draft (`designDraft`). Water whose
+  square's centre lies within `preferReach` (50 m) of a line costs what it would anyway, and any
+  other `preferWeight` (0.15) more per metre: a discount on the lines that keeps every weight at
+  least 1, as A*'s heuristic needs, so a route keeps to a line where that costs less than about
+  15 % more distance. A free square only partly near a line is split down to 80 m; the lines'
+  segments are kept in a grid, so each test reads only those near it. A\* runs with a slack of
+  5 % (greed 1.05) wherever a weight carries a preference, a risk cost or lines, so every
+  preference worth more than that is kept. String pulling prices a shortcut by the share of it
+  off the lines, as the squares it crosses are counted; a fallback route without a risk cost is
+  straightened by its own rule, since pricing a whole leg at its verdict let no shortcut through
+  risky water and left Miami's Bayside route 115 legs long. A two-way line (`twoWay`) is moved
   `starboardOffset` (15 m) to starboard of the way the boat goes along each of its segments
-  (COLREG rule 9); a leading line is followed as charted. Decided against: a cost per turn, which
-  A\* over squares cannot price without a heading in its state, and string pulling already keeps
-  turns few; and offsetting within `FAIRWY` areas, which chart no centreline, where a navigation
-  line gives one.
+  (COLREG rule 9); a leading line is followed as charted. Decided: off by default, until field
+  trials show the lines make routes better and not only different; on the Turku trial with the
+  FTIA's 474 lines the route keeps to them at 20.0 nm against 19.8 nm, for 9.4 M work units
+  against 5.8 M (`turku-guest-harbours-b-lines`). Decided against: a cost per turn, which A\*
+  over squares cannot price without a heading in its state, and string pulling already keeps
+  turns few; and offsetting within `FAIRWY` areas, which chart no centreline, where a
+  navigation line gives one.
 - **Finnish fairway data:** Finnish Transport Infrastructure Agency open data (fairway areas and
   navigation lines, CC BY 4.0) as preference lines, read through underkeel's WFS client and served
   as `NAVLINE` objects, two-way.

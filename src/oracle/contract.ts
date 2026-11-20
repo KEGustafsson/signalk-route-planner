@@ -53,6 +53,8 @@ export interface ChartObject {
   orient?: number;
   /** A line with traffic both ways along it, which a boat keeps to starboard of. */
   twoWay?: boolean;
+  /** The draft a fairway's navigation line is laid out for, metres. */
+  designDraft?: number;
   cell?: string;
 }
 

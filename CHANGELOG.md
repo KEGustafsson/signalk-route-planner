@@ -44,13 +44,14 @@ All notable changes to signalk-route-planner are documented here.
   clear at high water, as signalk-underkeel 0.8.0 checks them, and it keeps out of entry-prohibited
   areas and traffic lanes sailed the wrong way. An older signalk-underkeel is refused an air
   height.
-- Preference lines: leading lines, recommended tracks, fairway navigation lines and the boat's own
-  tracks that signalk-underkeel lists are kept to where that costs little more distance, to
-  starboard of a two-way line (COLREG rule 9).
+- Preference lines, with `preferLines`: leading lines, recommended tracks, fairway navigation
+  lines laid out for the boat's draft and the boat's own tracks that signalk-underkeel lists are
+  kept to where that costs little more distance, to starboard of a two-way line (COLREG rule 9).
 - Panel: start from the boat's position; the shortest, balanced and safest routes drawn on the
   map and listed, any of them written with **Use**; each leg's flags in words; a dragged waypoint's
-  legs planned again. The manifest offers `routePlan` in the `navigationSafety` services, and
-  `npm run trial:panel` runs the panel in Chromium on the field trials' charts.
+  legs planned again; keeping to fairway lines and own tracks as a check box. The manifest offers
+  `routePlan` in the `navigationSafety` services, and `npm run trial:panel` runs the panel in
+  Chromium on the field trials' charts.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
   index of the whole search region, or of the trip's least region (both ends with the search's
   least margin and a harbour stage around them) when that is too large to build: the chart box

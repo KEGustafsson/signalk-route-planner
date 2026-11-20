@@ -5,7 +5,7 @@ import { berthable, crossable } from "../search/fallback";
 import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
-import { DEFAULT_PLAN } from "./options";
+import { DEFAULT_PLAN, requestOptions } from "./options";
 import type { CheckedLeg, Proof } from "./proof";
 import { joined, prove } from "./proof";
 import type { Part } from "./stages";
@@ -46,6 +46,8 @@ export interface PlanInput {
    * places along the route with room to swing (`waits.ts`), as long in all as it may wait to leave.
    */
   waitEnRoute?: boolean;
+  /** Keep to leading lines, fairway lines and own tracks (`search/prefer.ts`). */
+  preferLines?: boolean;
   /** The risk cost's weight (`PlanOptions.riskWeight`); absent, the plugin's. */
   riskWeight?: number;
   /** The route is offered only while its risk, 1 − Π(1 − P) over its legs, is at most this. */
@@ -160,15 +162,9 @@ async function planAt(
     draft: input.draft,
     ...(input.airHeight !== undefined && { airHeight: input.airHeight })
   };
-  const riskWeight = input.riskWeight ?? opts.riskWeight;
-  const st = {
-    api,
-    params,
-    signal,
-    opts: { ...opts, riskWeight },
-    rule,
-    fallback: input.fallback === true
-  };
+  const own = requestOptions(opts, input);
+  const { riskWeight } = own;
+  const st = { api, params, signal, opts: own, rule, fallback: input.fallback === true };
   const found = await stages(st, input.from, input.to, input.xteLimit);
   if ("error" in found) {
     return {
