@@ -13,7 +13,8 @@ import { OK_ONLY, passes } from "./passes";
  * A square whose box verdict passes (`passes.ts`: `ok`, or an accepted
  * `unverified`) is free water: every leg inside it, with
  * the corridor half-width around it, is inside the box the verdict covered.
- * Any other verdict splits the square, down to one unit; a one-unit square
+ * Any other verdict splits the square, down to one unit, and so does a free square whose risk
+ * weighs in the route's cost (`splitRisk`); a one-unit square
  * that is `marginal` stays passable at a cost (search/fallback.ts), and any other
  * that does not pass is blocked, remembered as unverified when its verdict said so.
  */
@@ -70,7 +71,12 @@ export class QuadTree {
   constructor(
     readonly shape: TreeShape,
     private readonly session: Session,
-    private readonly rule: PassRule = OK_ONLY
+    private readonly rule: PassRule = OK_ONLY,
+    /**
+     * True when a free square of `size` units has a risk that weighs enough in the route's
+     * cost (`fallback.ts`, `RiskCost`) that it is split to find the clearer water in it.
+     */
+    private readonly splitRisk: (risk: number, size: number) => boolean = () => false
   ) {
     this.root = this.node(0, 0, shape.side);
   }
@@ -150,7 +156,7 @@ export class QuadTree {
     const v = this.session.box(sw, ne);
     this.classified++;
     n.verdict = { status: v.status, flags: v.flags, risk: v.risk };
-    if (passes(v, this.rule)) {
+    if (passes(v, this.rule) && !(n.size > 1 && this.splitRisk(v.risk, n.size))) {
       n.state = "free";
     } else if (n.size > 1) {
       this.split(n);

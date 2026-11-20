@@ -1,6 +1,9 @@
 import type { LonLat } from "../foundation/geo";
+import { haversine } from "../foundation/geo";
 import type { Verdict } from "../oracle/contract";
-import type { Shortcut } from "./pull";
+import type { PassRule } from "./passes";
+import { passes } from "./passes";
+import type { Priced, Shortcut } from "./pull";
 import type { QuadNode, QuadTree } from "./quadtree";
 
 /**
@@ -47,10 +50,25 @@ export function berthable(v: Pick<Verdict, "flags">): boolean {
   return v.flags.every((f) => f === "LAND" || CROSSABLE.has(f));
 }
 
+/**
+ * The risk cost (plan §4.4): a route's cost per metre grows by `weight` · P / `threshold`, P
+ * the square's P(UKC < 0) and `threshold` the request's accepted probability, so a route with
+ * a weight keeps away from the margin. Weight 0 is the shortest route.
+ */
+export interface RiskCost {
+  weight: number;
+  threshold: number;
+}
+
+/** A leaf's added cost per metre under `cost`; 0 without one. */
+export function riskCost(n: QuadNode, cost?: RiskCost): number {
+  return cost ? (cost.weight * (n.verdict?.risk ?? 0)) / cost.threshold : 0;
+}
+
 /** Per-metre cost of a leaf in the fallback search; Infinity where it may not go. */
-export function fallbackWeight(n: QuadNode): number {
+export function fallbackWeight(n: QuadNode, cost?: RiskCost): number {
   if (n.state === "free") {
-    return 1;
+    return 1 + riskCost(n, cost);
   }
   const v = n.verdict;
   if (
@@ -60,21 +78,26 @@ export function fallbackWeight(n: QuadNode): number {
   ) {
     return Infinity;
   }
-  return 1 + RISK_WEIGHT * v.risk + (v.status === "unverified" ? UNVERIFIED_WEIGHT : 0);
+  return (
+    1 +
+    RISK_WEIGHT * v.risk +
+    (v.status === "unverified" ? UNVERIFIED_WEIGHT : 0) +
+    riskCost(n, cost)
+  );
 }
 
 /**
  * Per-metre cost of a leaf in the strict search: free water 1; a smallest square the check
  * marks marginal, which a strict plan accepts, at the same risk cost as the fallback, so the
  * route crosses as little of it as it can, unless its flags close it (`crossable`); Infinity
- * elsewhere.
+ * elsewhere. Each with its risk cost under `cost`.
  */
-export function strictWeight(n: QuadNode): number {
+export function strictWeight(n: QuadNode, cost?: RiskCost): number {
   if (n.state === "free") {
-    return 1;
+    return 1 + riskCost(n, cost);
   }
   return n.state === "marginal" && n.verdict && crossable(n.verdict)
-    ? 1 + RISK_WEIGHT * n.verdict.risk
+    ? 1 + RISK_WEIGHT * n.verdict.risk + riskCost(n, cost)
     : Infinity;
 }
 
@@ -118,5 +141,61 @@ export function riskyShortcut(
       span.every((r) => r !== undefined) &&
       v.risk <= Math.max(...(span as number[]))
     );
+  };
+}
+
+/**
+ * Per-metre cost of a leg with verdict `v`, as the search would price water with that verdict:
+ * passing water at its risk cost; the strict search's marginal water, or the fallback's
+ * crossable water, at the fallback's risk weight too; Infinity where neither may go.
+ */
+export function verdictWeight(
+  v: Verdict,
+  rule: PassRule,
+  how: { fallback: boolean; cost?: RiskCost }
+): number {
+  const extra = how.cost ? (how.cost.weight * v.risk) / how.cost.threshold : 0;
+  if (passes(v, rule)) {
+    return 1 + extra;
+  }
+  const may = how.fallback ? crossable(v) : v.status === "marginal" && crossable(v);
+  if (!may) {
+    return Infinity;
+  }
+  return 1 + RISK_WEIGHT * v.risk + (v.status === "unverified" ? UNVERIFIED_WEIGHT : 0) + extra;
+}
+
+/**
+ * With a risk cost, a shortcut may replace path points i..j only when, priced at its own
+ * verdict (`verdictWeight`; a leg's risk is its worst point, so the price is pessimistic), it
+ * costs no more than the path between them at its squares' weights, and of those the one whose
+ * cost with the path's on to its end is lowest: pulling straightens the route the search found
+ * without undoing what it paid to keep from the margin. A piece whose
+ * square the search's weight does not price, such as a checked leg joining an end, is priced
+ * as free water at its square's risk.
+ */
+export function costShortcut(
+  tree: QuadTree,
+  path: readonly LonLat[],
+  weight: (n: QuadNode) => number,
+  priced: (v: Verdict) => number,
+  cost: RiskCost
+): Priced {
+  const sums = [0];
+  path.slice(1).forEach((b, k) => {
+    const a = path[k] as LonLat;
+    const [ax, ay] = tree.units(a);
+    const [bx, by] = tree.units(b);
+    const leaf = tree.leafAt((ax + bx) / 2, (ay + by) / 2);
+    const w = leaf ? weight(leaf) : Infinity;
+    const per = Number.isFinite(w) ? w : 1 + (leaf ? riskCost(leaf, cost) : 0);
+    sums.push((sums[k] as number) + haversine(a, b) * per);
+  });
+  const total = sums[sums.length - 1] as number;
+  const own = (v: Verdict, i: number, j: number): number =>
+    haversine(path[i] as LonLat, path[j] as LonLat) * priced(v);
+  return {
+    accept: (v, i, j) => own(v, i, j) <= (sums[j] as number) - (sums[i] as number) + 1e-6,
+    score: (v, i, j) => own(v, i, j) + total - (sums[j] as number)
   };
 }

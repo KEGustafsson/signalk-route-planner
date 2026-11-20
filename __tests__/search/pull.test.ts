@@ -30,4 +30,36 @@ describe("string pulling", () => {
     });
     expect(r).toEqual([points[0], points[4], points[5], points[6], points[7], points[8]]);
   });
+
+  test("pulled by cost, the cheapest candidate is the next waypoint, not the farthest", async () => {
+    const tried: number[] = [];
+    // Every candidate is acceptable; the one to point 4 is cheapest.
+    const r = await pull(
+      points,
+      (_a, b) => {
+        tried.push(Math.round(b[0] * 1000));
+        return OK;
+      },
+      { exhausted: () => false, pause: () => Promise.resolve() },
+      undefined,
+      undefined,
+      { accept: () => true, score: (_v, _i, j) => Math.abs(j - 4) }
+    );
+    // From point 0 it tries 8, 4 and 2, and keeps 4; from 4, 8 is the end.
+    expect(tried.slice(0, 3)).toEqual([8, 4, 2]);
+    expect(r?.[1]).toEqual(points[4]);
+    expect(r?.[r.length - 1]).toEqual(points[8]);
+  });
+
+  test("pulled by cost, a candidate it does not accept is never taken", async () => {
+    const r = await pull(
+      points,
+      () => OK,
+      { exhausted: () => false, pause: () => Promise.resolve() },
+      undefined,
+      undefined,
+      { accept: () => false, score: () => 0 }
+    );
+    expect(r).toEqual(points);
+  });
 });

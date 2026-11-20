@@ -13,6 +13,7 @@ import type { Staged } from "./stages";
 import { stages } from "./stages";
 import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
+import { listing, overBudget, reasonOf, routeRisk } from "./risk";
 
 /**
  * One plan (plan §4.1): the search in planning sessions (`stages.ts`), then the proof:
@@ -42,6 +43,12 @@ export interface PlanInput {
    * places along the route with room to swing (`waits.ts`), as long in all as it may wait to leave.
    */
   waitEnRoute?: boolean;
+  /** The risk cost's weight (`PlanOptions.riskWeight`); absent, the plugin's. */
+  riskWeight?: number;
+  /** The route is offered only while its risk, 1 − Π(1 − P) over its legs, is at most this. */
+  riskBudget?: number;
+  /** Plan the shortest, balanced and safest routes, and offer the first within the budget. */
+  alternatives?: boolean;
 }
 
 const RANK: Record<Status, number> = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
@@ -105,6 +112,7 @@ function offered(
     ...base,
     route: { type: "LineString", coordinates: joined(parts) },
     length: legs.reduce((s, l) => s + l.length, 0),
+    risk: routeRisk(legs),
     status: worstStatus(legs),
     ...(berths.length > 0 && { underway: worstStatus(legs.filter((l) => !l.berth)), berths }),
     check: { ...proof.first, legs, parts: proof.parts },
@@ -148,7 +156,15 @@ async function planAt(
     probability: input.probability,
     draft: input.draft
   };
-  const st = { api, params, signal, opts, rule, fallback: input.fallback === true };
+  const riskWeight = input.riskWeight ?? opts.riskWeight;
+  const st = {
+    api,
+    params,
+    signal,
+    opts: { ...opts, riskWeight },
+    rule,
+    fallback: input.fallback === true
+  };
   const found = await stages(st, input.from, input.to, input.xteLimit);
   if ("error" in found) {
     return {
@@ -160,6 +176,7 @@ async function planAt(
   }
   const base = {
     plannedAt: new Date(now).toISOString(),
+    riskWeight,
     direct: directOf(found.direct),
     ...(input.accept?.length && { accepted: input.accept })
   };
@@ -189,7 +206,7 @@ async function proved(
   if (!("legs" in proof)) {
     return proof;
   }
-  const refused = refusal(proof, found.parts, rule);
+  const refused = refusal(proof, found.parts, rule) ?? overBudget(proof.legs, input.riskBudget);
   if (refused) {
     return {
       status: 422,
@@ -265,9 +282,7 @@ async function gated(
   const at = { ...input, departure: timed.departure };
   const r = await proved(api, at, signal, { base: first.base, rule: first.rule, found });
   if (r.status !== 200) {
-    return note(
-      `the route check does not pass the route leaving at ${new Date(timed.departure).toISOString()}`
-    );
+    return note(`leaving at ${new Date(timed.departure).toISOString()}, ${reasonOf(r)}`);
   }
   const body = r.body as object;
   return {
@@ -349,9 +364,7 @@ async function waited(
   const r = await proved(api, at, signal, { base: first.base, rule: first.rule, found });
   const iso = (t: number): string => new Date(t).toISOString();
   if (r.status !== 200) {
-    return w.note(
-      `the route check does not pass the route leaving at ${iso(s.departure)} with its waits`
-    );
+    return w.note(`leaving at ${iso(s.departure)} with its waits, ${reasonOf(r)}`);
   }
   const waits = s.waits.map((x) => ({
     at: x.at,
@@ -393,10 +406,56 @@ export async function plan(
   if (d < 1) {
     return { status: 400, body: { errors: ["from and to are the same point"] } };
   }
+  if (input.alternatives === true) {
+    return alternatives(api, input, signal, now, opts);
+  }
   const first = await planAt(api, input, signal, now, opts);
   const latest = input.latestDeparture;
   if (latest === undefined || latest <= input.departure || passesAsPlanned(first.reply)) {
     return first.reply;
   }
   return gated(api, { ...input, latestDeparture: latest }, signal, now, opts, first);
+}
+
+/**
+ * The alternatives (plan §4.4): the plan at the shortest, balanced and safest risk weights,
+ * each searched and proved on its own. The reply is the first offered within the risk
+ * budget, `chosen`, and lists each with its length and risk, or why it is refused. Each is
+ * one plan, at the plan's own work limit.
+ */
+async function alternatives(
+  api: PlanningApiV1,
+  input: PlanInput,
+  signal: AbortSignal,
+  now: number,
+  opts: PlanOptions
+): Promise<Reply> {
+  const weights: [string, number][] = [
+    ["shortest", 0],
+    ["balanced", opts.balancedRisk],
+    ["safest", opts.safestRisk]
+  ];
+  const tried: { name: string; reply: Reply }[] = [];
+  const listed: object[] = [];
+  let work = 0;
+  for (const [name, riskWeight] of weights) {
+    const p = await planAt(api, { ...input, riskWeight }, signal, now, opts);
+    work += p.work;
+    if (p.reply.status !== 200 && p.reply.status !== 422) {
+      return p.reply;
+    }
+    tried.push({ name, reply: p.reply });
+    listed.push(listing(name, riskWeight, p.reply, tried));
+  }
+  const chosen = tried.find((t) => t.reply.status === 200) ?? (tried[0] as (typeof tried)[0]);
+  const body = chosen.reply.body as object;
+  return {
+    status: chosen.reply.status,
+    body: {
+      ...body,
+      work,
+      ...(chosen.reply.status === 200 && { chosen: chosen.name }),
+      alternatives: listed
+    }
+  };
 }

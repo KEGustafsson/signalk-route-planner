@@ -62,6 +62,13 @@ MLLW) and up to 12 h to wait. The gate finds the route's last leg touches a 0 m 
 which no state of the water level clears, and refuses naming that leg: the gate does not trade a
 wait for a leg the tide cannot open.
 
+`miami-fisher-island-alternatives` plans the same trip with `alternatives` (R4). The shortest
+route is 1894 m at risk 0.031; the balanced one (α = 2) 1903 m at 0.026, every leg `ok`. The safest
+(α = 10) comes out 1900 m at 0.050 with a marginal leg: in Government Cut the squares' box
+verdicts all read marginal, coarser than a leg's corridor, so the larger weight finds no safer
+line, and the reply marks it `dominatedBy: "shortest"` rather than offering it as safer. The three
+plans took 6.1 M work units together.
+
 - Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at
   chart datum. The refusal is the right answer; a shallower draft or a tide gate (R3) would

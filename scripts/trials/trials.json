@@ -48,6 +48,21 @@
       }
     },
     {
+      "name": "miami-fisher-island-alternatives",
+      "area": "miami",
+      "from": [-80.125431, 25.760871],
+      "to": [-80.14331, 25.76565],
+      "draft": 1.8,
+      "xteLimit": 10,
+      "fallback": true,
+      "alternatives": true,
+      "expect": {
+        "status": 200,
+        "alternatives": 3,
+        "routeStatuses": ["ok", "marginal"]
+      }
+    },
+    {
       "name": "miami-fisher-island-basin",
       "area": "miami",
       "from": [-80.125431, 25.760871],

@@ -96,6 +96,14 @@ route check passes every leg as the boat reaches it (`departure`, `gate`). The p
 boat may wait on the way, in water with room to swing at anchor, as long in all as it may wait to
 leave (`gate.waits`): for two bars too far apart to cross in one high water.
 
+Every offered route states its `risk`: the chance that some leg has UKC < 0, its legs taken as
+independent. `riskWeight` (0 to 100, default 0, the shortest route) adds a cost per metre in
+proportion to the water's P(UKC < 0) over the accepted probability, so the route keeps away from
+the margin at some length. `riskBudget` refuses a route whose risk is over it. `alternatives:
+true` plans the shortest, balanced and safest routes, each proved on its own, offers the first
+within the budget (`chosen`) and lists each with its length and risk, or why it is refused; one
+that bought no less risk for its length is marked `dominatedBy`.
+
 ## Documentation map
 
 | Document                    | Contents                                          |
