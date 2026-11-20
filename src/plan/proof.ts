@@ -43,6 +43,8 @@ export interface Proof {
   }[];
   /** The route check's own reply for the first part, without its legs (e.g. `checkedAt`). */
   first: Record<string, unknown>;
+  /** When the boat reaches the end, epoch ms: the departure, the waits and the sailing time. */
+  arrival: number;
 }
 
 /** The same point: within 1e-9° (0.1 mm), well under any chart's precision. */
@@ -120,7 +122,7 @@ export async function prove(
     });
     at += (pathLength(part.coordinates) / input.speed) * 1000;
   }
-  return { legs, parts: spans, first: first ?? {} };
+  return { legs, parts: spans, first: first ?? {}, arrival: at };
 }
 
 /** The parts' coordinates as one line, each handover point once. */

@@ -273,17 +273,32 @@ async function replanDrag(routeId) {
   // What was shown was for the route before the drag.
   table.hidden = true;
   dropChoices();
-  const leg = async (a, b) => {
+  // The leg after the waypoint is checked from when the boat reaches it, without a wait there.
+  const leg = async (a, b, departure) => {
     const ends = { from: pts[a].position, to: pts[b].position };
-    const { status, body } = await planRequest(requestFor(ends, false));
-    return status === 200
-      ? { coordinates: body.route.coordinates, status: body.status, legs: body.check.legs }
-      : P.summary(status, body).text;
+    const request = departure
+      ? { ...requestFor(ends, false), departure, latestDeparture: undefined, waitEnRoute: undefined }
+      : requestFor(ends, false);
+    const { status, body } = await planRequest(request);
+    if (status !== 200) {
+      return P.summary(status, body).text;
+    }
+    return {
+      coordinates: body.route.coordinates,
+      status: body.status,
+      legs: body.check.legs,
+      arrival: body.arrival
+    };
   };
   const none = { coordinates: [], status: "ok", legs: [] };
   show("muted", "Planning the legs beside the moved waypoint…");
   const left = i > 0 ? await leg(i - 1, i) : none;
-  const right = i < pts.length - 1 ? await leg(i, i + 1) : none;
+  const right =
+    i === pts.length - 1 || typeof left === "string"
+      ? none
+      : left.arrival === undefined && i > 0
+        ? "the planner did not say when the boat reaches the moved waypoint."
+        : await leg(i, i + 1, left.arrival);
   if (op !== latestOp) {
     return;
   }

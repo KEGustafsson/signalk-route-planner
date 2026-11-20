@@ -122,6 +122,7 @@ function offered(
     ...base,
     route: { type: "LineString", coordinates: joined(parts) },
     length: legs.reduce((s, l) => s + l.length, 0),
+    arrival: new Date(proof.arrival).toISOString(),
     risk: routeRisk(legs),
     status: worstStatus(legs),
     ...(berths.length > 0 && { underway: worstStatus(legs.filter((l) => !l.berth)), berths }),

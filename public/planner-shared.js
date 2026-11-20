@@ -261,14 +261,20 @@
 
   /** Whether `position` is a known one: a longitude and a latitude, both finite. */
   function hasPosition(position) {
-    return Boolean(position) && isFinite(position.longitude) && isFinite(position.latitude);
+    return (
+      Boolean(position) && Number.isFinite(position.longitude) && Number.isFinite(position.latitude)
+    );
   }
 
   /** The worst of check statuses, `ok` when there are none. */
   function worstStatus(statuses) {
     const rank = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
+    // A status the panel does not know is taken as unverified.
+    const of = function (s) {
+      return rank[s] === undefined ? rank.unverified : rank[s];
+    };
     return statuses.reduce(function (worst, s) {
-      return (rank[s] === undefined ? 2 : rank[s]) > rank[worst] ? s : worst;
+      return of(s) > of(worst) ? s : worst;
     }, "ok");
   }
 
