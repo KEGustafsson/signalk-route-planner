@@ -1,7 +1,7 @@
 import { parsePlanRequest } from "../../src/api/plan-request";
 import type { LonLat } from "../../src/foundation/geo";
 import { plan } from "../../src/plan/plan";
-import { listing, routeRisk } from "../../src/plan/risk";
+import { listing, reasonOf, routeRisk } from "../../src/plan/risk";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
@@ -103,6 +103,24 @@ describe("risk cost", () => {
   test("the route's risk is the chance that any leg has UKC < 0", () => {
     expect(routeRisk([])).toBe(0);
     expect(routeRisk([{ risk: 0.1 }, { risk: 0.1 }])).toBeCloseTo(0.19, 12);
+    // One risky leg's own probability, exactly; a tiny one is kept, not rounded to 0.
+    expect(routeRisk([{ risk: 0 }, { risk: 0.0099 }, { risk: 0 }])).toBe(0.0099);
+    expect(routeRisk([{ risk: 1e-20 }, { risk: 1e-20 }])).toBeCloseTo(2e-20, 30);
+    expect(routeRisk([{ risk: 1 }, { risk: 0.2 }])).toBe(1);
+  });
+
+  test("a route whose risk equals the budget is offered", async () => {
+    const { r, body } = await planned({ riskBudget: 0.008 });
+    expect(r.status).toBe(200);
+    expect(body.risk).toBe(0.008);
+  });
+
+  test("a refusal without a body gives the general reason", () => {
+    expect(reasonOf({ status: 503, body: null })).toBe("the route check does not pass the route");
+    expect(reasonOf({ status: 422, body: { reason: 7 } })).toBe(
+      "the route check does not pass the route"
+    );
+    expect(reasonOf({ status: 422, body: { reason: "closed" } })).toBe("closed");
   });
 });
 

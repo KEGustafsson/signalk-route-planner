@@ -4,9 +4,18 @@ import type { CheckedLeg } from "./proof";
 
 /** A route's risk (plan §4.4), its budget, and the alternatives as a reply lists them. */
 
-/** The route's risk: the chance that some leg has UKC < 0, its legs taken as independent. */
+/**
+ * The route's risk: the chance that some leg has UKC < 0, its legs taken as independent. Summed
+ * as logarithms, so a probability far below 1e-16 is kept; a single risky leg's is its own, and
+ * the route's is never below its riskiest leg's.
+ */
 export function routeRisk(legs: readonly { risk: number }[]): number {
-  return 1 - legs.reduce((p, l) => p * (1 - l.risk), 1);
+  const risky = legs.map((l) => l.risk).filter((p) => p > 0);
+  if (risky.length <= 1) {
+    return risky[0] ?? 0;
+  }
+  const all = -Math.expm1(risky.reduce((s, p) => s + Math.log1p(-p), 0));
+  return Math.min(1, Math.max(all, ...risky));
 }
 
 /** Why a route over the risk budget is not offered, if it is over. */
@@ -20,9 +29,13 @@ export function overBudget(
     : undefined;
 }
 
-/** A refusal's reason. */
-export const reasonOf = (r: Reply): string =>
-  (r.body as { reason?: string }).reason ?? "the route check does not pass the route";
+/** A refusal's reason, when its body states one. */
+export function reasonOf(r: Reply): string {
+  const body: unknown = r.body;
+  const reason =
+    typeof body === "object" && body !== null ? (body as { reason?: unknown }).reason : undefined;
+  return typeof reason === "string" ? reason : "the route check does not pass the route";
+}
 
 interface Offered {
   route: { coordinates: LonLat[] };

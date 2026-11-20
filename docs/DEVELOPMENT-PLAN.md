@@ -305,8 +305,8 @@ the candidate route.
   route back to the margin. At weight 0 pulling is as in §4.1.
 - **Risk budget:** the product of each leg's (1 − P) stays above 1 − budget. Every offered route
   states its risk, 1 − Π(1 − P); a route over `riskBudget` is refused with both numbers.
-- **Alternatives:** shortest (α = 0), safest (α = 10, plus a fairway preference once the rules
-  below give one) and balanced (α = 2), each searched and proved as a plan of its own at the
+- **Alternatives:** shortest (α = 0), balanced (α = 2) and safest (α = 10, plus a fairway
+  preference once the rules below give one), each searched and proved as a plan of its own at the
   plan's work limit. The reply is the first within the budget, in that order, with every
   alternative listed by its length, risk, status and legs, or its reason; `sameAs` where one
   repeats an earlier route, and `dominatedBy` where one is no shorter and no less risky than an
@@ -350,8 +350,18 @@ the candidate route.
   "latestDeparture": "2026-11-18T19:00:00Z", // optional: wait for the tide up to this, ≤ 24 h
   "waitEnRoute": true, // optional, with latestDeparture: wait on the way too (§4.3 R3b)
   "riskWeight": 2, // optional, 0..100, default 0: the risk cost's α (§4.4)
-  "riskBudget": 0.01, // optional: refuse a route whose risk is over this
-  "alternatives": true // optional, not with riskWeight or latestDeparture (§4.4)
+  "riskBudget": 0.01 // optional: refuse a route whose risk is over this
+}
+```
+
+With `alternatives`, which plans at one departure and sets its own risk weights:
+
+```jsonc
+{
+  "from": [22.1, 60.2],
+  "to": [22.31, 60.27],
+  "riskBudget": 0.01,
+  "alternatives": true // not with riskWeight or latestDeparture (§4.4)
 }
 ```
 
