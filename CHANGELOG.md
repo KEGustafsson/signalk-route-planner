@@ -40,6 +40,10 @@ All notable changes to signalk-route-planner are documented here.
   cost per metre of α · P / threshold, so the route keeps away from the margin, and `riskBudget`
   refuses a route whose risk is over it. `alternatives: true` plans the shortest, balanced and
   safest routes, each proved, and offers the first within the budget with the others listed.
+- Air height: `airHeight` keeps the route off bridges and overhead cables the mast does not
+  clear at high water, as signalk-underkeel 0.8.0 checks them, and it keeps out of entry-prohibited
+  areas and traffic lanes sailed the wrong way. An older signalk-underkeel is refused an air
+  height.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
   index of the whole search region, or of the trip's least region (both ends with the search's
   least margin and a harbour stage around them) when that is too large to build: the chart box

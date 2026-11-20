@@ -314,13 +314,27 @@ the candidate route.
   in a narrow channel near the threshold are coarser than a leg's corridor; a larger weight can
   then find no safer route, and the listing says so rather than calling it safer. Alternatives
   are planned at one departure: not with `latestDeparture`.
-- **Air draft** from `design.airHeight`, or the plugin setting: blocked under a bridge or an
-  overhead cable or pipe whose clearance minus the water level rise above its datum is below air
-  draft plus margin. API v1 gains `features(bbox)` for the S-57 objects below.
-- **Rules:** `RESARE` with entry prohibited is blocked; `TSSLPT` lanes are crossed only near 90°
-  and followed only in their `ORIENT` direction; narrow `FAIRWY` paths are offset to the
-  starboard side (COLREG rule 9); `NAVLNE` and `RECTRC` leading lines get a cost discount; turns
-  get a small cost per turn.
+- **Air draft** from the request's `airHeight`, else signalk-underkeel's vessel (its Air height
+  setting or `design.airHeight`): blocked under a bridge or an overhead cable or pipe whose
+  clearance minus the water level rise above its datum is below air height plus 0.5 m.
+  signalk-underkeel holds every box, leg and route check to it, and to the hard rules below, at
+  the window's highest water (its plan §4.11, feature `objects`), so a square under a bridge too
+  low for the mast is never free, and its flags, `AIR_DRAFT` and `CLEARANCE_UNKNOWN`, are not
+  ones the fallback crosses. A request with an air height to a provider without `objects` is
+  refused (503) rather than planned past the bridges; a trip planned on an index the provider
+  prepared for it keeps the provider's `objects`. Sessions also list the chart objects in a box,
+  for the preferences below; signalk-underkeel's planning API (its plan §4.11) defines that
+  listing and its limits.
+- **Hard rules:** an area where entry is prohibited fails (`ENTRY_PROHIBITED`), and so does a leg
+  that sails a traffic lane against its direction rather than along it or across it
+  (`TSS_WRONG_WAY`). Both are signalk-underkeel's verdicts, by the tolerances its route check
+  defines (its plan §4.11 and `docs/HOW-IT-WORKS.md`), so the planner never judges a lane's
+  direction itself; the search crosses neither flag. A box in a lane has no course, so the search
+  may plan along a lane the wrong way, and the proof refuses it at the leg. Flags that only name water (`TRAFFIC_LANE`, `ENTRY_RESTRICTED`,
+  `AREA_TO_BE_AVOIDED`) are crossed as their verdicts allow.
+- **Preferences (R4c):** narrow `FAIRWY` paths are offset to the starboard side (COLREG rule 9);
+  `NAVLNE` and `RECTRC` leading lines get a cost discount; turns get a small cost per turn; a
+  search that keeps out of a lane's wrong way.
 - **Finnish fairway data:** Finnish Transport Infrastructure Agency open data (fairway areas and
   navigation lines, CC BY 4.0) as preference lines, read through underkeel's WFS client.
 - **Own tracks:** passages the boat has logged (underkeel's living chart) get a cost discount at
@@ -347,6 +361,7 @@ the candidate route.
   "xteLimit": 30, // optional
   "probability": 0.01, // optional
   "draft": 1.9, // optional override
+  "airHeight": 17, // optional, metres above the waterline; default underkeel's vessel
   "latestDeparture": "2026-11-18T19:00:00Z", // optional: wait for the tide up to this, ≤ 24 h
   "waitEnRoute": true, // optional, with latestDeparture: wait on the way too (§4.3 R3b)
   "riskWeight": 2, // optional, 0..100, default 0: the risk cost's α (§4.4)

@@ -29,6 +29,12 @@ export interface SessionParams {
   xteLimit?: number;
   probability?: number;
   draft?: number;
+  /**
+   * The boat's height above the waterline, metres, in place of the vessel's: with feature
+   * "objects", boxes and legs under a bridge or overhead cable too low at the window's highest
+   * water fail (`AIR_DRAFT`).
+   */
+  airHeight?: number;
 }
 
 /** What the search asks of the chart: the part of a session it uses. */

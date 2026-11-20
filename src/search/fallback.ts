@@ -25,8 +25,10 @@ export const UNVERIFIED_WEIGHT = 100;
  * The only flags the fallback crosses: they say how the depth was charted or how the
  * water level was taken, not that the water is closed. Any other flag closes the square:
  * `LAND`, `NO_COVERAGE`, `BOX_TOO_LARGE` (never queried), `TOO_LONG_FOR_ONE_LEG` (never
- * checked) and any flag not listed here, such as an entry-prohibited area or a traffic
- * lane crossed the wrong way (AGENTS.md invariant 4).
+ * checked) and any flag not listed here, such as an entry-prohibited area (`ENTRY_PROHIBITED`),
+ * a traffic lane crossed the wrong way (`TSS_WRONG_WAY`, AGENTS.md invariant 4), or a bridge
+ * or overhead cable too low for the boat or of unknown clearance (`AIR_DRAFT`,
+ * `CLEARANCE_UNKNOWN`).
  */
 const CROSSABLE = new Set([
   "SWEPT",
@@ -34,7 +36,14 @@ const CROSSABLE = new Set([
   "DREDGED",
   "LIVECHART_ADJUSTED",
   "NOT_FOR_NAVIGATION",
-  "WATER_LEVEL_FALLBACK"
+  "WATER_LEVEL_FALLBACK",
+  // Named by the route check and changing no status: a traffic lane, which a leg is held to
+  // when it crosses it, restricted areas that only ask for care, and a clearance passed on the
+  // rise signalk-underkeel allows where it cannot relate it to the water level.
+  "TRAFFIC_LANE",
+  "CLEARANCE_RISE_ASSUMED",
+  "ENTRY_RESTRICTED",
+  "AREA_TO_BE_AVOIDED"
 ]);
 
 /** True when the fallback may cross water with this verdict. */

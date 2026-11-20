@@ -12,6 +12,8 @@ export interface PlanRequest {
   xteLimit?: number;
   probability?: number;
   draft?: number;
+  /** The boat's height above the waterline, metres; absent, signalk-underkeel's vessel's. */
+  airHeight?: number;
   /** Flags the search may plan through; the route then comes back `unverified`. */
   accept?: string[];
   /** When no route passes, the lowest risk-weighted route through charted water, its legs marked. */
@@ -193,6 +195,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const xteLimit = inRange(b, "xteLimit", 0, 1000, " m", errors);
   const probability = inRange(b, "probability", 0, 0.5, "", errors, true);
   const draft = inRange(b, "draft", 0.01, 30, " m", errors);
+  const airHeight = inRange(b, "airHeight", 0.1, 100, " m", errors);
   const { accept, fallback, waitEnRoute } = searchOptions(b, errors);
   const { riskWeight, riskBudget, alternatives } = riskOptions(b, errors);
   if (errors.length > 0 || !from || !to) {
@@ -209,6 +212,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
         xteLimit,
         probability,
         draft,
+        airHeight,
         accept,
         fallback,
         waitEnRoute,

@@ -96,6 +96,12 @@ route check passes every leg as the boat reaches it (`departure`, `gate`). The p
 boat may wait on the way, in water with room to swing at anchor, as long in all as it may wait to
 leave (`gate.waits`): for two bars too far apart to cross in one high water.
 
+`airHeight` (m above the waterline; unset, signalk-underkeel's Air height or Signal K
+`design.airHeight`) keeps the route off bridges and overhead cables the mast does not clear by
+0.5 m at the highest water of the trip. signalk-underkeel holds every leg to them and to its hard
+rules, entry-prohibited areas and traffic lanes sailed the wrong way, and the planner never trades
+them for distance; a signalk-underkeel too old to check bridges is refused an air height.
+
 Every offered route states its `risk`: the chance that some leg has UKC < 0, its legs taken as
 independent. `riskWeight` (0 to 100, default 0, the shortest route) adds a cost per metre in
 proportion to the water's P(UKC < 0) over the accepted probability, so the route keeps away from

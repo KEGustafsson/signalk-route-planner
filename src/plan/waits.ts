@@ -101,7 +101,8 @@ async function waitingPlaces(
     until: horizon.end,
     speed: g.speed,
     ...(g.probability !== undefined && { probability: g.probability }),
-    ...(g.draft !== undefined && { draft: g.draft })
+    ...(g.draft !== undefined && { draft: g.draft }),
+    ...(g.airHeight !== undefined && { airHeight: g.airHeight })
   };
   const r = await api.session(params, ctx.signal, async (s) => {
     try {

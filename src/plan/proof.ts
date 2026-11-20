@@ -14,6 +14,7 @@ export interface ProofInput {
   speed: number;
   probability?: number;
   draft?: number;
+  airHeight?: number;
 }
 
 /** Stands in for the flags of a leg that is not `ok` but came without any: closed water. */
@@ -70,7 +71,12 @@ function checkBody(input: ProofInput, part: Part, departure: number): unknown {
     speed: input.speed,
     ...(part.xteLimit !== undefined && { xteLimit: part.xteLimit }),
     ...(input.probability !== undefined && { probability: input.probability }),
-    ...(input.draft !== undefined && { vessel: { draft: input.draft } })
+    ...((input.draft !== undefined || input.airHeight !== undefined) && {
+      vessel: {
+        ...(input.draft !== undefined && { draft: input.draft }),
+        ...(input.airHeight !== undefined && { airHeight: input.airHeight })
+      }
+    })
   };
 }
 

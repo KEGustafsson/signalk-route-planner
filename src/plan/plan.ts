@@ -14,6 +14,7 @@ import { stages } from "./stages";
 import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
 import { listing, overBudget, reasonOf, routeRisk } from "./risk";
+import { missingFeature } from "./capabilities";
 
 /**
  * One plan (plan §4.1): the search in planning sessions (`stages.ts`), then the proof:
@@ -29,6 +30,8 @@ export interface PlanInput {
   xteLimit?: number;
   probability?: number;
   draft?: number;
+  /** The boat's height above the waterline, metres: bridges and overhead cables are held to it. */
+  airHeight?: number;
   /** Flags the search may plan through (`search/passes.ts`); the route stays `unverified`. */
   accept?: readonly string[];
   /** When no route passes, return the lowest risk-weighted route through charted water (`search/fallback.ts`). */
@@ -154,7 +157,8 @@ async function planAt(
     speed: input.speed,
     xteLimit: input.xteLimit,
     probability: input.probability,
-    draft: input.draft
+    draft: input.draft,
+    ...(input.airHeight !== undefined && { airHeight: input.airHeight })
   };
   const riskWeight = input.riskWeight ?? opts.riskWeight;
   const st = {
@@ -405,6 +409,10 @@ export async function plan(
   }
   if (d < 1) {
     return { status: 400, body: { errors: ["from and to are the same point"] } };
+  }
+  const missing = missingFeature(api, input);
+  if (missing) {
+    return missing;
   }
   if (input.alternatives === true) {
     return alternatives(api, input, signal, now, opts);

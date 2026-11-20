@@ -39,6 +39,12 @@ export interface Chart {
   tidal?: (Circle & { needs: number })[];
   /** The water level at time t, metres; 0 when absent. */
   tide?: (t: number) => number;
+  /**
+   * Bridges, each with its clearance above the water level's datum, metres: a boat whose air
+   * height plus 0.5 m is above the clearance less the highest water while it is there fails
+   * (`AIR_DRAFT`), as signalk-underkeel holds it.
+   */
+  bridges?: (Circle & { clearance: number })[];
   /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
   closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
@@ -65,6 +71,24 @@ function rectDist(px: number, py: number, x0: number, y0: number, x1: number, y1
   return Math.hypot(dx, dy);
 }
 
+/** The highest water level over [start, end], sampled each minute and at the end. */
+function highest(chart: Chart, w?: { start: number; end: number }): number {
+  if (!chart.tide || !w) {
+    return chart.tide?.(0) ?? 0;
+  }
+  let h = chart.tide(w.end);
+  for (let t = w.start; t < w.end; t += 60_000) {
+    h = Math.max(h, chart.tide(t));
+  }
+  return h;
+}
+
+/** The boat's air height and the highest water a verdict holds for, when it has one. */
+export interface Air {
+  height: number;
+  level: number;
+}
+
 /** The lowest water level over [start, end], sampled each minute and at the end. */
 function lowest(chart: Chart, w?: { start: number; end: number }): number {
   if (!chart.tide || !w) {
@@ -81,7 +105,15 @@ function lowest(chart: Chart, w?: { start: number; end: number }): number {
  * What water within `near` of the corridor gets at water level `level`: land, closed,
  * shallows (a tidal shoal without water enough among them), unverified or clear.
  */
-function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
+function judge(chart: Chart, near: (c: Circle) => boolean, level = 0, air?: Air): Verdict {
+  const v = judgeDepth(chart, near, level);
+  const low = (chart.bridges ?? []).some(
+    (b) => air !== undefined && near(b) && b.clearance - air.level < air.height + 0.5
+  );
+  return low ? { status: "fail", risk: v.risk, flags: [...v.flags, "AIR_DRAFT"] } : v;
+}
+
+function judgeDepth(chart: Chart, near: (c: Circle) => boolean, level: number): Verdict {
   // Every flag the corridor meets is reported, as the route check reports them all; the
   // worst status decides.
   const land = chart.obstacles.some(near);
@@ -112,10 +144,17 @@ function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
 }
 
 /** The verdict of the leg a → b on `chart` with corridor half-width r. */
-export function legVerdict(chart: Chart, a: LonLat, b: LonLat, r: number, level = 0): Verdict {
+export function legVerdict(
+  chart: Chart,
+  a: LonLat,
+  b: LonLat,
+  r: number,
+  level = 0,
+  air?: Air
+): Verdict {
   const pa = xy(a);
   const pb = xy(b);
-  return judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r, level);
+  return judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r, level, air);
 }
 
 /** The status of the leg a → b on `chart`, ignoring a chart marked not for navigation. */
@@ -138,6 +177,10 @@ export function syntheticApi(
   const widthFor = (xteLimit: number | undefined): number =>
     xteLimit !== undefined ? xteLimit + 10 : (chart.halfWidth ?? 40);
   const per = over.workPerQuery ?? 100;
+  const airOver = (
+    height: number | undefined,
+    w: { start: number; end: number }
+  ): Air | undefined => (height === undefined ? undefined : { height, level: highest(chart, w) });
   const api: Synthetic = {
     version: 1,
     provider: "synthetic",
@@ -163,7 +206,8 @@ export function syntheticApi(
           const y0 = Math.min(...corners.map((c) => c[1]));
           const y1 = Math.max(...corners.map((c) => c[1]));
           const level = lowest(chart, w ?? whole);
-          return judge(chart, (c) => rectDist(c.x, c.y, x0, y0, x1, y1) < c.r + r, level);
+          const air = airOver(params.airHeight, w ?? whole);
+          return judge(chart, (c) => rectDist(c.x, c.y, x0, y0, x1, y1) < c.r + r, level, air);
         },
         segment(a, b, w) {
           // As signalk-underkeel: a leg's corridor over 25 km² is refused.
@@ -171,7 +215,8 @@ export function syntheticApi(
             throw new RangeError("leg corridor over 25 km²");
           }
           work += per;
-          return legVerdict(chart, a, b, r, lowest(chart, w ?? whole));
+          const air = airOver(params.airHeight, w ?? whole);
+          return legVerdict(chart, a, b, r, lowest(chart, w ?? whole), air);
         },
         work: () => work,
         pause: () =>
@@ -194,6 +239,7 @@ export function syntheticApi(
         xteLimit?: number;
         departure?: string;
         speed?: number;
+        vessel?: { airHeight?: number };
       };
       const coords = req.route.coordinates;
       const r = widthFor(req.xteLimit);
@@ -204,7 +250,8 @@ export function syntheticApi(
         // Each leg at the water level while the boat is on it.
         const start = at;
         at += (haversine(a, b) / speed) * 1000;
-        const v = legVerdict(chart, a, b, r, lowest(chart, { start, end: at }));
+        const air = airOver(req.vessel?.airHeight, { start, end: at });
+        const v = legVerdict(chart, a, b, r, lowest(chart, { start, end: at }), air);
         const status = v.status;
         return {
           index: i,

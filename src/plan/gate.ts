@@ -23,6 +23,7 @@ export interface GateInput {
   speed: number;
   probability?: number;
   draft?: number;
+  airHeight?: number;
 }
 
 /** The departure, or why there is none, with the planning API work the timing did. */
@@ -105,7 +106,8 @@ export async function passWindows(
       speed: g.speed,
       ...(width !== undefined && { xteLimit: width }),
       ...(g.probability !== undefined && { probability: g.probability }),
-      ...(g.draft !== undefined && { draft: g.draft })
+      ...(g.draft !== undefined && { draft: g.draft }),
+      ...(g.airHeight !== undefined && { airHeight: g.airHeight })
     };
     // The session's work, taken when its job ends however it ends: a job the abort stops
     // mid-way has done work too.
