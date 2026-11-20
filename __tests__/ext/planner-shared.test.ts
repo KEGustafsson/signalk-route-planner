@@ -244,6 +244,8 @@ describe("panel model", () => {
     expect(P.hasPosition(undefined)).toBe(false);
     expect(P.hasPosition({ longitude: Number.NaN, latitude: 59.9 })).toBe(false);
     expect(P.hasPosition({ latitude: 59.9 })).toBe(false);
+    expect(P.hasPosition({ longitude: null, latitude: null })).toBe(false);
+    expect(P.hasPosition({ longitude: "21.9", latitude: "59.9" })).toBe(false);
   });
 
   test("the worst of check statuses, ok for none", () => {
@@ -253,5 +255,7 @@ describe("panel model", () => {
     expect(P.worstStatus(["fail", "unverified"])).toBe("fail");
     // A status this panel does not know is never read as passing.
     expect(P.worstStatus(["ok", "something new"])).toBe("something new");
+    expect(P.worstStatus(["something new", "fail"])).toBe("fail");
+    expect(P.worstStatus(["something new", "marginal"])).toBe("something new");
   });
 });

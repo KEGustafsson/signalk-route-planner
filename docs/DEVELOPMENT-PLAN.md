@@ -373,7 +373,8 @@ the candidate route.
 - Interactive editing: when exactly one point of the route the panel wrote moves (`route.dirty`
   from the host), the legs from the point before it to it and from it to the point after are
   planned again, each as a plan of its own, and spliced in; the dragged point stays where it was
-  left. A leg that cannot be planned leaves the drag as it is, with the reason, and a route
+  left. The leg after it is checked from the first one's `arrival`, when the boat reaches the
+  point, without a wait there. A leg that cannot be planned leaves the drag as it is, with the reason, and a route
   changed again meanwhile is not written. The panel notes the whole route is then to be planned
   again for its check.
 - `routePlan` in the `navigationSafety` services contract: the manifest offers it
@@ -431,6 +432,7 @@ Reply 200:
     ]
   },
   "length": 14250, // metres
+  "arrival": "…", // when the boat reaches the end: departure, waits and sailing time
   "risk": 0.0021, // 1 − Π(1 − P) over the legs
   "riskWeight": 0,
   "status": "ok", // worst leg status
