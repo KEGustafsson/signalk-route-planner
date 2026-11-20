@@ -21,6 +21,12 @@ const has = (c) => client.hasCapability(c);
 let boat;
 /** The points the panel last wrote into a route: a drag of one of them is planned again. */
 let written;
+/**
+ * The planning in progress: a plan, a choice of alternative or a drag's re-plan. Each takes the
+ * next number and, once its replies are in, changes the route and the panel only while it is
+ * still the latest, so a slow one never undoes what a later one did.
+ */
+let latestOp = 0;
 
 function show(kind, text) {
   result.className = kind;
@@ -138,10 +144,16 @@ async function planRequest(request) {
   }
 }
 
-/** Writes `coordinates` into the route, unless it changed since `route` was read. */
-async function write(routeId, route, coordinates) {
+/**
+ * Writes `coordinates` into the route, unless it changed since `route` was read or a later
+ * planning (`op`) took over.
+ */
+async function write(routeId, route, coordinates, op) {
   // Planning can wait minutes for the chart index: a route edited meanwhile is not overwritten.
   const now = await client.call("route.get", { routeId });
+  if (op !== latestOp) {
+    return false;
+  }
   if (!P.samePoints(route.points, now && now.points)) {
     show("unverified", "Not written: the route changed while it was planned. Plan it again.");
     return false;
@@ -153,7 +165,16 @@ async function write(routeId, route, coordinates) {
   return true;
 }
 
-/** The offered alternatives, each with a button that writes it into the route instead. */
+/** The alternatives and their overlay withdrawn: the route they were planned for has changed. */
+function dropChoices() {
+  choices.replaceChildren();
+  void drawAlternatives([], undefined);
+}
+
+/**
+ * The offered alternatives, each with a button that writes it into the route instead. `route`
+ * is the route as this set of alternatives last wrote it: one changed since is not overwritten.
+ */
 function showChoices(routeId, route, body) {
   const offered = (body.alternatives || []).map((a) => {
     const row = document.createElement("div");
@@ -165,7 +186,8 @@ function showChoices(routeId, route, body) {
       use.type = "button";
       use.textContent = "Use";
       use.addEventListener("click", async () => {
-        if (await write(routeId, written ? { points: written.points } : route, a.route.coordinates)) {
+        const op = ++latestOp;
+        if (await write(routeId, route, a.route.coordinates, op)) {
           body.chosen = a.name;
           showLegs(a.legs || []);
           showChoices(routeId, { points: written.points }, body);
@@ -185,11 +207,19 @@ async function planSelected() {
   if (!routeId) {
     return;
   }
+  const op = ++latestOp;
   button.disabled = true;
   table.hidden = true;
-  choices.replaceChildren();
+  dropChoices();
   show("muted", "Planning…");
   try {
+    if ($("boat").checked && !P.hasPosition(boat)) {
+      show(
+        "fail",
+        "Not planned: no boat position has come from Signal K. Untick Start from the boat to plan from the route's first point."
+      );
+      return;
+    }
     const route = await client.call("route.get", { routeId });
     const ends = $("boat").checked ? P.fromBoat(P.endsOf(route.points), boat) : P.endsOf(route.points);
     if (!ends) {
@@ -197,6 +227,9 @@ async function planSelected() {
       return;
     }
     const { status, body } = await planRequest(requestFor(ends));
+    if (op !== latestOp) {
+      return;
+    }
     if (P.preparingWait(status, body, null) !== null) {
       show("unverified", "Not planned: the chart index for this trip's region is still being built; plan again later.");
       return;
@@ -204,14 +237,16 @@ async function planSelected() {
     const s = P.summary(status, body);
     show(s.kind, s.text);
     await drawAlternatives(body.alternatives, body.chosen);
-    if (status === 200 && (await write(routeId, route, body.route.coordinates))) {
+    if (status === 200 && (await write(routeId, route, body.route.coordinates, op))) {
       showLegs(body.check.legs);
       if (body.alternatives) {
         showChoices(routeId, { points: written.points }, body);
       }
     }
   } catch (err) {
-    show("unverified", "Not planned: the chart host or the planner did not answer.");
+    if (op === latestOp) {
+      show("unverified", "Not planned: the chart host or the planner did not answer.");
+    }
     console.warn("route planner", err);
   } finally {
     button.disabled = false;
@@ -220,7 +255,9 @@ async function planSelected() {
 
 /**
  * A waypoint dragged on the route the panel wrote: the legs on either side of it planned again
- * and spliced in. A drag that cannot be planned stays as the user left it, with the reason.
+ * and spliced in, with their own checks. A drag that cannot be planned stays as the user left
+ * it, with the reason. Only those legs are checked, so the panel never calls the whole route
+ * passed: it asks for a plan of the whole route.
  */
 async function replanDrag(routeId) {
   if (!$("replan").checked || !written || written.routeId !== routeId) {
@@ -231,29 +268,47 @@ async function replanDrag(routeId) {
   if (i < 0) {
     return;
   }
+  const op = ++latestOp;
   const pts = now.points;
+  // What was shown was for the route before the drag.
+  table.hidden = true;
+  dropChoices();
   const leg = async (a, b) => {
     const ends = { from: pts[a].position, to: pts[b].position };
     const { status, body } = await planRequest(requestFor(ends, false));
-    return status === 200 ? body.route.coordinates : P.summary(status, body).text;
+    return status === 200
+      ? { coordinates: body.route.coordinates, status: body.status, legs: body.check.legs }
+      : P.summary(status, body).text;
   };
+  const none = { coordinates: [], status: "ok", legs: [] };
   show("muted", "Planning the legs beside the moved waypoint…");
-  const left = i > 0 ? await leg(i - 1, i) : [];
-  const right = i < pts.length - 1 ? await leg(i, i + 1) : [];
+  const left = i > 0 ? await leg(i - 1, i) : none;
+  const right = i < pts.length - 1 ? await leg(i, i + 1) : none;
+  if (op !== latestOp) {
+    return;
+  }
   const failed = [left, right].find((l) => typeof l === "string");
   if (failed) {
     written = { routeId, points: pts };
     show("unverified", "The moved waypoint stays as you left it, the legs beside it unchecked: " + failed);
     return;
   }
-  const points = P.spliceLegs(pts, i, left, right);
+  const points = P.spliceLegs(pts, i, left.coordinates, right.coordinates);
   const again = await client.call("route.get", { routeId });
-  if (!P.samePoints(pts, again && again.points)) {
+  if (op !== latestOp || !P.samePoints(pts, again && again.points)) {
     return;
   }
   written = { routeId, points };
   await client.call("route.replace", { routeId, points });
-  show("ok", "Planned the legs beside the moved waypoint again. Plan the whole route to check it all.");
+  const status = P.worstStatus([left.status, right.status]);
+  showLegs([...left.legs, ...right.legs]);
+  show(
+    status === "ok" ? "muted" : status,
+    "Planned the legs beside the moved waypoint again: they are " +
+      status +
+      (status === "ok" ? "" : " (see the legs below)") +
+      ". The rest of the route is not checked again: plan the whole route to check it all."
+  );
 }
 
 button.addEventListener("click", () => void planSelected());

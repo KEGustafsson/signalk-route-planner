@@ -157,7 +157,9 @@ async function main() {
     await page.screenshot({ path: path.join(DATA, "panel-planned.png") });
 
     const use = panel.locator("#choices button").first();
-    if ((await use.count()) > 0) {
+    const usable = (await use.count()) > 0 && (await use.isEnabled());
+    check(usable, "an alternative not written is offered with Use");
+    if (usable) {
       await use.click();
       await result.filter({ hasText: /^Wrote the / }).waitFor({ timeout: 30_000 });
       state = await trial();
@@ -173,7 +175,12 @@ async function main() {
     const k = 1;
     const moved = [before[k].position[0], before[k].position[1] + 0.0002];
     await page.evaluate(([i, p]) => globalThis.trial.drag("trip", i, p), [k, moved]);
-    await result.filter({ hasText: /beside the moved waypoint/ }).waitFor({ timeout: 300_000 });
+    // The end of the re-plan, done or not, and not the message while it runs.
+    await result
+      .filter({
+        hasText: /^Planned the legs beside the moved waypoint again|^The moved waypoint stays/
+      })
+      .waitFor({ timeout: 300_000 });
     const after = (await trial()).routes[0].points;
     const replanned = await result.textContent();
     check(
@@ -181,7 +188,7 @@ async function main() {
       `the moved waypoint stays where it was dragged: ${replanned}`
     );
     check(
-      /^Planned the legs beside/.test(replanned),
+      /^Planned the legs beside the moved waypoint again/.test(replanned),
       `the legs beside it were planned again: ${before.length} → ${after.length} points`
     );
     await page.screenshot({ path: path.join(DATA, "panel-replanned.png") });

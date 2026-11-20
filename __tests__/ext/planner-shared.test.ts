@@ -238,4 +238,20 @@ describe("panel model", () => {
     expect(P.fromBoat(ends, undefined)).toEqual(ends);
     expect(P.fromBoat(null, { longitude: 21.9, latitude: 59.9 })).toBeNull();
   });
+
+  test("a boat position is known only with a finite longitude and latitude", () => {
+    expect(P.hasPosition({ longitude: 21.9, latitude: 59.9 })).toBe(true);
+    expect(P.hasPosition(undefined)).toBe(false);
+    expect(P.hasPosition({ longitude: Number.NaN, latitude: 59.9 })).toBe(false);
+    expect(P.hasPosition({ latitude: 59.9 })).toBe(false);
+  });
+
+  test("the worst of check statuses, ok for none", () => {
+    expect(P.worstStatus([])).toBe("ok");
+    expect(P.worstStatus(["ok", "marginal"])).toBe("marginal");
+    expect(P.worstStatus(["marginal", "unverified", "ok"])).toBe("unverified");
+    expect(P.worstStatus(["fail", "unverified"])).toBe("fail");
+    // A status this panel does not know is never read as passing.
+    expect(P.worstStatus(["ok", "something new"])).toBe("something new");
+  });
 });
