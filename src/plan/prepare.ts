@@ -96,6 +96,9 @@ export function tripLimits(
   return limitsFor(opts, d, longTrip(api, d, opts) || inCorridor(prepared));
 }
 
+/** The features a session has on any index, as the provider's own: holding legs to bridges. */
+const SESSION_FEATURES = new Set(["objects"]);
+
 /** The planning APIs over a corridor's index (`onPrepared`), for `inCorridor`. */
 const CORRIDORS = new WeakSet<PlanningApiV1>();
 
@@ -113,9 +116,12 @@ export function onPrepared(
   p: Prepared,
   corridor?: readonly Bbox[]
 ): PlanningApiV1 {
+  // Of the provider's features, those a session over the prepared index still serves.
+  const features = api.features?.filter((f) => SESSION_FEATURES.has(f));
   const over: PlanningApiV1 = {
     version: 1,
     provider: api.provider,
+    ...(features && { features }),
     unavailable: () => api.unavailable(),
     coverage: () => p.coverage,
     defaults: () => api.defaults(),

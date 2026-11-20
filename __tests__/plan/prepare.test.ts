@@ -309,6 +309,29 @@ describe("/plan with prepare", () => {
     expect(p.calls).toHaveLength(1);
   });
 
+  test("on the prepared index, a provider that checks bridges plans an air height", async () => {
+    for (const [features, status] of [
+      [["prepare", "objects"], 200],
+      [["prepare"], 503]
+    ] as const) {
+      const p = preparing(syntheticApi({ obstacles: [] }));
+      g[PLANNING_API] = { ...p.api, features };
+      const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+      const body = { from: at(0, 0), to: at(5000, 0), airHeight: 17 };
+      await api.plan(body, new AbortController().signal);
+      p.settle();
+      await flush();
+      const again = api.plan(body, new AbortController().signal);
+      await flush();
+      p.settle();
+      const r = await again;
+      expect([features, r.status]).toEqual([features, status]);
+      if (status === 503) {
+        expect(r.body).toMatchObject({ errors: [expect.stringMatching(/does not check bridges/)] });
+      }
+    }
+  });
+
   test("the trip's index is prepared for the request's draft", async () => {
     const p = preparing(syntheticApi({ obstacles: [] }));
     g[PLANNING_API] = p.api;
