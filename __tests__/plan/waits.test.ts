@@ -2,6 +2,7 @@ import type { LonLat } from "../../src/foundation/geo";
 import { parsePlanRequest } from "../../src/api/plan-request";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
+import { leaveTimes } from "../../src/plan/waits";
 import type { PlanningApiV1 } from "../../src/oracle/contract";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, syntheticApi, xy } from "../helpers/synthetic-oracle";
@@ -176,6 +177,16 @@ describe("waiting en route", () => {
     expect(r.status).toBe(422);
     expect(body.route).toBeUndefined();
     expect(body.reason).toBe("the index is rebuilding");
+  });
+
+  test("a wait may end on the boundary a leg ahead opens at, or just past it", () => {
+    const SLOT = 15 * 60_000;
+    // A gated leg 5 minutes ahead of the place: leave 10 minutes past a boundary to start it on
+    // the next one, and 1 ms later to start it past it whatever the sums of sailing times do.
+    const t = leaveTimes(0, 2 * SLOT, 0, [5 * 60_000]);
+    expect(t).toEqual([10 * 60_000, 10 * 60_000 + 1, 25 * 60_000, 25 * 60_000 + 1]);
+    // The place's own leg (no sailing ahead) on the boundaries alone.
+    expect(leaveTimes(0, 2 * SLOT, 0, [0])).toEqual([SLOT, 2 * SLOT]);
   });
 
   test("waitEnRoute is a boolean and needs a latest departure", () => {
