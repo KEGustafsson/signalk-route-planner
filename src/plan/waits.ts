@@ -2,7 +2,6 @@ import type { LonLat } from "../foundation/geo";
 import { EARTH_RADIUS, haversine, wrapLon } from "../foundation/geo";
 import type { PlanningApiV1, Window } from "../oracle/contract";
 import type { PassRule } from "../search/passes";
-import { passes } from "../search/passes";
 import type { GateInput, Leg } from "./gate";
 import { legsOf, passWindows, SLOT_MS, slotsOver, WORK } from "./gate";
 import { isBerth } from "./proof";
@@ -11,11 +10,12 @@ import type { Part } from "./stages";
 /**
  * Waiting en route (plan §4.3, R3b): when no single departure passes every gated leg, the
  * boat may wait for the water on the way, at places along the route with room to swing.
- * A place is one the planning API passes, a box `swing` metres about it, at the lowest water
- * of the whole horizon, so any wait there is safe. Waiting is FIFO, so the earliest arrival
- * over the slot grid is exact: the search below keeps every time the boat may leave each
- * place, as signalk-underkeel judges each leg at the lowest water of the slots it is sailed in.
- * The boat waits at most `latest − departure` in all, at the start and on the way.
+ * A place is one where the planning API finds a box `swing` metres about it `ok`, verified
+ * and passing, at the lowest water of the whole horizon, so any wait there is safe. Waiting is
+ * FIFO, so the earliest arrival is exact: the search below keeps each time the boat may leave
+ * each place that brings a gated leg ahead onto a slot boundary, as signalk-underkeel judges
+ * each leg at the lowest water of the slots it is sailed in. The boat waits at most
+ * `latest − departure` in all, at the start and on the way.
  */
 
 export interface WaitInput extends GateInput {
@@ -33,7 +33,8 @@ export interface Wait {
 
 export type Scheduled =
   | { ok: true; departure: number; waits: Wait[]; parts: Part[]; gated: number[]; work: number }
-  | { ok: false; reason: string; work: number };
+  /** `stopped`: the timing did not finish (its work limit, or the planning API's error). */
+  | { ok: false; reason: string; work: number; stopped?: true };
 
 const DEG = Math.PI / 180;
 
@@ -115,7 +116,8 @@ async function waitingPlaces(
           return WORK;
         }
         const [sw, ne] = boxAbout(leg.a, g.swing);
-        places.push(passes(s.box(sw, ne, horizon), ctx.rule));
+        // Verified water alone: no flag the request accepts makes a wait in unchecked water safe.
+        places.push(s.box(sw, ne, horizon).status === "ok");
         await s.pause();
       }
       return places;
@@ -141,13 +143,19 @@ interface Leave {
   departure: number;
 }
 
+/**
+ * Times built up leg by leg are sums of floating-point sailing times: a leg meant to start on a
+ * slot boundary can land a few microseconds before it. Under a millisecond it is on it.
+ */
+const ON_BOUNDARY_MS = 1;
+
 /** Whether `leg` is open from `t`: not gated, or every slot it is sailed in passes it. */
 function open(origin: number, leg: Leg, t: number, w: readonly boolean[] | undefined): boolean {
   if (!w) {
     return true;
   }
   const d = leg.to - leg.from;
-  return slotsOver(origin, t, t + d).every((k) => w[k] === true);
+  return slotsOver(origin, t + ON_BOUNDARY_MS, t + d).every((k) => w[k] === true);
 }
 
 /**
@@ -171,7 +179,7 @@ function leaves(
     const here = arrivals(out[j - 1] as Leave[], legs[j - 1] as Leg, gated.get(j - 1), origin);
     if (places[j] === true && here.length > 0) {
       // The boat waits at most `latest − departure` in all, so it leaves by then plus its sailing.
-      waitsAfter(here, g.latest + (legs[j] as Leg).from, origin);
+      waitsAfter(here, g.latest + (legs[j] as Leg).from, origin, offsets(legs, places, gated, j));
     }
     out.push(here);
     if (here.length === 0) {
@@ -203,19 +211,50 @@ function arrivals(
   return [...byArrival.values()].sort((a, b) => a.arrive - b.arrive);
 }
 
-/** Adds to `here` (arrivals, earliest first) leaving at each slot boundary after one, to `last`. */
-function waitsAfter(here: Leave[], last: number, origin: number): void {
+/**
+ * The sailing times from place `j` to the start of each gated leg before the next place the
+ * boat may wait at. A leg is opened as its start passes a slot boundary, so the earliest time
+ * to leave `j` that opens them all brings one of them onto a boundary.
+ */
+function offsets(
+  legs: readonly Leg[],
+  places: readonly boolean[],
+  gated: ReadonlyMap<number, boolean[]>,
+  j: number
+): number[] {
+  const out = new Set<number>([0]);
+  const from = (legs[j] as Leg).from;
+  for (let k = j; k < legs.length && (k === j || places[k] !== true); k++) {
+    if (gated.has(k)) {
+      out.add((legs[k] as Leg).from - from);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Adds to `here` (arrivals, earliest first) leaving at each time up to `last`, after one, that
+ * brings a gated leg ahead onto a slot boundary (`offsets`).
+ */
+function waitsAfter(here: Leave[], last: number, origin: number, ahead: readonly number[]): void {
   const direct = new Set(here.map((l) => l.leave));
+  const first = (here[0] as Leave).arrive;
+  const times = new Set<number>();
+  for (const d of ahead) {
+    for (let k = Math.floor((first + d - origin) / SLOT_MS) + 1; ; k++) {
+      const t = origin + k * SLOT_MS - d;
+      if (t > last) {
+        break;
+      }
+      if (t > first && !direct.has(t)) {
+        times.add(t);
+      }
+    }
+  }
   const n = here.length;
   let best: Leave | undefined;
   let next = 0;
-  const first = here[0] as Leave;
-  for (
-    let k = Math.floor((first.arrive - origin) / SLOT_MS) + 1;
-    origin + k * SLOT_MS <= last;
-    k++
-  ) {
-    const t = origin + k * SLOT_MS;
+  for (const t of [...times].sort((a, b) => a - b)) {
     while (next < n && (here[next] as Leave).arrive < t) {
       const a = here[next] as Leave;
       if (!best || a.departure > best.departure) {
@@ -223,7 +262,7 @@ function waitsAfter(here: Leave[], last: number, origin: number): void {
       }
       next++;
     }
-    if (best && !direct.has(t)) {
+    if (best) {
       here.push({ ...best, leave: t });
     }
   }
@@ -288,13 +327,13 @@ export async function scheduleWithWaits(
   const horizon: Window = { start: origin, end: g.latest + trip + SLOT_MS };
   const placed = await waitingPlaces(api, g, legs, horizon, ctx);
   if ("reason" in placed) {
-    return { ok: false, reason: placed.reason, work: placed.work };
+    return { ok: false, reason: placed.reason, work: placed.work, stopped: true };
   }
   let work = placed.work;
   const windows = await passWindows(api, g, legs, horizon, { ...ctx, budget: ctx.budget - work });
   work += windows.work;
   if ("reason" in windows) {
-    return { ok: false, reason: windows.reason, work };
+    return { ok: false, reason: windows.reason, work, stopped: true };
   }
   const { gated } = windows;
   const table = leaves(g, legs, placed.places, gated, origin);

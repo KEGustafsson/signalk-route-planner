@@ -2,6 +2,7 @@ import type { LonLat } from "../../src/foundation/geo";
 import { parsePlanRequest } from "../../src/api/plan-request";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
+import type { PlanningApiV1 } from "../../src/oracle/contract";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
@@ -43,8 +44,10 @@ function twoBars(narrow = false): Chart {
 
 interface Body {
   status: string;
+  reason?: string;
+  fallback?: string;
   departure?: string;
-  route: { coordinates: LonLat[] };
+  route?: { coordinates: LonLat[] };
   check: { legs: { status: string }[]; parts: { legs: [number, number] }[] };
   gate?: {
     departure?: string;
@@ -54,16 +57,29 @@ interface Body {
   };
 }
 
-async function planned(over: { latest?: number; waitEnRoute?: boolean; narrow?: boolean }) {
+interface Over {
+  latest?: number;
+  waitEnRoute?: boolean;
+  narrow?: boolean;
+  fallback?: boolean;
+  /** Charts marked not for navigation, accepted for the legs. */
+  notForNavigation?: boolean;
+  api?: (a: PlanningApiV1) => PlanningApiV1;
+}
+
+async function planned(over: Over) {
+  const api = syntheticApi({ ...twoBars(over.narrow), notForNavigation: over.notForNavigation });
   const r = await plan(
-    syntheticApi(twoBars(over.narrow)),
+    over.api ? over.api(api) : api,
     {
       from: at(0, 0),
       to: at(6000, 0),
       departure: NOW,
       speed: 1.5,
       ...(over.latest !== undefined && { latestDeparture: over.latest }),
-      ...(over.waitEnRoute !== undefined && { waitEnRoute: over.waitEnRoute })
+      ...(over.waitEnRoute !== undefined && { waitEnRoute: over.waitEnRoute }),
+      ...(over.fallback !== undefined && { fallback: over.fallback }),
+      ...(over.notForNavigation && { accept: ["NOT_FOR_NAVIGATION"] })
     },
     NEVER,
     NOW,
@@ -93,6 +109,9 @@ describe("waiting en route", () => {
     expect(w.minutes).toBeGreaterThan(10 * 60);
     expect(w.minutes).toBeLessThan(13 * 60);
     expect(Math.round((Date.parse(w.leave) - Date.parse(w.arrive)) / 60_000)).toBe(w.minutes);
+    // It leaves when the leg over the second bar starts on the slot boundary its water opens
+    // at, off the grid itself, rather than at the next boundary.
+    expect(Date.parse(w.leave) % (15 * 60_000)).not.toBe(0);
     // The boat leaves for the first high water and arrives at the second.
     const leave = Date.parse(body.departure as string);
     expect(leave).toBeGreaterThanOrEqual(NOW + HOUR);
@@ -101,7 +120,7 @@ describe("waiting en route", () => {
     expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
     // The wait splits the route: the part after it starts where the boat waits.
     expect(body.check.parts.length).toBeGreaterThanOrEqual(2);
-    expect(body.route.coordinates.some((p) => p[0] === w.at[0] && p[1] === w.at[1])).toBe(true);
+    expect(body.route?.coordinates.some((p) => p[0] === w.at[0] && p[1] === w.at[1])).toBe(true);
     expect(body.gate?.legs?.length).toBeGreaterThan(0);
   });
 
@@ -117,6 +136,46 @@ describe("waiting en route", () => {
     const { r, body } = await planned({ latest: NOW + 24 * HOUR, waitEnRoute: true, narrow: true });
     expect(r.status).toBe(422);
     expect(body.gate?.reason).toMatch(/places with room to swing/);
+  });
+
+  test("a wait is in verified water only: water the legs may accept unverified is no place", async () => {
+    const { r, body } = await planned({
+      latest: NOW + 24 * HOUR,
+      waitEnRoute: true,
+      notForNavigation: true
+    });
+    expect(r.status).toBe(422);
+    expect(body.gate?.reason).toMatch(/no place with room to swing/);
+  });
+
+  test("timing that stops on the planning API's error answers with the reason, never a route", async () => {
+    // The wait's own session fails: the second over the timing's horizon, after the gate's.
+    const horizonEnd = NOW + 24 * HOUR + (6000 / 1.5) * 1000;
+    const failing = (a: PlanningApiV1): PlanningApiV1 => {
+      let timing = 0;
+      return {
+        ...a,
+        session: (params, signal, job) => {
+          if (params.until > horizonEnd && params.until <= horizonEnd + 30 * 60_000) {
+            timing++;
+            if (timing === 2) {
+              return Promise.resolve({ ok: false, status: 503, error: "the index is rebuilding" });
+            }
+          }
+          return a.session(params, signal, job);
+        }
+      };
+    };
+    // With fallback, the plan without waits offers the fallback's marked route.
+    const { r, body } = await planned({
+      latest: NOW + 24 * HOUR,
+      waitEnRoute: true,
+      fallback: true,
+      api: failing
+    });
+    expect(r.status).toBe(422);
+    expect(body.route).toBeUndefined();
+    expect(body.reason).toBe("the index is rebuilding");
   });
 
   test("waitEnRoute is a boolean and needs a latest departure", () => {

@@ -310,6 +310,13 @@ async function enRoute(
   const budget = Math.max(0, opts.maxWork - w.used);
   const s = await scheduleWithWaits(api, g, candidate.parts, { rule: first.rule, signal, budget });
   const used = w.used + s.work;
+  if (!s.ok && s.stopped === true) {
+    // Timing that did not finish answers with its reason alone, never a route.
+    return {
+      status: 422,
+      body: { ...first.base, reason: s.reason, gate: { reason: s.reason }, work: used }
+    };
+  }
   if (!s.ok) {
     return w.note(s.reason, used);
   }

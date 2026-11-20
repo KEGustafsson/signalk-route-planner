@@ -270,23 +270,20 @@ The work of step 3 draws on what the search left of `maxWork`.
 
 **R3b, waiting en route (built along the route).** With `waitEnRoute`, when no single
 departure passes, the boat may wait for the water on the way, at most `latestDeparture −
-departure` in all, at the start and on the way together.
+departure` in all, at the start and on the way together (`src/plan/waits.ts`).
 
-1. The candidate route is the gate's (step 2 above). A point is added every 500 m along each
-   leg (`waitSpacing`), berth legs left whole.
-2. A **waiting place** is an inner point, the route's own or an added one, outside any berth leg,
-   whose box 60 m about it (`waitSwing`, room to swing at anchor)
-   the planning API passes at the lowest water of the whole horizon. Any wait there is then safe.
-   The planning API has no anchorage areas (`ACHARE`) to read; deep water with room to swing is
-   the place this version knows.
-3. Each leg of the route with the points added is gated as in R3a, over 15-minute windows.
-4. Waiting is a FIFO edge, so the earliest arrival over the slots is exact: the times the boat
-   may leave each place are kept, forced on from a place it may not wait at, else also each
-   slot boundary after an arrival, up to the wait it has left. Of the ways to one time, the one
-   that left the start latest is kept: it waits least at sea.
-5. The route is offered with only the points it waits at added, split there. The route check
-   proves each piece from when the boat leaves for it (`Part.wait`), and the plan is offered
-   only if it passes, with `gate.waits`: where, from when, and how long.
+- **Where it may wait:** at points along the candidate route, outside its berth legs, where the
+  planning API finds water with room to swing at anchor `ok` (verified and passing) at the
+  lowest water of the whole horizon, so any wait there is safe. Flags the request accepts for its
+  legs never make a waiting place: a wait is in verified water or not at all. The spacing of the
+  points tried and the room to swing are plan options (`waitSpacing`, `waitSwing` in
+  `src/plan/options.ts`).
+- **When:** each leg is gated as in R3a. Waiting is FIFO, so the schedule that arrives earliest
+  is exact, and of those the one that waits least at sea is kept.
+- **Proof:** the route is offered split where the boat waits, each piece proved by the route
+  check from when the boat leaves for it, and offered only if every piece passes, with
+  `gate.waits`. Timing that does not finish (its work limit, or the planning API's error)
+  answers with its reason alone, never a route.
 
 Still to come: charted anchorage areas and user waiting points as waiting places, which need
 the planning API to serve S-57 objects (§4.4 `features`), and waiting off the route, which needs
@@ -362,9 +359,14 @@ Reply 200:
   "underway": "ok", // with berth legs: the worst status of the other legs
   // With latestDeparture, when the plan waits for the tide (§4.3):
   "departure": "2026-11-18T13:15:00.000Z",
-  "gate": { "requested": "…", "departure": "…", "waitMinutes": 375, "legs": [3] },
-  // ...and with waitEnRoute, each wait on the way, in order:
-  // "waits": [{ "at": [22.04, 60.0], "arrive": "…", "leave": "…", "minutes": 678 }]
+  "gate": {
+    "requested": "…",
+    "departure": "…",
+    "waitMinutes": 375,
+    "legs": [3],
+    // With waitEnRoute, each wait on the way, in order:
+    "waits": [{ "at": [22.04, 60.0], "arrive": "…", "leave": "…", "minutes": 678 }]
+  },
   "berths": [{ "end": "start", "leg": 0, "length": 12 }],
   "direct": { "status": "fail", "worst": [22.21, 60.24] }, // the straight line's check
   "work": 182340
