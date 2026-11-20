@@ -239,6 +239,29 @@ describe("Preparer", () => {
     expect(inner.sessions).toHaveLength(1);
     expect(on.defaults()).toEqual(inner.defaults());
   });
+
+  test("a corridor's sessions list the chart objects the provider's do", async () => {
+    const inner = syntheticApi({
+      obstacles: [],
+      lines: [
+        {
+          class: "NAVLNE",
+          points: [
+            [0, 0],
+            [1000, 0]
+          ]
+        }
+      ]
+    });
+    const p = preparing(inner);
+    const corridor = onPrepared(p.api, p.prepared, [[21, 59, 23, 61]]);
+    const r = await corridor.session(
+      { departure: NOW, until: NOW + 1000, speed: 3 },
+      new AbortController().signal,
+      async (s) => s.objects?.(at(-100, -100), at(1100, 100)).length
+    );
+    expect(r).toEqual({ ok: true, value: 1 });
+  });
 });
 
 describe("/plan with prepare", () => {
@@ -307,6 +330,29 @@ describe("/plan with prepare", () => {
     );
     expect(far.status).toBe(400);
     expect(p.calls).toHaveLength(1);
+  });
+
+  test("on the prepared index, a provider that checks bridges plans an air height", async () => {
+    for (const [features, status] of [
+      [["prepare", "objects"], 200],
+      [["prepare"], 503]
+    ] as const) {
+      const p = preparing(syntheticApi({ obstacles: [] }));
+      g[PLANNING_API] = { ...p.api, features };
+      const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+      const body = { from: at(0, 0), to: at(5000, 0), airHeight: 17 };
+      await api.plan(body, new AbortController().signal);
+      p.settle();
+      await flush();
+      const again = api.plan(body, new AbortController().signal);
+      await flush();
+      p.settle();
+      const r = await again;
+      expect([features, r.status]).toEqual([features, status]);
+      if (status === 503) {
+        expect(r.body).toMatchObject({ errors: [expect.stringMatching(/does not check bridges/)] });
+      }
+    }
   });
 
   test("the trip's index is prepared for the request's draft", async () => {

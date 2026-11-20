@@ -334,13 +334,16 @@ search over the quadtree's leaves, state (leaf, arrival slot), in place of the c
   the window's highest water (its plan §4.11, feature `objects`), so a square under a bridge too
   low for the mast is never free, and its flags, `AIR_DRAFT` and `CLEARANCE_UNKNOWN`, are not
   ones the fallback crosses. A request with an air height to a provider without `objects` is
-  refused (503) rather than planned past the bridges. Sessions list the objects in a box
-  (`objects(sw, ne)`) for the preferences below.
-- **Hard rules:** `RESARE` with entry prohibited fails (`ENTRY_PROHIBITED`); a leg in a `TSSLPT`
-  lane fails unless it follows the lane's `ORIENT` within 60° or crosses it within 20° of a
-  right angle (`TSS_WRONG_WAY`). Both are signalk-underkeel's verdicts; the search crosses neither
-  flag. A box in a lane has no course, so the search may plan along a lane the wrong way, and the
-  proof refuses it at the leg. Flags that only name water (`TRAFFIC_LANE`, `ENTRY_RESTRICTED`,
+  refused (503) rather than planned past the bridges; a trip planned on an index the provider
+  prepared for it keeps the provider's `objects`. Sessions also list the chart objects in a box,
+  for the preferences below; signalk-underkeel's planning API (its plan §4.11) defines that
+  listing and its limits.
+- **Hard rules:** an area where entry is prohibited fails (`ENTRY_PROHIBITED`), and so does a leg
+  that sails a traffic lane against its direction rather than along it or across it
+  (`TSS_WRONG_WAY`). Both are signalk-underkeel's verdicts, by the tolerances its route check
+  defines (its plan §4.11 and `docs/HOW-IT-WORKS.md`), so the planner never judges a lane's
+  direction itself; the search crosses neither flag. A box in a lane has no course, so the search
+  may plan along a lane the wrong way, and the proof refuses it at the leg. Flags that only name water (`TRAFFIC_LANE`, `ENTRY_RESTRICTED`,
   `AREA_TO_BE_AVOIDED`) are crossed as their verdicts allow.
 - **Preference lines (R4c),** asked for with `preferLines`: the lines a session lists
   (`objects`) of class `NAVLNE`, `RECTRC`, `NAVLINE` (a fairway's navigation line, such as the
