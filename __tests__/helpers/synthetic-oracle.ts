@@ -225,8 +225,12 @@ export function syntheticApi(
         objects(sw, ne) {
           const [x0, y0] = xy(sw);
           const [x1, y1] = xy(ne);
+          // By bounds, as a provider lists them: a line may cross the box with no point in it.
           const meets = (points: [number, number][]) =>
-            points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+            Math.max(...points.map((p) => p[0])) >= x0 &&
+            Math.min(...points.map((p) => p[0])) <= x1 &&
+            Math.max(...points.map((p) => p[1])) >= y0 &&
+            Math.min(...points.map((p) => p[1])) <= y1;
           const lines = (chart.lines ?? []).filter((l) => meets(l.points));
           const areas = (chart.areas ?? []).filter((a) => meets(a.ring));
           return [

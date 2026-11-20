@@ -43,7 +43,8 @@
       "expect": {
         "status": 200,
         "lengthNm": [18, 22.5],
-        "parts": ["harbour:start", "route", "harbour:end"]
+        "parts": ["harbour:start", "route", "harbour:end"],
+        "workAtMost": 12000000
       }
     },
     {
