@@ -25,6 +25,8 @@ export interface Part {
   fallback?: string;
   /** The inner point of the part's berth leg, from or to the end point. */
   berth?: LonLat;
+  /** Time the boat waits at the part's first point before it, ms: a wait en route (`waits.ts`). */
+  wait?: number;
 }
 
 export type Staged =

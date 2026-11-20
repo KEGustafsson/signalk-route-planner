@@ -51,6 +51,13 @@ export interface PlanOptions {
    * at most this long, metres. 0 turns berth legs off.
    */
   berthMetres: number;
+  /**
+   * Waiting en route (`waits.ts`): a place the boat waits at passes a box this many metres
+   * about it at the lowest water of the trip, room to swing at anchor.
+   */
+  waitSwing: number;
+  /** ...and places are tried along each leg this far apart, and at the route's turns, metres. */
+  waitSpacing: number;
 }
 
 export const DEFAULT_PLAN: PlanOptions = {
@@ -71,7 +78,9 @@ export const DEFAULT_PLAN: PlanOptions = {
   harbourXte: 0,
   harbourMetres: 3000,
   harbourMargin: 300,
-  berthMetres: 40
+  berthMetres: 40,
+  waitSwing: 60,
+  waitSpacing: 500
 };
 
 /**

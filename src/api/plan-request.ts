@@ -18,6 +18,8 @@ export interface PlanRequest {
   fallback?: boolean;
   /** Epoch ms: the latest the boat may wait to leave for the tide (`plan/gate.ts`). */
   latestDeparture?: number;
+  /** With `latestDeparture`: the boat may wait for the tide on the way too (`plan/waits.ts`). */
+  waitEnRoute?: boolean;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -121,8 +123,8 @@ function inRange(
 function searchOptions(
   b: Record<string, unknown>,
   errors: string[]
-): { accept?: string[]; fallback?: boolean } {
-  const out: { accept?: string[]; fallback?: boolean } = {};
+): { accept?: string[]; fallback?: boolean; waitEnRoute?: boolean } {
+  const out: { accept?: string[]; fallback?: boolean; waitEnRoute?: boolean } = {};
   if (b.accept !== undefined) {
     const ok = (f: unknown) => (ACCEPTABLE_FLAGS as readonly unknown[]).includes(f);
     if (Array.isArray(b.accept) && b.accept.every(ok)) {
@@ -136,6 +138,15 @@ function searchOptions(
       out.fallback = b.fallback;
     } else {
       errors.push("fallback must be true or false");
+    }
+  }
+  if (b.waitEnRoute !== undefined) {
+    if (typeof b.waitEnRoute !== "boolean") {
+      errors.push("waitEnRoute must be true or false");
+    } else if (b.waitEnRoute && b.latestDeparture === undefined) {
+      errors.push("waitEnRoute needs latestDeparture: the boat waits at most until then in all");
+    } else {
+      out.waitEnRoute = b.waitEnRoute;
     }
   }
   return out;
@@ -154,7 +165,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const xteLimit = inRange(b, "xteLimit", 0, 1000, " m", errors);
   const probability = inRange(b, "probability", 0, 0.5, "", errors, true);
   const draft = inRange(b, "draft", 0.01, 30, " m", errors);
-  const { accept, fallback } = searchOptions(b, errors);
+  const { accept, fallback, waitEnRoute } = searchOptions(b, errors);
   if (errors.length > 0 || !from || !to) {
     return { ok: false, errors };
   }
@@ -170,7 +181,8 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
         probability,
         draft,
         accept,
-        fallback
+        fallback,
+        waitEnRoute
       }).filter(([, v]) => v !== undefined)
     )
   );

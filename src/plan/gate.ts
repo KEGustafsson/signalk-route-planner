@@ -30,7 +30,7 @@ export type Timed =
   | { ok: true; departure: number; gated: number[]; work: number }
   | { ok: false; reason: string; work: number };
 
-interface Leg {
+export interface Leg {
   a: LonLat;
   b: LonLat;
   xteLimit?: number;
@@ -72,7 +72,7 @@ const through = (v: Verdict, rule: PassRule, leg: Leg): boolean =>
   leg.berth ? berthable(v) : passes(v, rule) || v.status === "marginal";
 
 /** The slot windows that cover [from, to), on the grid from `origin`. */
-function slotsOver(origin: number, from: number, to: number): number[] {
+export function slotsOver(origin: number, from: number, to: number): number[] {
   const out: number[] = [];
   const first = Math.floor((from - origin) / SLOT_MS);
   for (let k = first; origin + k * SLOT_MS < to; k++) {
@@ -81,14 +81,14 @@ function slotsOver(origin: number, from: number, to: number): number[] {
   return out;
 }
 
-const WORK = "timing the departure reached the work limit";
+export const WORK = "timing the departure reached the work limit";
 
 /**
  * Per gated leg, whether each slot of the horizon may be passed (index k: the window from
  * departure + k slots). A leg that passes at the lowest water of the whole horizon is not gated.
  * One session per corridor width, one after another: a session holds the request queue.
  */
-async function passWindows(
+export async function passWindows(
   api: PlanningApiV1,
   g: GateInput,
   legs: readonly Leg[],

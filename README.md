@@ -92,7 +92,9 @@ short berth leg the reply marks (`berths`, and `underway` for the status of ever
 With `latestDeparture` (ISO 8601, at most 24 h after the departure), a route that passes only at
 some states of the tide is offered leaving at the earliest departure up to then at which the
 route check passes every leg as the boat reaches it (`departure`, `gate`). The panel offers it as
-"wait for the tide, at most".
+"wait for the tide, at most". With `waitEnRoute` as well, when no single departure passes, the
+boat may wait on the way, in water with room to swing at anchor, as long in all as it may wait to
+leave (`gate.waits`): for two bars too far apart to cross in one high water.
 
 ## Documentation map
 

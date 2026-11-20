@@ -268,16 +268,27 @@ windows, at the lowest water in each.
 
 The work of step 3 draws on what the search left of `maxWork`.
 
-**R3b, waiting en route (not built).**
+**R3b, waiting en route (built along the route).** With `waitEnRoute`, when no single
+departure passes, the boat may wait for the water on the way, at most `latestDeparture −
+departure` in all, at the start and on the way together (`src/plan/waits.ts`).
 
-- State (leaf, arrival slot); slots are 15 minutes, the water level forecast's step.
-- An edge is open when `session.segment` passes over the slot's window.
-- **Waiting** is allowed only at permitted places: charted anchorage areas (`ACHARE`), user
-  waiting points, and optionally deep water off the fairway with room to swing. A wait is an edge
-  to the next slot at the same place.
-- Waiting is a FIFO edge (arriving later never lets you leave earlier), so time-dependent
-  Dijkstra with earliest arrival is exact over the slots.
-- The answer is a timed plan: "leave 14:20, wait 40 min at the anchorage off X, cross at 16:05".
+- **Where it may wait:** at points along the candidate route, outside its berth legs, where the
+  planning API finds water with room to swing at anchor `ok` (verified and passing) at the
+  lowest water of the whole horizon, so any wait there is safe. Flags the request accepts for its
+  legs never make a waiting place: a wait is in verified water or not at all. The spacing of the
+  points tried and the room to swing are plan options (`waitSpacing`, `waitSwing` in
+  `src/plan/options.ts`).
+- **When:** each leg is gated as in R3a. Waiting is FIFO, so the schedule that arrives earliest
+  is exact, and of those the one that waits least at sea is kept.
+- **Proof:** the route is offered split where the boat waits, each piece proved by the route
+  check from when the boat leaves for it, and offered only if every piece passes, with
+  `gate.waits`. Timing that does not finish (its work limit, or the planning API's error)
+  answers with its reason alone, never a route.
+
+Still to come: charted anchorage areas and user waiting points as waiting places, which need
+the planning API to serve S-57 objects (§4.4 `features`), and waiting off the route, which needs
+the time-dependent search over the quadtree's leaves, state (leaf, arrival slot), in place of
+the candidate route.
 
 ### 4.4 R4: risk, alternatives, air draft, rules
 
@@ -319,7 +330,8 @@ The work of step 3 draws on what the search left of `maxWork`.
   "xteLimit": 30, // optional
   "probability": 0.01, // optional
   "draft": 1.9, // optional override
-  "latestDeparture": "2026-11-18T19:00:00Z" // optional: wait for the tide up to this, ≤ 24 h
+  "latestDeparture": "2026-11-18T19:00:00Z", // optional: wait for the tide up to this, ≤ 24 h
+  "waitEnRoute": true // optional, with latestDeparture: wait on the way too (§4.3 R3b)
 }
 ```
 
@@ -347,7 +359,14 @@ Reply 200:
   "underway": "ok", // with berth legs: the worst status of the other legs
   // With latestDeparture, when the plan waits for the tide (§4.3):
   "departure": "2026-11-18T13:15:00.000Z",
-  "gate": { "requested": "…", "departure": "…", "waitMinutes": 375, "legs": [3] },
+  "gate": {
+    "requested": "…",
+    "departure": "…",
+    "waitMinutes": 375,
+    "legs": [3],
+    // With waitEnRoute, each wait on the way, in order:
+    "waits": [{ "at": [22.04, 60.0], "arrive": "…", "leave": "…", "minutes": 678 }]
+  },
   "berths": [{ "end": "start", "leg": 0, "length": 12 }],
   "direct": { "status": "fail", "worst": [22.21, 60.24] }, // the straight line's check
   "work": 182340
