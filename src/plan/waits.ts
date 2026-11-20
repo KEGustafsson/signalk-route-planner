@@ -145,9 +145,10 @@ interface Leave {
 
 /**
  * Times built up leg by leg are sums of floating-point sailing times: a leg meant to start on a
- * slot boundary can land a few microseconds before it. Under a millisecond it is on it.
+ * slot boundary can land a few microseconds before it, in the slot before. A leave time chosen
+ * to bring a leg onto a boundary is taken this much later, so the leg always starts after it.
  */
-const ON_BOUNDARY_MS = 1;
+const PAST_BOUNDARY_MS = 1;
 
 /** Whether `leg` is open from `t`: not gated, or every slot it is sailed in passes it. */
 function open(origin: number, leg: Leg, t: number, w: readonly boolean[] | undefined): boolean {
@@ -155,7 +156,7 @@ function open(origin: number, leg: Leg, t: number, w: readonly boolean[] | undef
     return true;
   }
   const d = leg.to - leg.from;
-  return slotsOver(origin, t + ON_BOUNDARY_MS, t + d).every((k) => w[k] === true);
+  return slotsOver(origin, t, t + d).every((k) => w[k] === true);
 }
 
 /**
@@ -242,7 +243,7 @@ function waitsAfter(here: Leave[], last: number, origin: number, ahead: readonly
   const times = new Set<number>();
   for (const d of ahead) {
     for (let k = Math.floor((first + d - origin) / SLOT_MS) + 1; ; k++) {
-      const t = origin + k * SLOT_MS - d;
+      const t = origin + k * SLOT_MS - d + (d > 0 ? PAST_BOUNDARY_MS : 0);
       if (t > last) {
         break;
       }
