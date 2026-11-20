@@ -74,6 +74,7 @@ export function apiFor(
           xteLimit: req.xteLimit,
           probability: req.probability,
           draft: req.draft,
+          airHeight: req.airHeight,
           accept: req.accept,
           fallback: req.fallback,
           latestDeparture: req.latestDeparture,
