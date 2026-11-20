@@ -44,6 +44,9 @@ All notable changes to signalk-route-planner are documented here.
   clear at high water, as signalk-underkeel 0.8.0 checks them, and it keeps out of entry-prohibited
   areas and traffic lanes sailed the wrong way. An older signalk-underkeel is refused an air
   height.
+- Preference lines: leading lines, recommended tracks, fairway navigation lines and the boat's own
+  tracks that signalk-underkeel lists are kept to where that costs little more distance, to
+  starboard of a two-way line (COLREG rule 9).
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
   index of the whole search region, or of the trip's least region (both ends with the search's
   least margin and a harbour stage around them) when that is too large to build: the chart box

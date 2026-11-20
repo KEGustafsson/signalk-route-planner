@@ -102,6 +102,10 @@ leave (`gate.waits`): for two bars too far apart to cross in one high water.
 rules, entry-prohibited areas and traffic lanes sailed the wrong way, and the planner never trades
 them for distance; a signalk-underkeel too old to check bridges is refused an air height.
 
+Where signalk-underkeel lists lines in the region (leading lines `NAVLNE`, recommended tracks
+`RECTRC`, fairway navigation lines and the boat's own tracks), the route keeps to them when that
+costs less than about 15 % more distance, to starboard of a two-way line.
+
 Every offered route states its `risk`: the chance that some leg has UKC < 0, its legs taken as
 independent. `riskWeight` (0 to 100, default 0, the shortest route) adds a cost per metre in
 proportion to the water's P(UKC < 0) over the accepted probability, so the route keeps away from

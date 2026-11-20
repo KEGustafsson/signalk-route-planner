@@ -70,6 +70,14 @@ export interface PlanOptions {
   riskSplit: number;
   /** ...down to squares this size, metres: the risk cost's resolution. */
   riskCell: number;
+  /**
+   * Preference lines (`search/prefer.ts`): water this far from a line counts as on it, metres,
+   * water off every line costs `preferWeight` more per metre, and a two-way line is kept to
+   * `starboardOffset` metres to starboard. A weight of 0 turns the preference off.
+   */
+  preferReach: number;
+  preferWeight: number;
+  starboardOffset: number;
   /** The risk weights of the balanced and safest alternatives; the shortest's is 0. */
   balancedRisk: number;
   safestRisk: number;
@@ -99,6 +107,9 @@ export const DEFAULT_PLAN: PlanOptions = {
   riskWeight: 0,
   riskSplit: 0.1,
   riskCell: 80,
+  preferReach: 30,
+  preferWeight: 0.15,
+  starboardOffset: 15,
   balancedRisk: 2,
   safestRisk: 10
 };

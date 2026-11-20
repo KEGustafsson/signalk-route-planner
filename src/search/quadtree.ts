@@ -14,7 +14,8 @@ import { OK_ONLY, passes } from "./passes";
  * `unverified`) is free water: every leg inside it, with
  * the corridor half-width around it, is inside the box the verdict covered.
  * Any other verdict splits the square, down to one unit, and so does a free square whose risk
- * weighs in the route's cost (`splitRisk`); a one-unit square
+ * weighs in the route's cost, or only part of which lies near a preference line (`splitFree`);
+ * a one-unit square
  * that is `marginal` stays passable at a cost (search/fallback.ts), and any other
  * that does not pass is blocked, remembered as unverified when its verdict said so.
  */
@@ -73,10 +74,11 @@ export class QuadTree {
     private readonly session: Session,
     private readonly rule: PassRule = OK_ONLY,
     /**
-     * True when a free square of `size` units has a risk that weighs enough in the route's
-     * cost (`fallback.ts`, `RiskCost`) that it is split to find the clearer water in it.
+     * True when a free square should be split all the same: its risk weighs enough in the
+     * route's cost (`fallback.ts`, `RiskCost`) to find the clearer water in it, or only part of
+     * it lies near a preference line (`prefer.ts`).
      */
-    private readonly splitRisk: (risk: number, size: number) => boolean = () => false
+    private readonly splitFree: (n: QuadNode, risk: number) => boolean = () => false
   ) {
     this.root = this.node(0, 0, shape.side);
   }
@@ -156,7 +158,7 @@ export class QuadTree {
     const v = this.session.box(sw, ne);
     this.classified++;
     n.verdict = { status: v.status, flags: v.flags, risk: v.risk };
-    if (passes(v, this.rule) && !(n.size > 1 && this.splitRisk(v.risk, n.size))) {
+    if (passes(v, this.rule) && !(n.size > 1 && this.splitFree(n, v.risk))) {
       n.state = "free";
     } else if (n.size > 1) {
       this.split(n);

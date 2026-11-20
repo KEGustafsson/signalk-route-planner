@@ -1,8 +1,14 @@
 import type { LonLat } from "../foundation/geo";
 import { frameAt, haversine, midpoint } from "../foundation/geo";
-import type { Bbox } from "../oracle/contract";
+import type { Bbox, Session, Verdict } from "../oracle/contract";
+import type { RiskCost } from "../search/fallback";
+import type { PassRule } from "../search/passes";
+import { passes } from "../search/passes";
+import type { Preferred } from "../search/prefer";
+import { offShare, splitsForLines } from "../search/prefer";
 import type { TreeShape } from "../search/quadtree";
-import { MAX_BOX_KM2 } from "../search/quadtree";
+import { MAX_BOX_KM2, QuadTree } from "../search/quadtree";
+import { linesIn, weighs } from "./modes";
 import type { PlanOptions } from "./options";
 
 /** The search's region (plan §4.1): the quadtree's square, its frame and its smallest squares. */
@@ -80,4 +86,54 @@ export function regionShape(
     return "the planning region reaches a pole";
   }
   return { frame, x0: -extent, y0: -extent, unit, side, maxLeaf };
+}
+
+/**
+ * True when the direct line is the route: it passes, and with a risk cost or lines it is not
+ * near the margin or off the lines, which are searched around like any other.
+ */
+export function keepsDirect(
+  direct: Verdict,
+  c: {
+    rule: PassRule;
+    opts: PlanOptions;
+    cost?: RiskCost;
+    tree?: QuadTree;
+    pref?: Preferred;
+  },
+  [from, to]: [LonLat, LonLat]
+): boolean {
+  if (!passes(direct, c.rule) || weighs(c.opts, c.cost, direct.risk)) {
+    return false;
+  }
+  return !(c.pref && c.tree && offShare(c.pref, c.tree.units(from), c.tree.units(to)) > 0);
+}
+
+/**
+ * The region's quadtree and the preference lines in it, or why there is no region. A free
+ * square is split where its risk weighs in the cost, down to `riskCell`, and where only part of
+ * it lies near a line.
+ */
+export function treeFor(
+  session: Session,
+  ends: [LonLat, LonLat],
+  opts: PlanOptions,
+  rule: PassRule,
+  cost: RiskCost | undefined
+): { tree?: QuadTree; pref?: Preferred; shapeError?: string } {
+  const shape = shapeFor(ends[0], ends[1], session.halfWidth, opts, session.within);
+  if (typeof shape === "string") {
+    return { shapeError: shape };
+  }
+  const lines: { pref?: Preferred } = {};
+  const tree = new QuadTree(
+    shape,
+    session,
+    rule,
+    (n, risk) =>
+      (n.size * shape.unit > opts.riskCell && weighs(opts, cost, risk)) ||
+      (lines.pref !== undefined && splitsForLines(lines.pref, n))
+  );
+  lines.pref = linesIn(tree, session, ends, opts);
+  return { tree, ...(lines.pref && { pref: lines.pref }) };
 }

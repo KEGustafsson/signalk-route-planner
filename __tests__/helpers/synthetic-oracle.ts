@@ -45,6 +45,8 @@ export interface Chart {
    * (`AIR_DRAFT`), as signalk-underkeel holds it.
    */
   bridges?: (Circle & { clearance: number })[];
+  /** Lines a session lists as chart objects (feature "objects"), metres east and north. */
+  lines?: { class: string; points: [number, number][]; twoWay?: boolean }[];
   /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
   closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
@@ -217,6 +219,20 @@ export function syntheticApi(
           work += per;
           const air = airOver(params.airHeight, w ?? whole);
           return legVerdict(chart, a, b, r, lowest(chart, w ?? whole), air);
+        },
+        objects(sw, ne) {
+          const [x0, y0] = xy(sw);
+          const [x1, y1] = xy(ne);
+          return (chart.lines ?? [])
+            .filter((l) => l.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1))
+            .map((l) => ({
+              class: l.class,
+              geometry: {
+                type: "LineString" as const,
+                coordinates: l.points.map(([x, y]) => at(x, y))
+              },
+              ...(l.twoWay && { twoWay: true })
+            }));
         },
         work: () => work,
         pause: () =>

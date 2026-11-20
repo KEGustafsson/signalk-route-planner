@@ -329,13 +329,25 @@ the candidate route.
   flag. A box in a lane has no course, so the search may plan along a lane the wrong way, and the
   proof refuses it at the leg. Flags that only name water (`TRAFFIC_LANE`, `ENTRY_RESTRICTED`,
   `AREA_TO_BE_AVOIDED`) are crossed as their verdicts allow.
-- **Preferences (R4c):** narrow `FAIRWY` paths are offset to the starboard side (COLREG rule 9);
-  `NAVLNE` and `RECTRC` leading lines get a cost discount; turns get a small cost per turn; a
-  search that keeps out of a lane's wrong way.
+- **Preference lines (R4c):** the lines a session lists (`objects`) of class `NAVLNE`, `RECTRC`,
+  `NAVLINE` (a fairway's navigation line, such as the FTIA's) and `TRACK` (the boat's own
+  passages) are kept to (`src/search/prefer.ts`). Water whose square's centre lies within
+  `preferReach` (30 m) of a line costs what it would anyway, and any other `preferWeight` (0.15)
+  more per metre: a discount on the lines that keeps every weight at least 1, as A*'s heuristic
+  needs, so a route keeps to a line where that costs less than about 15 % more distance. A free
+  square only partly near a line is split down to the reach, A\* is plain, and string pulling
+  prices a shortcut by the share of it off the lines. A two-way line (`twoWay`) is moved
+  `starboardOffset` (15 m) to starboard of the way the boat goes along each of its segments
+  (COLREG rule 9); a leading line is followed as charted. Decided against: a cost per turn, which
+  A\* over squares cannot price without a heading in its state, and string pulling already keeps
+  turns few; and offsetting within `FAIRWY` areas, which chart no centreline, where a navigation
+  line gives one.
 - **Finnish fairway data:** Finnish Transport Infrastructure Agency open data (fairway areas and
-  navigation lines, CC BY 4.0) as preference lines, read through underkeel's WFS client.
-- **Own tracks:** passages the boat has logged (underkeel's living chart) get a cost discount at
-  a water level no lower than when they were sailed.
+  navigation lines, CC BY 4.0) as preference lines, read through underkeel's WFS client and served
+  as `NAVLINE` objects, two-way.
+- **Own tracks:** passages the boat has logged (underkeel's living chart), served as `TRACK`
+  objects only at a water level no lower than when they were sailed, so a track lowers cost, never
+  risk (invariant 6).
 
 ### 4.5 R5: Freeboard UX and upstream
 
