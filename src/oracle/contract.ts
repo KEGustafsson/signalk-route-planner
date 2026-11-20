@@ -37,11 +37,34 @@ export interface SessionParams {
   airHeight?: number;
 }
 
+/**
+ * A chart object a session lists (feature "objects"): a bridge or overhead cable with its
+ * clearance, a restricted area, a traffic lane, or a line a route may keep to (`NAVLNE`,
+ * `RECTRC`, a fairway's navigation line, the boat's own track).
+ */
+export interface ChartObject {
+  class: string;
+  geometry:
+    | { type: "Point"; coordinates: LonLat }
+    | { type: "LineString"; coordinates: LonLat[] }
+    | { type: "MultiPolygon"; coordinates: LonLat[][][] };
+  clearance?: number;
+  restrictions?: number[];
+  orient?: number;
+  /** A line with traffic both ways along it, which a boat keeps to starboard of. */
+  twoWay?: boolean;
+  /** The draft a fairway's navigation line is laid out for, metres. */
+  designDraft?: number;
+  cell?: string;
+}
+
 /** What the search asks of the chart: the part of a session it uses. */
 export interface Session {
   readonly halfWidth: number;
   box(sw: LonLat, ne: LonLat, window?: Window): Verdict;
   segment(a: LonLat, b: LonLat, window?: Window): Verdict;
+  /** With feature "objects": the chart objects whose bounds meet the box sw–ne. */
+  objects?(sw: LonLat, ne: LonLat): ChartObject[];
   work(): number;
   pause(): Promise<void>;
   /**

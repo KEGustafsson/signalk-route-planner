@@ -175,8 +175,8 @@ export function verdictWeight(
 }
 
 /**
- * With a risk cost, a shortcut may replace path points i..j only when, priced at its own
- * verdict (`verdictWeight`; a leg's risk is its worst point, so the price is pessimistic), it
+ * With a risk cost or preference lines, a shortcut may replace path points i..j only when,
+ * priced at its own verdict (`verdictWeight`; a leg's risk is its worst point, so the price is pessimistic), it
  * costs no more than the path between them at its squares' weights, and of those the one whose
  * cost with the path's on to its end is lowest: pulling straightens the route the search found
  * without undoing what it paid to keep from the margin. A piece whose
@@ -187,8 +187,8 @@ export function costShortcut(
   tree: QuadTree,
   path: readonly LonLat[],
   weight: (n: QuadNode) => number,
-  priced: (v: Verdict) => number,
-  cost: RiskCost
+  priced: (v: Verdict, a: LonLat, b: LonLat) => number,
+  cost?: RiskCost
 ): Priced {
   const sums = [0];
   path.slice(1).forEach((b, k) => {
@@ -201,8 +201,11 @@ export function costShortcut(
     sums.push((sums[k] as number) + haversine(a, b) * per);
   });
   const total = sums[sums.length - 1] as number;
-  const own = (v: Verdict, i: number, j: number): number =>
-    haversine(path[i] as LonLat, path[j] as LonLat) * priced(v);
+  const own = (v: Verdict, i: number, j: number): number => {
+    const a = path[i] as LonLat;
+    const b = path[j] as LonLat;
+    return haversine(a, b) * priced(v, a, b);
+  };
   return {
     accept: (v, i, j) => own(v, i, j) <= (sums[j] as number) - (sums[i] as number) + 1e-6,
     score: (v, i, j) => own(v, i, j) + total - (sums[j] as number)

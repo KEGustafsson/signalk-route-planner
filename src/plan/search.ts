@@ -14,11 +14,18 @@ import {
   strictWeight,
   verdictWeight
 } from "../search/fallback";
+import type { Preferred, PreferredLine } from "../search/prefer";
+import { offLine, offShare, preferredIn, splitsForLines } from "../search/prefer";
 import type { Priced, Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
 import { stuckEnds } from "./handover";
+import type { Mode } from "./modes";
+import { fallbackMode, preferring, riskCostOf, strictMode } from "./modes";
+import { keepsDirect, treeFor } from "./region";
+
+export type { Mode } from "./modes";
 import type { PlanOptions } from "./options";
 import { shapeFor } from "./region";
 
@@ -93,40 +100,8 @@ interface Access {
   berth?: LonLat;
 }
 
-/** What a search may cross: strictly passing water, or for the fallback, charted water at a cost. */
-export interface Mode {
-  enter(n: QuadNode): boolean;
-  /** True when a checked leg may join the start or goal to a square. */
-  joins(v: Verdict): boolean;
-  weight?(n: QuadNode): number;
-  /** True when the weight carries a risk cost. */
-  risk?: boolean;
-}
-
-const strictMode = (rule: PassRule, cost?: RiskCost): Mode => ({
-  enter: (n) => Number.isFinite(strictWeight(n)),
-  joins: (v) => passes(v, rule) || (v.status === "marginal" && crossable(v)),
-  weight: (n) => strictWeight(n, cost),
-  risk: cost !== undefined
-});
-
-const fallbackMode = (cost?: RiskCost): Mode => ({
-  enter: (n) => Number.isFinite(fallbackWeight(n)),
-  joins: (v) => crossable(v),
-  weight: (n) => fallbackWeight(n, cost),
-  risk: cost !== undefined
-});
-
-/** The request's risk cost: none at weight 0, the shortest route. */
-function riskCostOf(opts: PlanOptions, rule: PassRule): RiskCost | undefined {
-  return opts.riskWeight > 0 && rule.probability > 0
-    ? { weight: opts.riskWeight, threshold: rule.probability }
-    : undefined;
-}
-
-/** True when water at P(UKC < 0) `risk` adds more than `riskSplit` to the cost per metre. */
-const weighs = (opts: PlanOptions, cost: RiskCost | undefined, risk: number): boolean =>
-  cost !== undefined && (cost.weight * risk) / cost.threshold > opts.riskSplit;
+/** A*'s heuristic weight where a weight carries a preference (`Mode.fine`). */
+const FINE_GREED = 1.05;
 
 export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
@@ -324,8 +299,9 @@ async function attempt(
           pause: () => session.pause(),
           every: 64,
           weight: mode.weight,
-          // A risk cost is a preference smaller than weighted A*'s slack: plain A* keeps it.
-          greed: mode.risk ? 1 : opts.greed
+          // A risk cost or a line is a preference smaller than weighted A*'s slack: a slack of
+          // FINE_GREED keeps every one worth more than it.
+          greed: mode.fine ? Math.min(opts.greed, FINE_GREED) : opts.greed
         });
   if (!found.found) {
     return {
@@ -353,20 +329,27 @@ async function searchTree(
   session: Session,
   ends: [LonLat, LonLat],
   opts: PlanOptions,
-  how: { rule: PassRule; fallback: boolean; berth: number }
+  how: { rule: PassRule; fallback: boolean; berth: number; pref?: Preferred }
 ): Promise<Searched> {
   const cost = riskCostOf(opts, how.rule);
-  const strict = await attempt(tree, session, ends, opts, strictMode(how.rule, cost), how.berth);
-  // With a risk cost, pulling keeps to what the search paid for, by one price for every shortcut.
+  const { pref } = how;
+  const strictWith = preferring(strictMode(how.rule, cost), pref);
+  const fallbackWith = preferring(fallbackMode(cost), pref);
+  const strict = await attempt(tree, session, ends, opts, strictWith, how.berth);
+  // With a risk cost or lines, pulling keeps to what the search paid for, by one price for all.
   const pulling = (path: LonLat[], mode: Mode, fallback: boolean) => {
-    if (!cost) {
+    // A fallback route is straightened by its own rule (`riskyShortcut`) unless it carries a
+    // risk cost: priced at a whole leg's verdict, its shortcuts through risky water never pass.
+    if (!cost && (!pref || fallback)) {
       return {};
     }
     const priced = costShortcut(
       tree,
       path,
       (n) => mode.weight?.(n) ?? 1,
-      (v) => verdictWeight(v, how.rule, { fallback, cost }),
+      (v, a, b) =>
+        verdictWeight(v, how.rule, { fallback, cost }) +
+        (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0),
       cost
     );
     return { priced };
@@ -375,7 +358,7 @@ async function searchTree(
     return {
       ...strict,
       shortcut: riskyShortcut(tree, strict.path, (v) => v.status === "marginal"),
-      ...pulling(strict.path, strictMode(how.rule, cost), false)
+      ...pulling(strict.path, strictWith, false)
     };
   }
   // Refused only at an end: the harbour stage plans that end in its own small region, so
@@ -393,13 +376,13 @@ async function searchTree(
   }
   const again =
     how.fallback && strict.reason !== WORK_LIMIT
-      ? await attempt(tree, session, ends, opts, fallbackMode(cost), how.berth)
+      ? await attempt(tree, session, ends, opts, fallbackWith, how.berth)
       : undefined;
   if (again && "path" in again) {
     return {
       ...again,
       shortcut: riskyShortcut(tree, again.path, crossable),
-      ...pulling(again.path, fallbackMode(cost), true),
+      ...pulling(again.path, fallbackWith, true),
       fallback: strict.reason
     };
   }
@@ -432,20 +415,10 @@ export async function searchRoute(
 ): Promise<SearchOutcome> {
   const direct = checkLeg(session, from, to);
   const cost = riskCostOf(opts, rule);
-  // With a risk cost, a direct line near the margin is searched around like any other.
-  if (passes(direct, rule) && !weighs(opts, cost, direct.risk)) {
+  const { tree, pref, shapeError } = treeFor(session, [from, to], opts, rule, cost);
+  if (keepsDirect(direct, { rule, opts, cost, tree, pref }, [from, to])) {
     return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
   }
-  const shape = shapeFor(from, to, session.halfWidth, opts, session.within);
-  const tree =
-    typeof shape === "string"
-      ? undefined
-      : new QuadTree(
-          shape,
-          session,
-          rule,
-          (risk, size) => size * shape.unit > opts.riskCell && weighs(opts, cost, risk)
-        );
   const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,
     reason,
@@ -456,9 +429,14 @@ export async function searchRoute(
     ...(stuck && { stuck })
   });
   if (!tree) {
-    return refuse(shape as string);
+    return refuse(shapeError as string);
   }
-  const found = await searchTree(tree, session, [from, to], opts, { rule, fallback, berth });
+  const found = await searchTree(tree, session, [from, to], opts, {
+    rule,
+    fallback,
+    berth,
+    ...(pref && { pref })
+  });
   if ("reason" in found) {
     return refuse(found.reason, found.stuck);
   }

@@ -28,6 +28,8 @@ export interface PlanRequest {
   riskBudget?: number;
   /** Plan the shortest, balanced and safest routes (`plan/plan.ts`). */
   alternatives?: boolean;
+  /** Keep to leading lines, fairway lines and the boat's own tracks. */
+  preferLines?: boolean;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -198,6 +200,10 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const airHeight = inRange(b, "airHeight", 0.1, 100, " m", errors);
   const { accept, fallback, waitEnRoute } = searchOptions(b, errors);
   const { riskWeight, riskBudget, alternatives } = riskOptions(b, errors);
+  const preferLines = typeof b.preferLines === "boolean" ? b.preferLines : undefined;
+  if (b.preferLines !== undefined && preferLines === undefined) {
+    errors.push("preferLines must be true or false");
+  }
   if (errors.length > 0 || !from || !to) {
     return { ok: false, errors };
   }
@@ -218,7 +224,8 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
         waitEnRoute,
         riskWeight,
         riskBudget,
-        alternatives
+        alternatives,
+        preferLines
       }).filter(([, v]) => v !== undefined)
     )
   );

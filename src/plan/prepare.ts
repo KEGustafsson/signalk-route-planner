@@ -96,7 +96,10 @@ export function tripLimits(
   return limitsFor(opts, d, longTrip(api, d, opts) || inCorridor(prepared));
 }
 
-/** The features a session has on any index, as the provider's own: holding legs to bridges. */
+/**
+ * The features a session has on any index, as the provider's own: holding legs to bridges and
+ * listing the chart objects, the lines a route keeps to among them.
+ */
 const SESSION_FEATURES = new Set(["objects"]);
 
 /** The planning APIs over a corridor's index (`onPrepared`), for `inCorridor`. */
@@ -144,6 +147,7 @@ const withinCorridor = (s: Session, corridor: readonly Bbox[]): Session => ({
   halfWidth: s.halfWidth,
   box: (sw, ne, window) => s.box(sw, ne, window),
   segment: (a, b, window) => s.segment(a, b, window),
+  ...(s.objects && { objects: s.objects.bind(s) }),
   work: () => s.work(),
   pause: () => s.pause(),
   within: corridor

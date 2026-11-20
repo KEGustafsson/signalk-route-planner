@@ -332,13 +332,35 @@ the candidate route.
   direction itself; the search crosses neither flag. A box in a lane has no course, so the search
   may plan along a lane the wrong way, and the proof refuses it at the leg. Flags that only name water (`TRAFFIC_LANE`, `ENTRY_RESTRICTED`,
   `AREA_TO_BE_AVOIDED`) are crossed as their verdicts allow.
-- **Preferences (R4c):** narrow `FAIRWY` paths are offset to the starboard side (COLREG rule 9);
-  `NAVLNE` and `RECTRC` leading lines get a cost discount; turns get a small cost per turn; a
-  search that keeps out of a lane's wrong way.
+- **Preference lines (R4c),** asked for with `preferLines`: the lines a session lists
+  (`objects`) of class `NAVLNE`, `RECTRC`, `NAVLINE` (a fairway's navigation line, such as the
+  FTIA's) and `TRACK` (the boat's own passages) are kept to (`src/search/prefer.ts`), but not a
+  navigation line laid out for less than the request's draft (`designDraft`). Water whose
+  square's centre lies within reach of a line (`preferReach`) costs what it would anyway, and
+  any other a little more per metre (`preferWeight`): a discount on the lines that keeps every
+  weight at least 1, as A*'s heuristic needs, so a route keeps to a line where the detour costs
+  less than that weight's share of the distance. A free square only partly near a line is split
+  down to the risk cost's resolution; the lines' segments, clipped to the search region, are kept
+  in a grid, so each test reads only those near it. A\* runs with a small slack (`FINE_GREED`)
+  wherever a weight carries a preference, a risk cost or lines, so every preference worth more
+  than that is kept. The values are `src/plan/options.ts`'s and `src/plan/search.ts`'s. String pulling prices a shortcut by the share of it
+  off the lines, as the squares it crosses are counted; a fallback route without a risk cost is
+  straightened by its own rule, since pricing a whole leg at its verdict let no shortcut through
+  risky water and left Miami's Bayside route 115 legs long. A two-way line (`twoWay`) is moved
+  `starboardOffset` to starboard of the way the boat sails it, from its end nearer the start and
+  on through its bends (COLREG rule 9); a leading line is followed as charted. Decided: off by default, until field
+  trials show the lines make routes better and not only different; on the Turku trial with the
+  FTIA's 474 lines the route keeps to them at 20.0 nm against 19.8 nm, for 9.4 M work units
+  against 5.8 M (`turku-guest-harbours-b-lines`). Decided against: a cost per turn, which A\*
+  over squares cannot price without a heading in its state, and string pulling already keeps
+  turns few; and offsetting within `FAIRWY` areas, which chart no centreline, where a
+  navigation line gives one.
 - **Finnish fairway data:** Finnish Transport Infrastructure Agency open data (fairway areas and
-  navigation lines, CC BY 4.0) as preference lines, read through underkeel's WFS client.
-- **Own tracks:** passages the boat has logged (underkeel's living chart) get a cost discount at
-  a water level no lower than when they were sailed.
+  navigation lines, CC BY 4.0) as preference lines, read through underkeel's WFS client and served
+  as `NAVLINE` objects, two-way.
+- **Own tracks:** passages the boat has logged (underkeel's living chart), served as `TRACK`
+  objects only at a water level no lower than when they were sailed, so a track lowers cost, never
+  risk (invariant 6).
 
 ### 4.5 R5: Freeboard UX and upstream
 

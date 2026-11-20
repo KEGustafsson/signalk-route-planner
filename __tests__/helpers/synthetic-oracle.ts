@@ -45,6 +45,8 @@ export interface Chart {
    * (`AIR_DRAFT`), as signalk-underkeel holds it.
    */
   bridges?: (Circle & { clearance: number })[];
+  /** Lines a session lists as chart objects (feature "objects"), metres east and north. */
+  lines?: { class: string; points: [number, number][]; twoWay?: boolean; designDraft?: number }[];
   /** Closed water carrying its own flag, such as an entry-prohibited area: fails. */
   closed?: (Circle & { flag: string })[];
   /** Corridor half-width, metres. */
@@ -217,6 +219,30 @@ export function syntheticApi(
           work += per;
           const air = airOver(params.airHeight, w ?? whole);
           return legVerdict(chart, a, b, r, lowest(chart, w ?? whole), air);
+        },
+        objects(sw, ne) {
+          const [x0, y0] = xy(sw);
+          const [x1, y1] = xy(ne);
+          return (
+            (chart.lines ?? [])
+              // By bounds, as a provider lists them: a line may cross the box with no point in it.
+              .filter(
+                (l) =>
+                  Math.max(...l.points.map((p) => p[0])) >= x0 &&
+                  Math.min(...l.points.map((p) => p[0])) <= x1 &&
+                  Math.max(...l.points.map((p) => p[1])) >= y0 &&
+                  Math.min(...l.points.map((p) => p[1])) <= y1
+              )
+              .map((l) => ({
+                class: l.class,
+                geometry: {
+                  type: "LineString" as const,
+                  coordinates: l.points.map(([x, y]) => at(x, y))
+                },
+                ...(l.twoWay && { twoWay: true }),
+                ...(l.designDraft !== undefined && { designDraft: l.designDraft })
+              }))
+          );
         },
         work: () => work,
         pause: () =>

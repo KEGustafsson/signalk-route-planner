@@ -70,6 +70,21 @@ export interface PlanOptions {
   riskSplit: number;
   /** ...down to squares this size, metres: the risk cost's resolution. */
   riskCell: number;
+  /**
+   * Preference lines (`search/prefer.ts`): water this far from a line counts as on it, metres,
+   * water off every line costs `preferWeight` more per metre, and a two-way line is kept to
+   * `starboardOffset` metres to starboard. A weight of 0 turns the preference off.
+   */
+  preferReach: number;
+  preferWeight: number;
+  /** Keep to the lines at all: a request's `preferLines`; off, a plan is as without them. */
+  preferLines: boolean;
+  starboardOffset: number;
+  /**
+   * The request's draft, metres, when it gives one: a fairway's navigation line laid out for
+   * less (`designDraft`) is not kept to. Absent, every line is.
+   */
+  preferDraft?: number;
   /** The risk weights of the balanced and safest alternatives; the shortest's is 0. */
   balancedRisk: number;
   safestRisk: number;
@@ -99,6 +114,10 @@ export const DEFAULT_PLAN: PlanOptions = {
   riskWeight: 0,
   riskSplit: 0.1,
   riskCell: 80,
+  preferReach: 50,
+  preferWeight: 0.15,
+  preferLines: false,
+  starboardOffset: 15,
   balancedRisk: 2,
   safestRisk: 10
 };
@@ -116,5 +135,18 @@ export function limitsFor(opts: PlanOptions, d: number, corridor: boolean): Plan
     ...opts,
     maxDistance: Math.max(opts.maxDistance, opts.corridorDistance),
     maxWork: Math.max(opts.maxWork, Math.ceil((d / 1000) * opts.corridorWorkPerKm))
+  };
+}
+
+/** `opts` with a request's own risk weight, preference for lines and draft for them. */
+export function requestOptions(
+  opts: PlanOptions,
+  input: { riskWeight?: number; preferLines?: boolean; draft?: number }
+): PlanOptions {
+  return {
+    ...opts,
+    riskWeight: input.riskWeight ?? opts.riskWeight,
+    preferLines: input.preferLines ?? opts.preferLines,
+    ...(input.draft !== undefined && { preferDraft: input.draft })
   };
 }
