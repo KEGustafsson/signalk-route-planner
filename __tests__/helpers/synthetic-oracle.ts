@@ -33,6 +33,8 @@ export interface Chart {
   unverified?: Circle[];
   /** Water the check passes with a warning: marginal, at P(UKC < 0) 0.005. */
   marginal?: Circle[];
+  /** Water the check passes, `ok`, at this P(UKC < 0): near the margin, not over it. */
+  risky?: (Circle & { risk: number })[];
   /** Shallows that pass once the water level is at least `needs` metres: a tide gate. */
   tidal?: (Circle & { needs: number })[];
   /** The water level at time t, metres; 0 when absent. */
@@ -103,9 +105,10 @@ function judge(chart: Chart, near: (c: Circle) => boolean, level = 0): Verdict {
       ? { status: "unverified", risk: 0.005, flags: ["NOT_FOR_NAVIGATION"] }
       : { status: "marginal", risk: 0.005, flags: [] };
   }
+  const risk = Math.max(0, ...(chart.risky ?? []).filter(near).map((c) => c.risk));
   return chart.notForNavigation
-    ? { status: "unverified", risk: 0, flags: ["NOT_FOR_NAVIGATION"] }
-    : { status: "ok", risk: 0, flags: [] };
+    ? { status: "unverified", risk, flags: ["NOT_FOR_NAVIGATION"] }
+    : { status: "ok", risk, flags: [] };
 }
 
 /** The verdict of the leg a → b on `chart` with corridor half-width r. */

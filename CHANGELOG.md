@@ -36,6 +36,10 @@ All notable changes to signalk-route-planner are documented here.
   anchor at the trip's lowest water, at most as long in all as the boat may wait to leave. The
   route is split where it waits, each piece proved from when the boat leaves for it, and the
   reply lists the waits (`gate.waits`); the panel offers it as a check box.
+- Risk: every offered route states its `risk`, 1 − Π(1 − P) over its legs. `riskWeight` adds a
+  cost per metre of α · P / threshold, so the route keeps away from the margin, and `riskBudget`
+  refuses a route whose risk is over it. `alternatives: true` plans the shortest, balanced and
+  safest routes, each proved, and offers the first within the budget with the others listed.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
   index of the whole search region, or of the trip's least region (both ends with the search's
   least margin and a harbour stage around them) when that is too large to build: the chart box

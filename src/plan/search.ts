@@ -4,14 +4,17 @@ import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
+import type { RiskCost } from "../search/fallback";
 import {
   berthable,
   crossable,
   fallbackWeight,
+  costShortcut,
   riskyShortcut,
-  strictWeight
+  strictWeight,
+  verdictWeight
 } from "../search/fallback";
-import type { Shortcut } from "../search/pull";
+import type { Priced, Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
 import type { QuadNode } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
@@ -96,19 +99,34 @@ export interface Mode {
   /** True when a checked leg may join the start or goal to a square. */
   joins(v: Verdict): boolean;
   weight?(n: QuadNode): number;
+  /** True when the weight carries a risk cost. */
+  risk?: boolean;
 }
 
-const strictMode = (rule: PassRule): Mode => ({
+const strictMode = (rule: PassRule, cost?: RiskCost): Mode => ({
   enter: (n) => Number.isFinite(strictWeight(n)),
   joins: (v) => passes(v, rule) || (v.status === "marginal" && crossable(v)),
-  weight: strictWeight
+  weight: (n) => strictWeight(n, cost),
+  risk: cost !== undefined
 });
 
-const FALLBACK: Mode = {
+const fallbackMode = (cost?: RiskCost): Mode => ({
   enter: (n) => Number.isFinite(fallbackWeight(n)),
   joins: (v) => crossable(v),
-  weight: fallbackWeight
-};
+  weight: (n) => fallbackWeight(n, cost),
+  risk: cost !== undefined
+});
+
+/** The request's risk cost: none at weight 0, the shortest route. */
+function riskCostOf(opts: PlanOptions, rule: PassRule): RiskCost | undefined {
+  return opts.riskWeight > 0 && rule.probability > 0
+    ? { weight: opts.riskWeight, threshold: rule.probability }
+    : undefined;
+}
+
+/** True when water at P(UKC < 0) `risk` adds more than `riskSplit` to the cost per metre. */
+const weighs = (opts: PlanOptions, cost: RiskCost | undefined, risk: number): boolean =>
+  cost !== undefined && (cost.weight * risk) / cost.threshold > opts.riskSplit;
 
 export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
@@ -306,7 +324,8 @@ async function attempt(
           pause: () => session.pause(),
           every: 64,
           weight: mode.weight,
-          greed: opts.greed
+          // A risk cost is a preference smaller than weighted A*'s slack: plain A* keeps it.
+          greed: mode.risk ? 1 : opts.greed
         });
   if (!found.found) {
     return {
@@ -322,7 +341,7 @@ async function attempt(
 }
 
 type Searched =
-  | { path: LonLat[]; berths: Berths; shortcut?: Shortcut; fallback?: string }
+  | { path: LonLat[]; berths: Berths; shortcut?: Shortcut; priced?: Priced; fallback?: string }
   | { reason: string; stuck?: Stuck };
 
 /**
@@ -336,11 +355,27 @@ async function searchTree(
   opts: PlanOptions,
   how: { rule: PassRule; fallback: boolean; berth: number }
 ): Promise<Searched> {
-  const strict = await attempt(tree, session, ends, opts, strictMode(how.rule), how.berth);
+  const cost = riskCostOf(opts, how.rule);
+  const strict = await attempt(tree, session, ends, opts, strictMode(how.rule, cost), how.berth);
+  // With a risk cost, pulling keeps to what the search paid for, by one price for every shortcut.
+  const pulling = (path: LonLat[], mode: Mode, fallback: boolean) => {
+    if (!cost) {
+      return {};
+    }
+    const priced = costShortcut(
+      tree,
+      path,
+      (n) => mode.weight?.(n) ?? 1,
+      (v) => verdictWeight(v, how.rule, { fallback, cost }),
+      cost
+    );
+    return { priced };
+  };
   if ("path" in strict) {
     return {
       ...strict,
-      shortcut: riskyShortcut(tree, strict.path, (v) => v.status === "marginal")
+      shortcut: riskyShortcut(tree, strict.path, (v) => v.status === "marginal"),
+      ...pulling(strict.path, strictMode(how.rule, cost), false)
     };
   }
   // Refused only at an end: the harbour stage plans that end in its own small region, so
@@ -358,12 +393,13 @@ async function searchTree(
   }
   const again =
     how.fallback && strict.reason !== WORK_LIMIT
-      ? await attempt(tree, session, ends, opts, FALLBACK, how.berth)
+      ? await attempt(tree, session, ends, opts, fallbackMode(cost), how.berth)
       : undefined;
   if (again && "path" in again) {
     return {
       ...again,
       shortcut: riskyShortcut(tree, again.path, crossable),
+      ...pulling(again.path, fallbackMode(cost), true),
       fallback: strict.reason
     };
   }
@@ -372,7 +408,7 @@ async function searchTree(
     return { reason: WORK_LIMIT };
   }
   const near = again
-    ? stuckEnds(tree, ends, again.stuck, opts, { ...FALLBACK, exhausted })
+    ? stuckEnds(tree, ends, again.stuck, opts, { ...fallbackMode(), exhausted })
     : undefined;
   if (near === "work") {
     return { reason: WORK_LIMIT };
@@ -395,11 +431,21 @@ export async function searchRoute(
   berth = 0
 ): Promise<SearchOutcome> {
   const direct = checkLeg(session, from, to);
-  if (passes(direct, rule)) {
+  const cost = riskCostOf(opts, rule);
+  // With a risk cost, a direct line near the margin is searched around like any other.
+  if (passes(direct, rule) && !weighs(opts, cost, direct.risk)) {
     return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
   }
   const shape = shapeFor(from, to, session.halfWidth, opts, session.within);
-  const tree = typeof shape === "string" ? undefined : new QuadTree(shape, session, rule);
+  const tree =
+    typeof shape === "string"
+      ? undefined
+      : new QuadTree(
+          shape,
+          session,
+          rule,
+          (risk, size) => size * shape.unit > opts.riskCell && weighs(opts, cost, risk)
+        );
   const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,
     reason,
@@ -421,7 +467,8 @@ export async function searchRoute(
     (a, b) => checkLeg(session, a, b),
     { exhausted: () => session.work() >= opts.maxWork, pause: () => session.pause() },
     rule,
-    found.shortcut
+    found.shortcut,
+    found.priced
   );
   // The last shortcut checked may have taken the work past the limit.
   if (coordinates === "work" || session.work() >= opts.maxWork) {

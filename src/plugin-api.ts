@@ -77,7 +77,10 @@ export function apiFor(
           accept: req.accept,
           fallback: req.fallback,
           latestDeparture: req.latestDeparture,
-          waitEnRoute: req.waitEnRoute
+          waitEnRoute: req.waitEnRoute,
+          riskWeight: req.riskWeight,
+          riskBudget: req.riskBudget,
+          alternatives: req.alternatives
         },
         AbortSignal.any([client, stop]),
         clock.now(),

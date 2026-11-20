@@ -156,6 +156,15 @@ function summarise(reply) {
     statuses: count,
     berths: (b.berths ?? []).length,
     ...(b.gate && { waitMinutes: b.gate.waitMinutes }),
+    risk: +b.risk.toPrecision(3),
+    ...(b.alternatives && {
+      chosen: b.chosen,
+      alternatives: b.alternatives.map((a) =>
+        a.reason
+          ? `${a.name}: ${a.reason}`
+          : `${a.name} ${(a.length / 1852).toFixed(2)} nm risk ${a.risk.toPrecision(3)}${a.sameAs ? ` (= ${a.sameAs})` : ""}`
+      )
+    }),
     work: b.work
   };
 }
@@ -183,6 +192,13 @@ function failures(s, e, reply) {
   }
   if (e.parts && s.status === 200 && s.parts.join(",") !== e.parts.join(",")) {
     out.push(`parts ${s.parts.join(",")}, expected ${e.parts.join(",")}`);
+  }
+  if (e.alternatives && s.status === 200) {
+    const listed = reply.body.alternatives ?? [];
+    const stated = listed.filter((a) => a.length > 0 && typeof a.risk === "number");
+    if (stated.length !== e.alternatives) {
+      out.push(`${stated.length} alternatives state length and risk, expected ${e.alternatives}`);
+    }
   }
   if (e.routeStatuses && s.status === 200) {
     const bad = reply.body.check.legs.filter(
@@ -247,7 +263,8 @@ async function main() {
         draft: c.draft,
         xteLimit: c.xteLimit,
         ...(c.accept && { accept: c.accept }),
-        ...(c.fallback && { fallback: true })
+        ...(c.fallback && { fallback: true }),
+        ...(c.alternatives && { alternatives: true })
       },
       new AbortController().signal,
       Date.now(),

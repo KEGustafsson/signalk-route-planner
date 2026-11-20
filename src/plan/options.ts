@@ -58,6 +58,21 @@ export interface PlanOptions {
   waitSwing: number;
   /** ...and places are tried along each leg this far apart, and at the route's turns, metres. */
   waitSpacing: number;
+  /**
+   * The risk cost's weight α (plan §4.4): the cost per metre is 1 + α · P / threshold, P the
+   * water's P(UKC < 0) and threshold the accepted probability. 0 plans the shortest route.
+   */
+  riskWeight: number;
+  /**
+   * A free square whose risk adds more than this to the cost per metre is split to find the
+   * clearer water in it, and a direct line's is searched around.
+   */
+  riskSplit: number;
+  /** ...down to squares this size, metres: the risk cost's resolution. */
+  riskCell: number;
+  /** The risk weights of the balanced and safest alternatives; the shortest's is 0. */
+  balancedRisk: number;
+  safestRisk: number;
 }
 
 export const DEFAULT_PLAN: PlanOptions = {
@@ -80,7 +95,12 @@ export const DEFAULT_PLAN: PlanOptions = {
   harbourMargin: 300,
   berthMetres: 40,
   waitSwing: 60,
-  waitSpacing: 500
+  waitSpacing: 500,
+  riskWeight: 0,
+  riskSplit: 0.1,
+  riskCell: 80,
+  balancedRisk: 2,
+  safestRisk: 10
 };
 
 /**

@@ -20,6 +20,12 @@ export interface PlanRequest {
   latestDeparture?: number;
   /** With `latestDeparture`: the boat may wait for the tide on the way too (`plan/waits.ts`). */
   waitEnRoute?: boolean;
+  /** The risk cost's weight α: 0 the shortest route, larger keeps farther from the margin. */
+  riskWeight?: number;
+  /** Offer a route only while 1 − Π(1 − P) over its legs is at most this. */
+  riskBudget?: number;
+  /** Plan the shortest, balanced and safest routes (`plan/plan.ts`). */
+  alternatives?: boolean;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -152,6 +158,28 @@ function searchOptions(
   return out;
 }
 
+/** The risk options, validated: `riskWeight`, `riskBudget` and `alternatives`. */
+function riskOptions(
+  b: Record<string, unknown>,
+  errors: string[]
+): { riskWeight?: number; riskBudget?: number; alternatives?: boolean } {
+  const riskWeight = inRange(b, "riskWeight", 0, 100, "", errors);
+  const riskBudget = inRange(b, "riskBudget", 0, 1, "", errors, true);
+  if (b.alternatives === undefined) {
+    return { riskWeight, riskBudget };
+  }
+  if (typeof b.alternatives !== "boolean") {
+    errors.push("alternatives must be true or false");
+  } else if (b.alternatives && b.riskWeight !== undefined) {
+    errors.push("alternatives set their own riskWeight: give one or the other");
+  } else if (b.alternatives && b.latestDeparture !== undefined) {
+    errors.push("alternatives are planned at one departure: not with latestDeparture");
+  } else {
+    return { riskWeight, riskBudget, alternatives: b.alternatives };
+  }
+  return { riskWeight, riskBudget };
+}
+
 export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { ok: false, errors: ["give from and to as [lon, lat]"] };
@@ -166,6 +194,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const probability = inRange(b, "probability", 0, 0.5, "", errors, true);
   const draft = inRange(b, "draft", 0.01, 30, " m", errors);
   const { accept, fallback, waitEnRoute } = searchOptions(b, errors);
+  const { riskWeight, riskBudget, alternatives } = riskOptions(b, errors);
   if (errors.length > 0 || !from || !to) {
     return { ok: false, errors };
   }
@@ -182,7 +211,10 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
         draft,
         accept,
         fallback,
-        waitEnRoute
+        waitEnRoute,
+        riskWeight,
+        riskBudget,
+        alternatives
       }).filter(([, v]) => v !== undefined)
     )
   );
