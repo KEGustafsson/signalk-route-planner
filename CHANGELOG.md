@@ -36,6 +36,10 @@ All notable changes to signalk-route-planner are documented here.
   anchor at the trip's lowest water, at most as long in all as the boat may wait to leave. The
   route is split where it waits, each piece proved from when the boat leaves for it, and the
   reply lists the waits (`gate.waits`); the panel offers it as a check box.
+- Waiting places: a wait is at the user's `waitPoints` or a charted anchorage (`ACHARE`, not one
+  where anchoring is prohibited or restricted) when one serves, on the route or within
+  `waitReach` (1 nm) of it by a detour out and back the planning API passes at the trip's lowest
+  water; else at the route's own places. Each wait names its `place`.
 - Risk: every offered route states its `risk`, 1 − Π(1 − P) over its legs. `riskWeight` adds a
   cost per metre of α · P / threshold, so the route keeps away from the margin, and `riskBudget`
   refuses a route whose risk is over it. `alternatives: true` plans the shortest, balanced and

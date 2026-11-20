@@ -22,6 +22,8 @@ export interface PlanRequest {
   latestDeparture?: number;
   /** With `latestDeparture`: the boat may wait for the tide on the way too (`plan/waits.ts`). */
   waitEnRoute?: boolean;
+  /** With `waitEnRoute`: places the boat would rather wait at, on the route or near it. */
+  waitPoints?: LonLat[];
   /** The risk cost's weight α: 0 the shortest route, larger keeps farther from the margin. */
   riskWeight?: number;
   /** Offer a route only while 1 − Π(1 − P) over its legs is at most this. */
@@ -162,6 +164,27 @@ function searchOptions(
   return out;
 }
 
+/** The most waiting points a request may give. */
+export const MAX_WAIT_POINTS = 10;
+
+/** `waitPoints`, validated: 1..10 positions, with `waitEnRoute`. */
+function waitPointsOf(b: Record<string, unknown>, errors: string[]): LonLat[] | undefined {
+  if (b.waitPoints === undefined) {
+    return undefined;
+  }
+  const v = b.waitPoints;
+  if (!Array.isArray(v) || v.length === 0 || v.length > MAX_WAIT_POINTS) {
+    errors.push(`waitPoints must list 1..${String(MAX_WAIT_POINTS)} positions`);
+    return undefined;
+  }
+  if (b.waitEnRoute !== true) {
+    errors.push("waitPoints needs waitEnRoute: they are places to wait on the way");
+    return undefined;
+  }
+  const points = v.map((p, i) => point(p, `waitPoints[${String(i)}]`, errors));
+  return points.every((p) => p !== undefined) ? points : undefined;
+}
+
 /** The risk options, validated: `riskWeight`, `riskBudget` and `alternatives`. */
 function riskOptions(
   b: Record<string, unknown>,
@@ -200,6 +223,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   const airHeight = inRange(b, "airHeight", 0.1, 100, " m", errors);
   const { accept, fallback, waitEnRoute } = searchOptions(b, errors);
   const { riskWeight, riskBudget, alternatives } = riskOptions(b, errors);
+  const waitPoints = waitPointsOf(b, errors);
   const preferLines = typeof b.preferLines === "boolean" ? b.preferLines : undefined;
   if (b.preferLines !== undefined && preferLines === undefined) {
     errors.push("preferLines must be true or false");
@@ -222,6 +246,7 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
         accept,
         fallback,
         waitEnRoute,
+        waitPoints,
         riskWeight,
         riskBudget,
         alternatives,

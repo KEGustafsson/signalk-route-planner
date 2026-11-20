@@ -46,6 +46,11 @@ export interface PlanInput {
    * places along the route with room to swing (`waits.ts`), as long in all as it may wait to leave.
    */
   waitEnRoute?: boolean;
+  /**
+   * With `waitEnRoute`: where the boat would rather wait, each reached from the route within
+   * `waitReach` (`wait-places.ts`); charted anchorages are such places too.
+   */
+  waitPoints?: LonLat[];
   /** Keep to leading lines, fairway lines and own tracks (`search/prefer.ts`). */
   preferLines?: boolean;
   /** The risk cost's weight (`PlanOptions.riskWeight`); absent, the plugin's. */
@@ -320,7 +325,8 @@ async function enRoute(
     ...input,
     latest: input.latestDeparture,
     swing: opts.waitSwing,
-    spacing: opts.waitSpacing
+    spacing: opts.waitSpacing,
+    reach: opts.waitReach
   };
   const budget = Math.max(0, opts.maxWork - w.used);
   const s = await scheduleWithWaits(api, g, candidate.parts, { rule: first.rule, signal, budget });
@@ -368,6 +374,7 @@ async function waited(
   }
   const waits = s.waits.map((x) => ({
     at: x.at,
+    place: x.place,
     arrive: iso(x.arrive),
     leave: iso(x.leave),
     minutes: Math.round((x.leave - x.arrive) / 60_000)
