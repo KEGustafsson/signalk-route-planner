@@ -223,17 +223,26 @@ export function syntheticApi(
         objects(sw, ne) {
           const [x0, y0] = xy(sw);
           const [x1, y1] = xy(ne);
-          return (chart.lines ?? [])
-            .filter((l) => l.points.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1))
-            .map((l) => ({
-              class: l.class,
-              geometry: {
-                type: "LineString" as const,
-                coordinates: l.points.map(([x, y]) => at(x, y))
-              },
-              ...(l.twoWay && { twoWay: true }),
-              ...(l.designDraft !== undefined && { designDraft: l.designDraft })
-            }));
+          return (
+            (chart.lines ?? [])
+              // By bounds, as a provider lists them: a line may cross the box with no point in it.
+              .filter(
+                (l) =>
+                  Math.max(...l.points.map((p) => p[0])) >= x0 &&
+                  Math.min(...l.points.map((p) => p[0])) <= x1 &&
+                  Math.max(...l.points.map((p) => p[1])) >= y0 &&
+                  Math.min(...l.points.map((p) => p[1])) <= y1
+              )
+              .map((l) => ({
+                class: l.class,
+                geometry: {
+                  type: "LineString" as const,
+                  coordinates: l.points.map(([x, y]) => at(x, y))
+                },
+                ...(l.twoWay && { twoWay: true }),
+                ...(l.designDraft !== undefined && { designDraft: l.designDraft })
+              }))
+          );
         },
         work: () => work,
         pause: () =>

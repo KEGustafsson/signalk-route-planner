@@ -39,22 +39,26 @@ function segmentDistance(p: XY, a: XY, b: XY): number {
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
 
-/** `line` moved `d` units to the right of the way `travel` points along each of its segments. */
+/**
+ * `line` moved `d` units to the right of the way the boat sails it: from the end nearer the
+ * trip's start, `travel` pointing along the trip, and on through its bends, so a fairway that
+ * winds back on itself keeps the same side.
+ */
 function toStarboard(line: XY[], d: number, travel: XY): XY[] {
+  const first = line[0] as XY;
+  const last = line[line.length - 1] as XY;
+  const along = (last[0] - first[0]) * travel[0] + (last[1] - first[1]) * travel[1];
+  const sailed = along < 0 ? [...line].reverse() : line;
   const out: XY[] = [];
-  line.slice(1).forEach((b, i) => {
-    const a = line[i] as XY;
-    let dx = b[0] - a[0];
-    let dy = b[1] - a[1];
+  sailed.slice(1).forEach((b, i) => {
+    const a = sailed[i] as XY;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
     const len = Math.hypot(dx, dy);
     if (len === 0) {
       return;
     }
-    // Along the boat's way: a segment pointing back is sailed the other way.
-    const sign = dx * travel[0] + dy * travel[1] < 0 ? -1 : 1;
-    dx = (dx / len) * sign;
-    dy = (dy / len) * sign;
-    const off: XY = [dy * d, -dx * d];
+    const off: XY = [(dy / len) * d, (-dx / len) * d];
     out.push([a[0] + off[0], a[1] + off[1]], [b[0] + off[0], b[1] + off[1]]);
   });
   return out;
@@ -65,10 +69,52 @@ const GRID = 64;
 
 const cellKey = (x: number, y: number): string => `${x},${y}`;
 
-/** The segments of `lines`, and each grid cell's segments. */
-function gridOf(lines: readonly XY[][]): Pick<Preferred, "segments" | "grid"> {
+/** The part of the segment a–b inside the box lo–hi (Liang–Barsky), or none. */
+function clipped(a: XY, b: XY, lo: number, hi: number): [XY, XY] | undefined {
+  let t0 = 0;
+  let t1 = 1;
+  const d: XY = [b[0] - a[0], b[1] - a[1]];
+  for (const axis of [0, 1] as const) {
+    for (const [p, q] of [
+      [-d[axis], a[axis] - lo],
+      [d[axis], hi - a[axis]]
+    ] as const) {
+      if (p === 0) {
+        if (q < 0) {
+          return undefined;
+        }
+        continue;
+      }
+      const r = q / p;
+      if (p < 0) {
+        t0 = Math.max(t0, r);
+      } else {
+        t1 = Math.min(t1, r);
+      }
+      if (t0 > t1) {
+        return undefined;
+      }
+    }
+  }
+  const at = (t: number): XY => [a[0] + d[0] * t, a[1] + d[1] * t];
+  return [at(t0), at(t1)];
+}
+
+/**
+ * The segments of `lines` clipped to the tree's square grown by `reach`, and each grid cell's
+ * segments. Every part of a line within reach of a point in the square lies in that box, so no
+ * distance the search asks changes, and a long line fills only the cells near the region.
+ */
+function gridOf(
+  lines: readonly XY[][],
+  side: number,
+  reach: number
+): Pick<Preferred, "segments" | "grid"> {
   const segments: [XY, XY][] = lines.flatMap((l) =>
-    l.slice(1).map((b, i): [XY, XY] => [l[i] as XY, b])
+    l
+      .slice(1)
+      .map((b, i) => clipped(l[i] as XY, b, -reach, side + reach))
+      .filter((s): s is [XY, XY] => s !== undefined)
   );
   const grid = new Map<string, number[]>();
   segments.forEach(([a, b], k) => {
@@ -128,10 +174,11 @@ export function preferredIn(
   if (out.length === 0 || how.weight <= 0) {
     return undefined;
   }
+  const reach = how.reachMetres / unit;
   return {
     lines: out,
-    ...gridOf(out),
-    reach: how.reachMetres / unit,
+    ...gridOf(out, tree.shape.side, reach),
+    reach,
     weight: how.weight,
     cell: how.cellMetres / unit
   };
