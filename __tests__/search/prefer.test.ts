@@ -33,11 +33,24 @@ describe("preference lines in the tree", () => {
     };
     const pref = preferredIn(tree, [fairway], [at(0, 300), at(1200, 700)], HOW);
     const lines = pref?.lines ?? [];
+    // Three sections, each moved whole: two points each.
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toHaveLength(6);
     const west = (lines[0] ?? []).slice(4, 6);
     // The section along y = 600 m (60 units), moved 1.5 units: north of it, sailed westwards.
     expect(west.every(([, y]) => y > 60)).toBe(true);
     const east = (lines[0] ?? []).slice(0, 2);
     expect(east.every(([, y]) => y < 30)).toBe(true);
+  });
+
+  test("a fairway across the trip is sailed from its end nearer the trip's start", () => {
+    // North to south at x = 600 m, crossing an eastward trip that starts by its south end: the
+    // boat sails it northwards, so its starboard side is east of it.
+    const fairway = { coordinates: [at(600, 1000), at(600, 0)], twoWay: true };
+    const pref = preferredIn(tree, [fairway], [at(500, -50), at(1500, -50)], HOW);
+    const line = pref?.lines[0] ?? [];
+    expect(line).toHaveLength(2);
+    expect(line.every(([x]) => x > 60)).toBe(true);
   });
 
   test("a line longer than the region is clipped to it, and distances inside it stay", () => {
