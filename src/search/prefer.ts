@@ -41,14 +41,14 @@ function segmentDistance(p: XY, a: XY, b: XY): number {
 
 /**
  * `line` moved `d` units to the right of the way the boat sails it: from the end nearer the
- * trip's start, `travel` pointing along the trip, and on through its bends, so a fairway that
- * winds back on itself keeps the same side.
+ * trip's start `start` (the first end when both are as near), and on through its bends, so a
+ * fairway that winds back on itself keeps the same side.
  */
-function toStarboard(line: XY[], d: number, travel: XY): XY[] {
+function toStarboard(line: XY[], d: number, start: XY): XY[] {
   const first = line[0] as XY;
   const last = line[line.length - 1] as XY;
-  const along = (last[0] - first[0]) * travel[0] + (last[1] - first[1]) * travel[1];
-  const sailed = along < 0 ? [...line].reverse() : line;
+  const from = (p: XY): number => Math.hypot(p[0] - start[0], p[1] - start[1]);
+  const sailed = from(last) < from(first) ? [...line].reverse() : line;
   const out: XY[] = [];
   sailed.slice(1).forEach((b, i) => {
     const a = sailed[i] as XY;
@@ -161,14 +161,12 @@ export function preferredIn(
   how: { reachMetres: number; weight: number; starboardMetres: number; cellMetres: number }
 ): Preferred | undefined {
   const unit = tree.shape.unit;
-  const [fx, fy] = tree.units(trip[0]);
-  const [tx, ty] = tree.units(trip[1]);
-  const travel: XY = [tx - fx, ty - fy];
+  const start = tree.units(trip[0]);
   const out = lines
     .filter((l) => l.coordinates.length >= 2)
     .map((l) => {
       const xy = l.coordinates.map((p) => tree.units(p));
-      return l.twoWay ? toStarboard(xy, how.starboardMetres / unit, travel) : xy;
+      return l.twoWay ? toStarboard(xy, how.starboardMetres / unit, start) : xy;
     })
     .filter((l) => l.length >= 2);
   if (out.length === 0 || how.weight <= 0) {
