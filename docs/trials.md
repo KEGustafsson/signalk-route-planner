@@ -70,7 +70,7 @@ wait for a leg the tide cannot open.
 
 `turku-guest-harbours-b-lines` plans Turku to Nauvo with `preferLines` on the WFS cell with the
 FTIA's navigation lines (474 of them in the area): 20.0 nm in 41 legs, keeping to the lines,
-against 19.8 nm in 39 without them, for 9.4 M work units against 5.8 M and 7 s against 3 s.
+against 19.8 nm in 39 without them, for 10.5 M work units against 7.0 M and 8 s against 4 s.
 
 `miami-fisher-island-alternatives` plans the same trip with `alternatives` (R4). The shortest
 route is 1894 m at risk 0.031; the balanced one (α = 2) 1903 m at 0.026, every leg `ok`. The safest
