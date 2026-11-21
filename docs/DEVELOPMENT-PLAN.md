@@ -293,10 +293,17 @@ or where the route crosses it (`src/plan/wait-places.ts`).
 - A designated place within `waitReach` (1852 m) of an inner point of the candidate route is
   joined to the nearest one by a detour out and back, which must pass, as the place's room to
   swing must, at the lowest water of the whole horizon. The detour counts as waiting.
-- At each point the best place is kept: a user's point, then an anchorage on the route, then
-  one off it, the nearer first.
-- The schedule is searched first over the designated places alone, and only when that finds
-  none over the route's own places too: the boat anchors where anchoring is meant to be.
+- At each point two places are kept of those that pass: the one the boat would rather wait at
+  (a user's point, then an anchorage on the route, then one off it, the nearer first) and the
+  nearest. A designated place within a metre of a route point is waited at on the route only
+  when that point has room to swing.
+- The schedule is searched first over the preferred designated places, then over the nearest
+  ones, and only when those find none over the route's own places too: the boat anchors where
+  anchoring is meant to be. The nearest places serve any schedule the others do, and more of
+  them pass at higher water, so a plan that passes at some water level passes at every higher
+  one.
+- The boat may leave a place as soon as it is back from the detour, besides the slot
+  boundaries.
 - The offered route goes out to the place and back, the piece after the wait starting at the
   place; each wait names its `place` (`user`, `anchorage`, `route`).
 

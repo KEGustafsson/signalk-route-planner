@@ -20,10 +20,15 @@ export interface Designated {
   detour: number;
 }
 
-/** Per leg start: whether the boat may wait there on the route, and the place it may go to. */
+/**
+ * Per leg start: whether the boat may wait there on the route, and the designated places it
+ * may go to: the one it would rather wait at, and the nearest, which any schedule the other
+ * allows also allows.
+ */
 export interface Place {
   onRoute: boolean;
   designated?: Designated;
+  nearest?: Designated;
 }
 
 /** A place one schedule may wait at: where, how long the detour takes there and back, ms. */
@@ -120,6 +125,11 @@ function better(d: Designated, seen: Designated | undefined): boolean {
   return !seen || rank(d) < rank(seen) || (rank(d) === rank(seen) && d.detour < seen.detour);
 }
 
+/** Whether `d` is nearer the route than `seen`, the better of two as near. */
+function nearer(d: Designated, seen: Designated | undefined): boolean {
+  return !seen || d.detour < seen.detour || (d.detour === seen.detour && better(d, seen));
+}
+
 export interface PlaceInput {
   swing: number;
   /** Designated places this far off the route are reached by a detour, metres. */
@@ -155,10 +165,8 @@ export async function placesAlong(
     // Verified water alone: no flag the request accepts makes a wait in unchecked water safe.
     const onRoute = ok(...boxAbout(leg.a, input.swing));
     const inArea = onRoute && areas.some((rings) => inPolygon(leg.a, rings));
-    places.push({
-      onRoute,
-      ...(inArea && { designated: { at: leg.a, kind: "anchorage" as const, detour: 0 } })
-    });
+    const here: Designated = { at: leg.a, kind: "anchorage", detour: 0 };
+    places.push({ onRoute, ...(inArea && { designated: here, nearest: here }) });
     await s.pause();
   }
   const offRoute: Designated[] = [
@@ -178,7 +186,9 @@ export async function placesAlong(
 
 /**
  * Joins the designated place `d` to the nearest inner point of the route within reach, when it
- * is better than the one there and it and the way to it pass. `null`: the work ran out.
+ * is better or nearer than those there and it and the way to it pass. Each place that passes
+ * is weighed, not only the one ranked first: one refused at lower water must not hide another,
+ * or a plan could pass at low water and be refused at high. `null`: the work ran out.
  */
 async function join(
   s: Session,
@@ -197,8 +207,11 @@ async function join(
     return true;
   }
   const place = w.places[near.j] as Place;
-  const candidate: Designated = { ...d, detour: near.d < 1 ? 0 : near.d };
-  if (!better(candidate, place.designated)) {
+  // On the route only where the route's own point has room to swing; else the way there passes.
+  const candidate: Designated = { ...d, detour: near.d < 1 && place.onRoute ? 0 : near.d };
+  const preferred = better(candidate, place.designated);
+  const closer = nearer(candidate, place.nearest);
+  if (!preferred && !closer) {
     return true;
   }
   if (s.work() >= w.budget) {
@@ -209,7 +222,13 @@ async function join(
     s.box(...boxAbout(d.at, w.input.swing), w.horizon).status === "ok" &&
     (candidate.detour === 0 || s.segment(a, d.at, w.horizon).status === "ok");
   if (reached) {
-    place.designated = candidate.detour === 0 ? { ...candidate, at: a } : candidate;
+    const kept = candidate.detour === 0 ? { ...candidate, at: a } : candidate;
+    if (preferred) {
+      place.designated = kept;
+    }
+    if (closer) {
+      place.nearest = kept;
+    }
   }
   await s.pause();
   return true;
@@ -238,22 +257,28 @@ function nearest(
 /**
  * The places one schedule may wait at. `designated`: only charted anchorages and the user's
  * points; else the route's own places too, a place on the route before a detour off it.
+ * `nearest`: of the designated places, the nearest rather than the one ranked first.
  */
 export function passPlaces(
   places: readonly Place[],
   designated: boolean,
   legs: readonly Leg[],
-  speed: number
+  speed: number,
+  nearest = false
 ): (PassPlace | undefined)[] {
   return places.map((p, j) => {
     const at = (legs[j] as Leg | undefined)?.a;
     if (!designated && p.onRoute && at) {
       return { at, kind: "route", detourMs: 0 };
     }
-    const d = p.designated;
+    const d = nearest ? p.nearest : p.designated;
     return d ? { at: d.at, kind: d.kind, detourMs: ((2 * d.detour) / speed) * 1000 } : undefined;
   });
 }
 
 export const hasDesignated = (places: readonly Place[]): boolean =>
   places.some((p) => p.designated !== undefined);
+
+/** Whether some point's nearest designated place is not the one ranked first there. */
+export const nearestDiffers = (places: readonly Place[]): boolean =>
+  places.some((p) => p.nearest !== p.designated);

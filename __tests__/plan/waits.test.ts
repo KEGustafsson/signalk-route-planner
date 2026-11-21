@@ -2,7 +2,7 @@ import type { LonLat } from "../../src/foundation/geo";
 import { parsePlanRequest } from "../../src/api/plan-request";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
-import { leaveTimes } from "../../src/plan/waits";
+import { leaveTimes } from "../../src/plan/leave-times";
 import type { PlanningApiV1 } from "../../src/oracle/contract";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, syntheticApi, xy } from "../helpers/synthetic-oracle";
