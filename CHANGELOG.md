@@ -36,9 +36,14 @@ All notable changes to signalk-route-planner are documented here.
   anchor at the trip's lowest water, at most as long in all as the boat may wait to leave. The
   route is split where it waits, each piece proved from when the boat leaves for it, and the
   reply lists the waits (`gate.waits`); the panel offers it as a check box.
-- The route passable now: with no waiting asked for, each square and leg is checked at the water of
-  the time the boat can be there, leaving at the departure at its speed (±20 %), not at the
-  lowest water of the whole verdict window. Each reply names the timing it holds for (`timing`).
+- The route passable now: with no waiting asked for, each square and leg is asked about at the water
+  of the times the boat can be there, not at the lowest water of the whole verdict window. The
+  first search allows the boat any timing within the verdict window, so its route holds however
+  the boat keeps to it. When it finds none and the tide could change that, it searches again at a
+  reach near the straight distance, where each square's window is the boat's own timing from the
+  departure, widened by `timingSlack`; a route found there holds only leaving at the departure.
+  The proof then checks each leg at the time the boat reaches it. Route replies and refusals name
+  the timing they hold for (`timing`); error replies carry none.
 - Waiting places: a wait is at the user's `waitPoints` or a charted anchorage (`ACHARE`, not one
   where anchoring is prohibited or restricted) when one serves, on the route or within
   `waitReach` (1 nm) of it by a detour out and back the planning API passes at the trip's lowest

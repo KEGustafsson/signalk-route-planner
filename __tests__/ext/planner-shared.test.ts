@@ -43,7 +43,9 @@ describe("panel model", () => {
       check: { legs: [{}] },
       timing: { departure: "2026-11-18T07:00:00.000Z", speed: 3, holds: "now" }
     };
-    expect(P.summary(200, body).text).toMatch(/Passable at your speed leaving now/);
+    const text = P.summary(200, body).text;
+    expect(text).toMatch(/Passable at your speed leaving now/);
+    expect(text).toMatch(/plan again if you leave later/);
     expect(P.summary(200, { ...body, timing: { ...body.timing, holds: "trip" } }).text).not.toMatch(
       /leaving now/
     );
