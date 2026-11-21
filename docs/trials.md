@@ -183,10 +183,11 @@ Each step was scripted in Chromium against Freeboard's own page; the screenshots
 | A waypoint dragged on the Turku route                                                | its two legs planned again, `unverified`; the credits stay the route's and the new legs' together ([w4-5](trials/w4-5-turku-drag-credits.jpg))                                                                                                                                                                   |
 
 - The drag needed a fix: Freeboard hands a written route's points back through its map
-  projection, each a few 1e-14 degrees off, and the panel compared positions exactly, so every
-  point looked moved and a drag was never re-planned. Positions now count as the same within
-  1e-8 degrees (about a millimetre). R5's scripted drag moved no point at all, so it never got
-  this far.
+  projection, which leaves each point off by rounding noise, and the panel compared positions
+  exactly, so every point looked moved and a drag was never re-planned. Points that differ only
+  by such noise now count as the same (`samePosition` in `public/planner-shared.js`), and the
+  dragged point alone is planned again. R5's scripted drag moved no point at all, so it never
+  got this far.
 - R5 had it refused at the default 1 200 000. Here it was refused at 2 500 000 too while
   signalk-underkeel's cross-track limit was its 30 m default: the search stops at 80 % of the
   budget (`searchShare`), and the wider limit takes more work in that basin. With the
