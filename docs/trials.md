@@ -37,10 +37,16 @@ Data: the Traficom INSPIRE WFS (`DepthArea_A`, `Sounding_P`) through signalk-und
 client. It is not for navigation, so every leg is at best `unverified`. It carries no survey
 quality, so each case assumes a CATZOC.
 
-| Case                      | Assumed CATZOC | Result (2026-11-19)                                   |  Work |
-| ------------------------- | -------------- | ----------------------------------------------------- | ----: |
-| `turku-guest-harbours-b`  | B              | 19.8 nm, 39 legs: harbour stage, route, harbour stage | 5.8 M |
-| `turku-guest-harbours-a1` | A1             | 19.9 nm, 45 legs: harbour stage, route, harbour stage | 5.4 M |
+| Case                      | Assumed CATZOC | Result (2026-11-21)                                   | Work (unsteered) |
+| ------------------------- | -------------- | ----------------------------------------------------- | ---------------: |
+| `turku-guest-harbours-b`  | B              | 20.2 nm, 37 legs: harbour stage, route, harbour stage |    4.3 M (5.8 M) |
+| `turku-guest-harbours-a1` | A1             | 21.3 nm, 40 legs: harbour stage, route, harbour stage |    4.2 M (5.4 M) |
+
+- Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
+  search was steered along a coarse path (`src/plan/steer.ts`).
+- The A1 case's route is the fallback's. Its guide counts the path through coarse squares that
+  may hold no way through at `steerRisk`, so it keeps to water sure all over: 21.3 nm against
+  19.9 nm unsteered, all of it `unverified` either way.
 
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
@@ -51,11 +57,15 @@ quality, so each case assumes a CATZOC.
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
 start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
-| Case                        | Result (2026-11-19)                                                     |   Work |
-| --------------------------- | ----------------------------------------------------------------------- | -----: |
-| `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |  1.9 M |
-| `miami-bayside`             | 3.67 nm, route then harbour stage; unassessed water in it is marked     | 17.0 M |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |  2.4 M |
+| Case                        | Result (2026-11-21)                                                     | Work (unsteered) |
+| --------------------------- | ----------------------------------------------------------------------- | ---------------: |
+| `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |    1.9 M (1.9 M) |
+| `miami-bayside`             | 3.71 nm, route then harbour stage; unassessed water in it is marked     |  11.0 M (17.0 M) |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |    2.4 M (2.4 M) |
+
+- Bayside's route is the fallback's: risk 0.984 against 0.991 unsteered, with 4 `fail` legs
+  in the route against 2. The short Fisher Island and Beach Marina trips share a leaf or finish
+  before steering pays, so their work is unchanged.
 
 `miami-meloy-channel-tide` plans into Meloy Channel with a modelled tide (0.0–0.7 m above
 MLLW) and up to 12 h to wait. The gate finds the route's last leg touches a 0 m band at the bank,
@@ -64,7 +74,8 @@ wait for a leg the tide cannot open.
 
 `turku-guest-harbours-b-lines` plans Turku to Nauvo with `preferLines` on the WFS cell with the
 FTIA's navigation lines (474 of them in the area): 20.0 nm in 41 legs, keeping to the lines,
-against 19.8 nm in 39 without them, for 9.4 M work units against 5.8 M and 7 s against 3 s.
+against 20.2 nm in 37 without them, for 9.4 M work units against 4.3 M and 7 s against 2 s. A
+search with lines is not steered: the guide would drown their discount.
 
 `miami-fisher-island-alternatives` plans the same trip with `alternatives` (R4). The shortest
 route is 1894 m at risk 0.031; the balanced one (α = 2) 1903 m at 0.026, every leg `ok`. The safest
@@ -103,6 +114,8 @@ reported. The script's header says what it keeps between runs.
   searched the square around its boxes, the same plan took 10.1 M work.
 - `--profile` shows where the work goes: most of it is boxes under 50 m along the archipelago's
   shores, and the harbour stages at the start.
+- The search in a corridor is not steered: the corridor is its coarse path already. The plan's
+  work is the same with steering on or off (2026-11-21).
 - The download is most of the time: the WFS answers a box with whole areas, about 1 MB/s.
 
 ## The panel in a chart host (R5)

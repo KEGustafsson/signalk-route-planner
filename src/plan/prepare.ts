@@ -8,10 +8,11 @@ import type {
   Prepared,
   PrepareResult,
   Reply,
-  Session
+  Session,
+  Survey
 } from "../oracle/contract";
 import { canPrepare, canSurvey } from "../oracle/contract";
-import { boxOf, corridorsFor, SURVEY_CELL, surveyRegion } from "./corridor";
+import { boxOf, corridorsFor, mosaic, SURVEY_CELL, surveyRegion, surveyTiles } from "./corridor";
 
 /**
  * Charts for a trip past the chart box around the vessel (plan §4.2, R2): signalk-underkeel's
@@ -210,8 +211,45 @@ async function corridor(
   if (!canSurvey(api)) {
     return undefined;
   }
-  const s = await api.survey(surveyRegion(from, to), SURVEY_CELL, stop);
-  return s.ok ? corridorsFor(s.value, from, to, draft) : undefined;
+  const s = await surveyAlong(api, from, to, stop);
+  return s && corridorsFor(s, from, to, draft);
+}
+
+/** A long trip's survey is cut into at most this many pieces along its line. */
+const MAX_SURVEY_TILES = 8;
+
+/**
+ * The depth survey along the trip: of its whole region, or when signalk-underkeel refuses that
+ * as too large (413), of the trip cut into more pieces along its line in turn (`surveyTiles`),
+ * each surveyed alone and joined into one grid (`mosaic`). Undefined when a survey fails.
+ */
+async function surveyAlong(
+  api: Required<Pick<PlanningApiV1, "survey">>,
+  from: LonLat,
+  to: LonLat,
+  stop: AbortSignal
+): Promise<Survey | undefined> {
+  const whole = await api.survey(surveyRegion(from, to), SURVEY_CELL, stop);
+  if (whole.ok || whole.status !== 413) {
+    return whole.ok ? whole.value : undefined;
+  }
+  for (let n = 2; n <= MAX_SURVEY_TILES; n++) {
+    const grids: Survey[] = [];
+    for (const region of surveyTiles(from, to, n)) {
+      const r = await api.survey(region, SURVEY_CELL, stop);
+      if (!r.ok) {
+        if (r.status !== 413) {
+          return undefined;
+        }
+        break;
+      }
+      grids.push(r.value);
+    }
+    if (grids.length === n) {
+      return mosaic(grids);
+    }
+  }
+  return undefined;
 }
 
 /**

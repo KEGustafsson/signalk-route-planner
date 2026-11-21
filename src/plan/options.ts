@@ -9,6 +9,16 @@ export interface PlanOptions {
    * the cheapest before string pulling, for far fewer squares classified. 1 is plain A*.
    */
   greed: number;
+  /**
+   * Steering (`steer.ts`): the coarse pass cuts squares no finer than this, metres, at this
+   * heuristic weight; its path orders the search. It may use this share of the search's work;
+   * 0 turns steering off. The fallback's guide counts each metre of the path through a coarse
+   * square that may hold no way through as `steerRisk` metres: the risk it will likely cross.
+   */
+  steerCell: number;
+  steerGreed: number;
+  steerShare: number;
+  steerRisk: number;
   /** The region's side may be at most this many smallest squares (a power of two). */
   maxSideUnits: number;
   /** Smallest square, metres, at least; also at least half the corridor half-width. */
@@ -99,6 +109,10 @@ export const DEFAULT_PLAN: PlanOptions = {
   maxWork: 1_200_000,
   searchShare: 0.8,
   greed: 1.25,
+  steerCell: 200,
+  steerGreed: 3,
+  steerShare: 0.15,
+  steerRisk: 100,
   maxSideUnits: 4096,
   minCell: 10,
   corridorCell: 40,
