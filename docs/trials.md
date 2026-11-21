@@ -114,3 +114,30 @@ plans with alternatives, checks the overlay data the panel hands the host (the h
 map) and the panel's lists, writes another alternative, and drags a planned waypoint to see the
 legs beside it planned again. The steps and what each checks are in
 `scripts/trials/panel-trial.js`; it saves screenshots in `data/trials/`.
+
+## The panel in Freeboard (R5's exit)
+
+On 2026-11-21 the panel ran in Freeboard-SK 3.4.1 on a Signal K server 2.37.0, beside
+signalk-underkeel 0.8.0 and signalk-charts-provider-simple 2.22.0, with the server's resources
+provider holding the route. Charts Provider converted the three Miami NOAA cells from a folder on
+the server, keeping their ENC cells, and signalk-underkeel built its index from them. Nothing was
+stubbed: Freeboard found the planner as a plotter extension, its toolbar button opened the
+panel, and the planner planned through signalk-underkeel's planning API.
+
+| Step                                                                           | Result                                                                                |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| A route in Freeboard, from sea off South Pointe to the mouth of Government Cut | the panel lists it; Freeboard draws it on the NOAA chart                              |
+| Plan it with alternatives                                                      | 0.5 nm in 2 legs, `ok`; shortest, balanced and safest the same route                  |
+| The plan written back                                                          | Freeboard's route takes the planned points as an unsaved change, for its route editor |
+| The alternatives overlay                                                       | drawn on Freeboard's map                                                              |
+
+- Within the plan's normal work budget (`docs/DEVELOPMENT-PLAN.md` §6) the planner refuses
+  `miami-fisher-island-basin` on the live server: that case takes 1.9 M work units, the budget
+  1.2 M. The field trials raise the limit; a live server does not, so this trial plans the
+  shorter passage, which takes 1.4 M for its three alternatives.
+- With the alternatives all the same route, no **Use** button is offered, so writing another
+  alternative is covered by the panel trial above, not here.
+- Dragging a waypoint in Freeboard's route editor was not shown here: a scripted drag in
+  Freeboard's modify mode moved no point. The panel trial covers the re-plan.
+- Plugins start in no set order: the planner's status waits for signalk-underkeel and turns to
+  ready once its planning API appears.

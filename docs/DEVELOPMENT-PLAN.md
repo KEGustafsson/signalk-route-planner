@@ -404,8 +404,10 @@ search over the quadtree's leaves, state (leaf, arrival slot), in place of the c
 - **Panel trial** (`npm run trial:panel`, `scripts/trials/panel-trial.js`): the panel in
   Chromium, hosted by the bus's own host implementation over one route, planning through
   signalk-underkeel's planning API on the field trials' charts. It plans with alternatives,
-  writes another, drags a waypoint and waits for its legs to be planned again. Freeboard itself
-  is the release trial (R5's exit).
+  writes another, drags a waypoint and waits for its legs to be planned again.
+- **Freeboard trial** (R5's exit, `docs/trials.md`): the panel in Freeboard-SK on a Signal K
+  server with signalk-underkeel and Charts Provider, planning a Miami route from the panel, the
+  plan written into Freeboard's route and the alternatives drawn on its map.
 
 ## 5. REST API
 
