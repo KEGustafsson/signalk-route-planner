@@ -55,7 +55,10 @@ start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 | --------------------------- | ----------------------------------------------------------------------- | -----: |
 | `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |  1.9 M |
 | `miami-bayside`             | 3.67 nm, route then harbour stage; unassessed water in it is marked     | 17.0 M |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |  2.4 M |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |  3.0 M |
+
+A refusal over water another time's tide could open asks again at the boat's own timing
+(plan §4.3, R3d): `miami-beach-marina` does, for 0.6 M of its work, and is refused there too.
 
 `miami-meloy-channel-tide` plans into Meloy Channel with a modelled tide (0.0–0.7 m above
 MLLW) and up to 12 h to wait. The gate finds the route's last leg touches a 0 m band at the bank,
