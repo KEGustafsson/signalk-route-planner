@@ -105,7 +105,11 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    fallback water level is reported `unverified` with the reason, and is never ranked as `ok`.
 3. **Monotonic.** A deeper draft, a taller air draft, a lower water level or a smaller accepted
    probability never yields a route that a less constrained request rejected. Covered by a
-   fast-check property over the synthetic oracle.
+   fast-check property over the synthetic oracle. A refusal at the work limit is not a
+   rejection of the water and is outside this: the search's order, steered or not, depends on
+   the request, so within the same budget a less constrained request may run out of work where
+   a more constrained one finds its route. It is refused with the work limit, never offered a
+   route the route check did not prove, and the property test checks that at tight budgets too.
 4. **Hard rules stay hard.** Entry-prohibited restricted areas and traffic separation lane
    direction are never traded for distance.
 5. **Own data only adds caution.** Tracks the boat has sailed may lower cost, never risk, and only
@@ -613,7 +617,9 @@ pass found free and leaves the rest of the region alone.
 - Steering only orders the search. A square's verdict is the box query's, every square stays
   reachable, and every route is still the route check's (invariants 1–3). A deeper draft never
   finds a route the shallower one rejects; the search's property test checks it on a steered
-  region.
+  region. At a tight budget the coarse path, which depends on the draft, may cost the shallower
+  search its work where the deeper one finishes: that is a work-limit refusal (§3, invariant 3),
+  checked steered and unsteered.
 - The coarse pass may use `steerShare` of the search's work and runs only when the fine search
   needs it, after both ends are joined; it counts the same work units.
 - A search with preference lines or a risk cost is not steered: the guide's weight would drown

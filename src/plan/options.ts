@@ -13,8 +13,9 @@ export interface PlanOptions {
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
   /**
-   * A*'s heuristic weight (weighted A*): the search's path costs at most this many times
-   * the cheapest before string pulling, for far fewer squares classified. 1 is plain A*.
+   * A*'s heuristic weight (weighted A*), for far fewer squares classified. Unsteered, the
+   * search's path costs at most this many times the cheapest before string pulling; a steered
+   * search's guide may overestimate, so its path has no such bound. 1 is plain A*.
    */
   greed: number;
   /**

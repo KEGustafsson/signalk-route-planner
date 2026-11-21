@@ -10,9 +10,10 @@ import type { PlanOptions } from "./options";
 /**
  * Steering (plan §6): a coarse pass first, A* over the same region's quadtree cut no finer than
  * `steerCell`, where a coarse square that does not pass whole may still hold a way through and
- * costs `STEER_MAYBE` times a free one. Its path gives the fine search a tube to search first
- * (`tube.ts`), widened in turn and at last dropped, so the steered search finds every route the
- * unsteered one finds, and asks first about the water along the likely way. The coarse squares
+ * costs `STEER_MAYBE` times a free one. Its path becomes the fine A*'s heuristic (`Guide.to`):
+ * the estimate of the way on along the coarse path, never below the straight line, so the fine
+ * search expands squares along the likely way first. It changes only the order of the search,
+ * never a square's verdict, and the route check proves whatever it finds. The coarse squares
  * are the fine tree's own squares of that size, so the fine search asks the chart about none of
  * them again (`memoBoxes`).
  */

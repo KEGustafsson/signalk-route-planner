@@ -76,10 +76,11 @@ export function surveyTiles(from: LonLat, to: LonLat, n: number): Bbox[] {
 }
 
 /**
- * One grid over the surveys `grids`, at the coarsest of their cells: each cell its centre's in
- * every grid holding it, the deepest of their depths and the least of their least bounds, so the
- * mosaic is as optimistic as any of its tiles about where water may be and no surer than the
- * least sure of them; NaN where no grid holds it.
+ * One grid over the surveys `grids`, at the coarsest of their cells: each cell the deepest
+ * depth and the least least bound of every cell of every grid it touches, so the mosaic is as
+ * optimistic as any of its tiles about where water may be and no surer than the least sure of
+ * them. A cell touching one with no charted depth is not sure all over (NaN least bound); NaN
+ * where no grid holds it.
  */
 export function mosaic(grids: readonly Survey[]): Survey {
   if (grids.length === 1) {
@@ -90,41 +91,76 @@ export function mosaic(grids: readonly Survey[]): Survey {
   const [dLat, dLon] = cellDegrees({ bbox, cellMetres });
   const cols = Math.max(1, Math.ceil((bbox[2] - bbox[0]) / dLon));
   const rows = Math.max(1, Math.ceil((bbox[3] - bbox[1]) / dLat));
-  const depth = new Float32Array(cols * rows).fill(NaN);
-  const shallowest = new Float32Array(cols * rows).fill(NaN);
+  const out: Cells = {
+    depth: new Float32Array(cols * rows).fill(NaN),
+    shallowest: new Float32Array(cols * rows).fill(NaN),
+    unsure: new Uint8Array(cols * rows)
+  };
   const sure = grids.every((g) => g.shallowest !== undefined);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const p: LonLat = [bbox[0] + (c + 0.5) * dLon, bbox[1] + (r + 0.5) * dLat];
-      const i = r * cols + c;
+      const cell: Bbox = [
+        bbox[0] + c * dLon,
+        bbox[1] + r * dLat,
+        bbox[0] + (c + 1) * dLon,
+        bbox[1] + (r + 1) * dLat
+      ];
       for (const g of grids) {
-        merge(g, p, i, depth, shallowest);
+        merge(g, cell, r * cols + c, out);
       }
     }
   }
-  return { bbox, cols, rows, cellMetres, depth, ...(sure && { shallowest }) };
+  out.unsure.forEach((u, i) => {
+    if (u === 1) {
+      out.shallowest[i] = NaN;
+    }
+  });
+  return {
+    bbox,
+    cols,
+    rows,
+    cellMetres,
+    depth: out.depth,
+    ...(sure && { shallowest: out.shallowest })
+  };
 }
 
-/** Into cell `i` of `depth` and `shallowest`, grid `g`'s cell holding `p`: the deeper, the less sure. */
-function merge(
-  g: Survey,
-  p: LonLat,
-  i: number,
-  depth: Float32Array,
-  shallowest: Float32Array
-): void {
-  const [gc, gr] = cellOf(g, p);
-  if (gc < 0 || gr < 0 || gc >= g.cols || gr >= g.rows) {
-    return;
-  }
-  const j = gr * g.cols + gc;
-  const d = g.depth[j] as number;
-  if (!Number.isNaN(d) && !((depth[i] as number) >= d)) {
-    depth[i] = d;
-  }
-  const least = g.shallowest?.[j];
-  if (least !== undefined && !Number.isNaN(least) && !((shallowest[i] as number) <= least)) {
-    shallowest[i] = least;
+interface Cells {
+  depth: Float32Array;
+  shallowest: Float32Array;
+  /** A cell touching one of a grid's with no charted depth. */
+  unsure: Uint8Array;
+}
+
+/** A cell's edges are pulled in by this share of it, so a neighbour it only meets is not touched. */
+const EDGE = 1e-6;
+
+/** Into cell `i` of `out`, every cell of grid `g` that `cell` touches: the deeper, the less sure. */
+function merge(g: Survey, cell: Bbox, i: number, out: Cells): void {
+  const [dLat, dLon] = cellDegrees(g);
+  const inset = EDGE * Math.min(cell[2] - cell[0], cell[3] - cell[1]);
+  const c0 = Math.max(0, Math.floor((cell[0] + inset - g.bbox[0]) / dLon));
+  const c1 = Math.min(g.cols - 1, Math.floor((cell[2] - inset - g.bbox[0]) / dLon));
+  const r0 = Math.max(0, Math.floor((cell[1] + inset - g.bbox[1]) / dLat));
+  const r1 = Math.min(g.rows - 1, Math.floor((cell[3] - inset - g.bbox[1]) / dLat));
+  for (let gr = r0; gr <= r1; gr++) {
+    for (let gc = c0; gc <= c1; gc++) {
+      const j = gr * g.cols + gc;
+      const d = g.depth[j] as number;
+      if (Number.isNaN(d)) {
+        out.unsure[i] = 1;
+        continue;
+      }
+      if (!((out.depth[i] as number) >= d)) {
+        out.depth[i] = d;
+      }
+      const least = g.shallowest?.[j];
+      if (least === undefined || Number.isNaN(least)) {
+        out.unsure[i] = 1;
+      } else if (!((out.shallowest[i] as number) <= least)) {
+        out.shallowest[i] = least;
+      }
+    }
   }
 }
 

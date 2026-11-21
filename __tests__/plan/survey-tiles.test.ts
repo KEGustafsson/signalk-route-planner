@@ -82,6 +82,37 @@ describe("survey tiles", () => {
     expect(mosaic([a])).toBe(a);
   });
 
+  test("a mosaic cell over a finer tile takes every cell it touches, not only its centre's", () => {
+    const fineCell = 100;
+    const dLonFine = fineCell / (M_PER_DEG * Math.cos((60.05 * Math.PI) / 180));
+    const column = (p: LonLat): number => Math.floor((p[0] - 22) / dLonFine);
+    const fine = surveyOf([22, 60, 22.1, 60.1], (p) => (column(p) % 2 === 0 ? 8 : 1), fineCell);
+    const gappy = surveyOf([22, 60, 22.1, 60.1], (p) => (column(p) % 3 === 1 ? NaN : 8), fineCell);
+    const coarse = surveyOf([22.1, 60, 22.2, 60.1], () => 9);
+    const m = mosaic([fine, coarse]);
+    const g = mosaic([gappy, coarse]);
+    const inner = (s: Survey): number[] => {
+      const out: number[] = [];
+      for (let c = 1; c < s.cols - 1; c++) {
+        const lon = s.bbox[0] + ((c + 0.5) * (s.bbox[2] - s.bbox[0])) / s.cols;
+        if (lon < 22.09) {
+          out.push(Math.floor(s.rows / 2) * s.cols + c);
+        }
+      }
+      return out;
+    };
+    expect(m.cellMetres).toBe(CELL);
+    for (const i of inner(m)) {
+      expect(m.depth[i]).toBe(8);
+      expect(m.shallowest?.[i]).toBe(1);
+    }
+    // A cell touching one with no charted depth keeps the deepest, but is not sure all over.
+    for (const i of inner(g)) {
+      expect(g.depth[i]).toBe(8);
+      expect(g.shallowest?.[i]).toBeNaN();
+    }
+  });
+
   test("a trip whose survey is over the cap is surveyed in pieces, and its corridor prepared", async () => {
     const cap = 6000;
     const surveys: Bbox[] = [];

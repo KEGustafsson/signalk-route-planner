@@ -31,13 +31,15 @@ export interface SearchLimits {
   pause(): Promise<void>;
   every: number;
   /**
-   * The heuristic's weight, at least 1: weighted A*, whose path costs at most this many
-   * times the cheapest, for far fewer squares classified in a maze of islands. 1 when absent.
+   * The heuristic's weight, at least 1: weighted A*, for far fewer squares classified in a maze
+   * of islands. Unsteered, its path costs at most this many times the cheapest; a `heuristic`
+   * may overestimate, so a steered search's path has no such bound. 1 when absent.
    */
   greed?: number;
   /**
    * The estimate of the way on from a point to the goal, units; absent, the straight line. A
-   * steered search's (`guide.ts`) follows a coarse path: it only orders the search.
+   * steered search's (`guide.ts`) follows a coarse path: it orders the search, and may
+   * overestimate, so it lifts `greed`'s bound on the path's cost.
    */
   heuristic?(p: XY): number;
 }

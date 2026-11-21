@@ -2,7 +2,8 @@ import fc from "fast-check";
 import type { LonLat } from "../../src/foundation/geo";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { SearchOutcome } from "../../src/plan/search";
-import { searchRoute } from "../../src/plan/search";
+import { searchRoute, WORK_LIMIT } from "../../src/plan/search";
+import type { PlanOptions } from "../../src/plan/options";
 import type { Chart, Circle } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -17,9 +18,9 @@ const NEVER = new AbortController().signal;
 const FROM = at(0, 0);
 const TO = at(6000, 0);
 
-async function search(chart: Chart): Promise<SearchOutcome> {
+async function search(chart: Chart, opts: PlanOptions = DEFAULT_PLAN): Promise<SearchOutcome> {
   const r = await syntheticApi(chart).session({ departure: 0, until: 1, speed: 3 }, NEVER, (s) =>
-    searchRoute(s, FROM, TO, DEFAULT_PLAN)
+    searchRoute(s, FROM, TO, opts)
   );
   if (!r.ok) {
     throw new Error(r.error);
@@ -76,5 +77,43 @@ describe("search properties", () => {
       }),
       { numRuns: 40 }
     );
+  });
+
+  test("at a tight budget, a shallower draft that finds no route is refused only for work", async () => {
+    const budgets = fc.record({
+      maxWork: fc.integer({ min: 20_000, max: 400_000 }),
+      steerShare: fc.constantFrom(0, DEFAULT_PLAN.steerShare)
+    });
+    let limited = 0;
+    await fc.assert(
+      fc.asyncProperty(
+        charts,
+        fc.integer({ min: 0, max: 200 }),
+        budgets,
+        async (chart, grow, budget) => {
+          const opts = { ...DEFAULT_PLAN, ...budget };
+          const deep: Chart = {
+            obstacles: chart.obstacles.map((c) => ({ ...c, r: c.r + grow })),
+            unverified: chart.unverified
+          };
+          const d = await search(deep, opts);
+          const shallow = await search(chart, opts);
+          if (!shallow.ok && shallow.reason.includes(WORK_LIMIT)) {
+            limited++;
+          }
+          if (!d.ok) {
+            return true;
+          }
+          // The deep route clears the shallow chart; the shallow search finds one or ran out of work.
+          return (
+            statuses(chart, d.coordinates).every((s) => s === "ok") &&
+            (shallow.ok || shallow.reason.includes(WORK_LIMIT))
+          );
+        }
+      ),
+      { numRuns: 40 }
+    );
+    // The budgets reach the work limit, or the property says nothing about it.
+    expect(limited).toBeGreaterThan(0);
   });
 });

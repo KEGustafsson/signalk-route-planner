@@ -47,8 +47,8 @@ quality, so each case assumes a CATZOC.
 - Both routes are fallback routes (the Aura river, below). Since R3d the planner first searches
   strictly at the boat's own timing before it offers one, which adds about 1.2 M work.
 - The A1 case's guide counts the path through coarse squares that may hold no way through at
-  `steerRisk`, so it keeps to water sure all over: 21.3 nm against 19.9 nm unsteered, all of it
-  `unverified` either way.
+  `steerRisk`, so it keeps to water sure all over: 21.3 nm against 19.9 nm unsteered. Either
+  way its route part is `unverified` and its harbour-stage legs in the Aura river `fail`.
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
 - The Nauvo end reaches the guest harbour through its harbour stage, `unverified`.
