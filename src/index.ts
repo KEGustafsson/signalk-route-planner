@@ -8,6 +8,9 @@ import { publicReason } from "./foundation/public-text";
 import type { Clock } from "./plugin-api";
 import { apiFor, ready, SYSTEM_CLOCK } from "./plugin-api";
 
+/** How often the status is checked again while the planner waits for signalk-underkeel, ms. */
+const STATUS_RECHECK_MS = 5000;
+
 // lib/index.js and src/index.ts both sit one level below package.json.
 const VERSION = (
   JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")) as {
@@ -15,8 +18,27 @@ const VERSION = (
   }
 ).version;
 
-export = function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plugin {
+function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plugin {
   let running: AbortController | undefined;
+  let recheck: NodeJS.Timeout | undefined;
+  const stopRecheck = (): void => {
+    clearInterval(recheck);
+    recheck = undefined;
+  };
+  // Plugins start in no set order: signalk-underkeel may publish its API after this one starts.
+  let shown: string | undefined;
+  const showStatus = (): void => {
+    const api = ready();
+    const status =
+      typeof api === "string" ? `Waiting: ${publicReason(api)}` : `Ready (${api.provider})`;
+    if (status !== shown) {
+      shown = status;
+      app.setPluginStatus(status);
+    }
+    if (typeof api !== "string") {
+      stopRecheck();
+    }
+  };
   return {
     id: PLUGIN_ID,
     name: "Safe-Water Route Planner",
@@ -28,12 +50,14 @@ export = function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plu
       running = new AbortController();
       mountAssets(app);
       app.registerResourceProvider(manifestProvider(VERSION));
-      const api = ready();
-      app.setPluginStatus(
-        typeof api === "string" ? `Waiting: ${publicReason(api)}` : `Ready (${api.provider})`
-      );
+      stopRecheck();
+      shown = undefined;
+      recheck = setInterval(showStatus, STATUS_RECHECK_MS);
+      recheck.unref();
+      showStatus();
     },
     stop(): void {
+      stopRecheck();
       running?.abort(new Error("plugin stopped"));
       running = undefined;
     },
@@ -45,4 +69,6 @@ export = function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plu
       );
     }
   };
-};
+}
+
+export = routePlanner;

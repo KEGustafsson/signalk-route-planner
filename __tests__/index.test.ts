@@ -35,6 +35,25 @@ describe("plugin lifecycle", () => {
     plugin.stop();
   });
 
+  test("signalk-underkeel starting after the planner turns the status to ready", () => {
+    jest.useFakeTimers();
+    try {
+      const f = fakeApp();
+      const plugin = routePlanner(f.app as never);
+      plugin.start({}, () => undefined);
+      jest.advanceTimersByTime(20_000);
+      expect(f.statuses).toHaveLength(1);
+      g[PLANNING_API] = syntheticApi({ obstacles: [] });
+      jest.advanceTimersByTime(5_000);
+      expect(f.statuses.at(-1)).toBe("Ready (synthetic)");
+      jest.advanceTimersByTime(20_000);
+      expect(f.statuses).toHaveLength(2);
+      plugin.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   test("with the planning API ready the status names its provider", () => {
     g[PLANNING_API] = syntheticApi({ obstacles: [] });
     const f = fakeApp();
