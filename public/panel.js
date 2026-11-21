@@ -174,9 +174,9 @@ async function write(routeId, route, coordinates, op) {
   written = { routeId, points };
   const ticket = routeWrites.take();
   await client.call("route.replace", { routeId, points });
-  // Shown unless a later write replaced the route meanwhile; a later plan that writes nothing
-  // leaves this route, and what is shown for it, on the chart.
-  return routeWrites.isLatest(ticket);
+  // Shown unless a later write completed meanwhile; a later write that fails, or a plan that
+  // writes nothing, leaves this route, and what is shown for it, on the chart.
+  return routeWrites.done(ticket);
 }
 
 /** The alternatives and their overlay withdrawn: the route they were planned for has changed. */
@@ -339,7 +339,7 @@ async function replanDrag(routeId) {
   written = { routeId, points };
   const ticket = routeWrites.take();
   await client.call("route.replace", { routeId, points });
-  if (!routeWrites.isLatest(ticket)) {
+  if (!routeWrites.done(ticket)) {
     return;
   }
   const status = P.worstStatus([left.status, right.status]);

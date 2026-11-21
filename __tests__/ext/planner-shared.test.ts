@@ -268,13 +268,21 @@ describe("panel model", () => {
     expect(P.credits(undefined, [], [{ source: "x" }])).toEqual([]);
   });
 
-  test("a write is the latest until another write is taken, not when a plan only starts", () => {
+  test("a completed write is shown unless a write issued after it completed first", () => {
     const w = P.writes();
     const first = w.take();
     // A later plan that is refused, or has no boat position, takes no ticket.
-    expect(w.isLatest(first)).toBe(true);
+    expect(w.done(first)).toBe(true);
     const second = w.take();
-    expect(w.isLatest(first)).toBe(false);
-    expect(w.isLatest(second)).toBe(true);
+    const third = w.take();
+    expect(w.done(third)).toBe(true);
+    expect(w.done(second)).toBe(false);
+  });
+
+  test("a write that fails does not hide the earlier write that completed after it was issued", () => {
+    const w = P.writes();
+    const first = w.take();
+    w.take(); // its route.replace fails, so it never reports done
+    expect(w.done(first)).toBe(true);
   });
 });

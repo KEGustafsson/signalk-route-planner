@@ -297,18 +297,24 @@
   }
 
   /**
-   * The order of the panel's writes to the route: each takes a ticket when it writes, and its
-   * leg table, choices and credits are shown only while no write after it has replaced the route.
-   * A plan that starts later but writes nothing leaves the written route's own shown.
+   * The order of the panel's writes to the route: each takes a ticket when it writes and reports
+   * its completion; a completed write's leg table, choices and credits are shown only when no
+   * write issued after it has completed first. A write that fails, or a plan that writes nothing,
+   * leaves the last completed route's own shown.
    */
   function writes() {
-    let last = 0;
+    let issued = 0;
+    let completed = 0;
     return {
       take: function () {
-        return ++last;
+        return ++issued;
       },
-      isLatest: function (ticket) {
-        return ticket === last;
+      done: function (ticket) {
+        if (ticket <= completed) {
+          return false;
+        }
+        completed = ticket;
+        return true;
       }
     };
   }
