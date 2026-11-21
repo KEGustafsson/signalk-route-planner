@@ -141,7 +141,10 @@
               (b.berths.length === 1 ? "it" : "them") +
               " by eye"
             : "") +
-          (b.fallback ? ". No route passes the check: this is the lowest risk-weighted route, " + b.fallback : "")
+          (b.fallback ? ". No route passes the check: this is the lowest risk-weighted route, " + b.fallback : "") +
+          (b.timing && b.timing.holds === "now"
+            ? ". Passable at your speed leaving now: the tide closes it later, so plan again if you leave later"
+            : "")
       };
     }
     if (status === 422) {

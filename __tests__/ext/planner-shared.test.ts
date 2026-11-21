@@ -36,6 +36,19 @@ describe("panel model", () => {
     ]);
   });
 
+  test("a route passable only at the boat's timing says so", () => {
+    const body = {
+      status: "ok",
+      length: 1852,
+      check: { legs: [{}] },
+      timing: { departure: "2026-11-18T07:00:00.000Z", speed: 3, holds: "now" }
+    };
+    expect(P.summary(200, body).text).toMatch(/Passable at your speed leaving now/);
+    expect(P.summary(200, { ...body, timing: { ...body.timing, holds: "trip" } }).text).not.toMatch(
+      /leaving now/
+    );
+  });
+
   test("one line for each kind of reply", () => {
     expect(P.summary(200, { status: "ok", length: 5556, check: { legs: [{}, {}] } })).toEqual({
       kind: "ok",

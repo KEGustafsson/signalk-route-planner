@@ -95,6 +95,11 @@ An end in a harbour narrower than the corridor (a guest harbour in a river, a ma
 out to open water in a harbour stage at a 10 m corridor, and a point alongside a quay leaves by a
 short berth leg the reply marks (`berths`, and `underway` for the status of every other leg).
 
+The plan is the route passable now: each stretch is checked at the water the boat meets there,
+leaving at the departure at its speed, so a bar the tide covers while you cross it is used though
+it dries later. When the route holds only for that timing, the reply says so
+(`timing.holds: "now"`) and the panel says to plan again if you leave later.
+
 With `latestDeparture` (ISO 8601, at most 24 h after the departure), a route that passes only at
 some states of the tide is offered leaving at the earliest departure up to then at which the
 route check passes every leg as the boat reaches it (`departure`, `gate`). The panel offers it as

@@ -10,7 +10,7 @@ import type { CheckedLeg, Proof } from "./proof";
 import { joined, prove } from "./proof";
 import type { Part } from "./stages";
 import type { Staged } from "./stages";
-import { stages } from "./stages";
+import { nowStages } from "./now";
 import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
 import { listing, overBudget, reasonOf, routeRisk } from "./risk";
@@ -171,7 +171,7 @@ async function planAt(
   const own = requestOptions(opts, input);
   const { riskWeight } = own;
   const st = { api, params, signal, opts: own, rule, fallback: input.fallback === true };
-  const found = await stages(st, input.from, input.to, input.xteLimit);
+  const { found, holds } = await nowStages(st, input, window);
   if ("error" in found) {
     return {
       reply: { status: found.status, body: { errors: [found.error] } },
@@ -182,6 +182,8 @@ async function planAt(
   }
   const base = {
     plannedAt: new Date(now).toISOString(),
+    // "now": the route passes only at the boat's own timing, leaving at the departure.
+    timing: { departure: new Date(input.departure).toISOString(), speed: input.speed, holds },
     riskWeight,
     direct: directOf(found.direct),
     ...(input.accept?.length && { accepted: input.accept })
