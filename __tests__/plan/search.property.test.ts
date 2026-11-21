@@ -84,7 +84,6 @@ describe("search properties", () => {
       maxWork: fc.integer({ min: 20_000, max: 400_000 }),
       steerShare: fc.constantFrom(0, DEFAULT_PLAN.steerShare)
     });
-    let limited = 0;
     await fc.assert(
       fc.asyncProperty(
         charts,
@@ -98,9 +97,6 @@ describe("search properties", () => {
           };
           const d = await search(deep, opts);
           const shallow = await search(chart, opts);
-          if (!shallow.ok && shallow.reason.includes(WORK_LIMIT)) {
-            limited++;
-          }
           if (!d.ok) {
             return true;
           }
@@ -113,7 +109,14 @@ describe("search properties", () => {
       ),
       { numRuns: 40 }
     );
-    // The budgets reach the work limit, or the property says nothing about it.
-    expect(limited).toBeGreaterThan(0);
+  });
+
+  test("a search over its budget between blocked ends is refused for work, steered or not", async () => {
+    const wall: Chart = { obstacles: [{ x: 3000, y: 0, r: 1500 }], unverified: [] };
+    for (const steerShare of [0, DEFAULT_PLAN.steerShare]) {
+      const o = await search(wall, { ...DEFAULT_PLAN, maxWork: 20_000, steerShare });
+      expect(o.ok).toBe(false);
+      expect(!o.ok && o.reason).toContain(WORK_LIMIT);
+    }
   });
 });

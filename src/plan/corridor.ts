@@ -79,8 +79,8 @@ export function surveyTiles(from: LonLat, to: LonLat, n: number): Bbox[] {
  * One grid over the surveys `grids`, at the coarsest of their cells: each cell the deepest
  * depth and the least least bound of every cell of every grid it touches, so the mosaic is as
  * optimistic as any of its tiles about where water may be and no surer than the least sure of
- * them. A cell touching one with no charted depth is not sure all over (NaN least bound); NaN
- * where no grid holds it.
+ * them. A cell touching one with no charted depth, or that no one grid holds whole, is not sure
+ * all over (NaN least bound); NaN where no grid holds it.
  */
 export function mosaic(grids: readonly Survey[]): Survey {
   if (grids.length === 1) {
@@ -105,8 +105,12 @@ export function mosaic(grids: readonly Survey[]): Survey {
         bbox[0] + (c + 1) * dLon,
         bbox[1] + (r + 1) * dLat
       ];
+      const i = r * cols + c;
       for (const g of grids) {
-        merge(g, cell, r * cols + c, out);
+        merge(g, cell, i, out);
+      }
+      if (!grids.some((g) => holds(g.bbox, cell))) {
+        out.unsure[i] = 1;
       }
     }
   }
@@ -134,6 +138,17 @@ interface Cells {
 
 /** A cell's edges are pulled in by this share of it, so a neighbour it only meets is not touched. */
 const EDGE = 1e-6;
+
+/** Whether `box` holds all of `cell`, but for the share EDGE of it at each side. */
+function holds(box: Bbox, cell: Bbox): boolean {
+  const inset = EDGE * Math.min(cell[2] - cell[0], cell[3] - cell[1]);
+  return (
+    box[0] <= cell[0] + inset &&
+    box[1] <= cell[1] + inset &&
+    box[2] >= cell[2] - inset &&
+    box[3] >= cell[3] - inset
+  );
+}
 
 /** Into cell `i` of `out`, every cell of grid `g` that `cell` touches: the deeper, the less sure. */
 function merge(g: Survey, cell: Bbox, i: number, out: Cells): void {

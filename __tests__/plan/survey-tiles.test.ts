@@ -113,6 +113,33 @@ describe("survey tiles", () => {
     }
   });
 
+  test("a mosaic cell no tile holds whole keeps its depth but is not sure all over", () => {
+    const dLat = CELL / M_PER_DEG;
+    const dLon = CELL / (M_PER_DEG * Math.cos(((60 + dLat) * Math.PI) / 180));
+    const twoByTwo = (west: number): Survey => {
+      const depth = new Float32Array(4).fill(9);
+      return {
+        bbox: [west, 60, west + 2 * dLon, 60 + 2 * dLat],
+        cols: 2,
+        rows: 2,
+        cellMetres: CELL,
+        depth,
+        shallowest: depth
+      };
+    };
+    const a = twoByTwo(22);
+    const b = twoByTwo(22 + 1.5 * dLon);
+    const m = mosaic([a, b]);
+    const at = (lon: number): number =>
+      Math.floor(((lon - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.cols);
+    const partial = at(22 + 3.25 * dLon);
+    expect(m.depth[partial]).toBe(9);
+    expect(m.shallowest?.[partial]).toBeNaN();
+    // Cells a tile holds whole stay sure.
+    expect(m.shallowest?.[at(22 + 0.5 * dLon)]).toBe(9);
+    expect(m.shallowest?.[at(22 + 2.5 * dLon)]).toBe(9);
+  });
+
   test("a trip whose survey is over the cap is surveyed in pieces, and its corridor prepared", async () => {
     const cap = 6000;
     const surveys: Bbox[] = [];

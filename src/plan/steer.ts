@@ -75,7 +75,8 @@ export async function coarsePath(
   }
   const f = coarse.unit / shape.unit;
   const tree = new QuadTree(coarse, session, rule);
-  const limit = session.work() + opts.maxWork * opts.searchShare * opts.steerShare;
+  const ceiling = opts.maxWork * opts.searchShare;
+  const limit = Math.min(ceiling, session.work() + ceiling * opts.steerShare);
   const s: XY = [start[0] / f, start[1] / f];
   const g: XY = [goal[0] / f, goal[1] / f];
   const from = tree.leafAt(s[0], s[1]);
