@@ -267,4 +267,14 @@ describe("panel model", () => {
     expect(P.credits([ftia], undefined, [traficom, ftia])).toEqual([ftia, traficom]);
     expect(P.credits(undefined, [], [{ source: "x" }])).toEqual([]);
   });
+
+  test("a write is the latest until another write is taken, not when a plan only starts", () => {
+    const w = P.writes();
+    const first = w.take();
+    // A later plan that is refused, or has no boat position, takes no ticket.
+    expect(w.isLatest(first)).toBe(true);
+    const second = w.take();
+    expect(w.isLatest(first)).toBe(false);
+    expect(w.isLatest(second)).toBe(true);
+  });
 });

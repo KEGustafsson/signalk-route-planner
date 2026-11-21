@@ -296,6 +296,23 @@
     return out;
   }
 
+  /**
+   * The order of the panel's writes to the route: each takes a ticket when it writes, and its
+   * leg table, choices and credits are shown only while no write after it has replaced the route.
+   * A plan that starts later but writes nothing leaves the written route's own shown.
+   */
+  function writes() {
+    let last = 0;
+    return {
+      take: function () {
+        return ++last;
+      },
+      isLatest: function (ticket) {
+        return ticket === last;
+      }
+    };
+  }
+
   /** The trip's ends with the start at the boat's position, when it is known. */
   function fromBoat(ends, position) {
     if (!ends) {
@@ -316,6 +333,7 @@
     hasPosition: hasPosition,
     worstStatus: worstStatus,
     credits: credits,
+    writes: writes,
     endsOf: endsOf,
     planPoints: planPoints,
     nm: nm,

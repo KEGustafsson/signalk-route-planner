@@ -28,6 +28,8 @@ let written;
  * still the latest, so a slow one never undoes what a later one did.
  */
 let latestOp = 0;
+/** The writes to the route: what the panel shows is the last written route's. */
+const routeWrites = P.writes();
 
 function show(kind, text) {
   result.className = kind;
@@ -170,9 +172,11 @@ async function write(routeId, route, coordinates, op) {
   const points = P.planPoints(coordinates, route.points);
   // Set first: the host's event for this write must not read as a drag of the old points.
   written = { routeId, points };
+  const ticket = routeWrites.take();
   await client.call("route.replace", { routeId, points });
-  // A later plan or choice may have started while the route was written: the panel is its now.
-  return op === latestOp;
+  // Shown unless a later write replaced the route meanwhile; a later plan that writes nothing
+  // leaves this route, and what is shown for it, on the chart.
+  return routeWrites.isLatest(ticket);
 }
 
 /** The alternatives and their overlay withdrawn: the route they were planned for has changed. */
@@ -333,7 +337,11 @@ async function replanDrag(routeId) {
     return;
   }
   written = { routeId, points };
+  const ticket = routeWrites.take();
   await client.call("route.replace", { routeId, points });
+  if (!routeWrites.isLatest(ticket)) {
+    return;
+  }
   const status = P.worstStatus([left.status, right.status]);
   showLegs([...left.legs, ...right.legs]);
   // The rest of the route still leans on what it did: the new legs' credits add to its own.
