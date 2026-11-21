@@ -307,8 +307,39 @@ or where the route crosses it (`src/plan/wait-places.ts`).
 - The offered route goes out to the place and back, the piece after the wait starting at the
   place; each wait names its `place` (`user`, `anchorage`, `route`).
 
-Still to come: waiting off the route farther than a detour, which needs the time-dependent
-search over the quadtree's leaves, state (leaf, arrival slot), in place of the candidate route.
+**R3d, the route passable now (built).** With no waiting asked for, the plan is the route the
+boat can sail leaving at the departure, at its speed: the search asks about each square and leg
+at the water of the time the boat can be there, not at the lowest water of the whole verdict
+window (`src/plan/timing.ts`, `src/plan/now.ts`).
+
+- On any route at most `reach` long, the boat is at a point no earlier than the straight line from
+  the start to it takes, and no later than the latest departure plus the reach less the straight
+  line from the point to the destination. String pulling only shortens a route, so every point of
+  the pulled route keeps to the same bounds. A square or leg is asked about that window alone,
+  widened for a boat somewhat faster or slower (`timingSlack`), within the session's.
+- The window lies within the trip's, so the water there is never lower: a square the trip-wide
+  question passed passes, and a bar the tide covers while the boat crosses it passes too, though
+  it dries later in the window.
+- The first search runs at the verdict window's own reach, so its route holds however the boat
+  keeps to its timing (`timing.holds: "trip"`). When it finds none, not for want of work, and some
+  water it met could pass at another time, it runs again at a shorter reach near the straight
+  distance. A route found there is kept only when it fits that reach, for which its windows hold;
+  else the search runs once more at a reach from that route's length, at most the verdict
+  window's (`timing.holds: "now"`: plan again before leaving later).
+- A fallback route is the last resort: when the first search can only fall back, the searches at
+  the boat's own timing run first, strictly, and a fallback route offered after them holds
+  only at the departure (`timing.holds: "now"`).
+- The later searches ask again only about water: a verdict no water level changes (passing water,
+  land, no chart, a closed area) is the first search's, since water that passes over a window
+  passes over any part of it.
+- Monotonic: each window depends on the geometry and timing alone, never on the water, so more
+  water passes every square at least as well, and a tighter reach gives windows within a wider
+  one's. Refused at the tightest, no route is passable now.
+- The proof stays the authority: every offered leg is the route check's at its own arrival
+  (invariant 1). A request with `latestDeparture` is timed by the gate (R3a) instead.
+
+Waiting farther off the route than a detour is not planned: the plan is the route passable now,
+or a wait the request asks for.
 
 ### 4.4 R4: risk, alternatives, air draft, rules
 
@@ -447,6 +478,10 @@ Reply 200:
 ```jsonc
 {
   "plannedAt": "…",
+  // The departure and speed the route is checked for (with a tide gate or waits, the departure
+  // they chose); holds "trip": at any time in the verdict window, "now": only leaving at the
+  // departure (§4.3 R3d).
+  "timing": { "departure": "…", "speed": 2.5, "holds": "trip" },
   "route": {
     "type": "LineString",
     "coordinates": [

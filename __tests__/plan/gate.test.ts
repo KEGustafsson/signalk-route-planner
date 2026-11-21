@@ -44,11 +44,12 @@ interface Body {
     legs?: number[];
     reason?: string;
   };
+  timing?: { departure: string; holds: string };
   fallback?: string;
   reason?: string;
 }
 
-async function planned(chart: Chart, latest?: number) {
+async function planned(chart: Chart, latest?: number, fallback?: boolean) {
   const r = await plan(
     syntheticApi(chart),
     {
@@ -56,7 +57,8 @@ async function planned(chart: Chart, latest?: number) {
       to: at(5000, 0),
       departure: NOW,
       speed: 3,
-      ...(latest !== undefined && { latestDeparture: latest })
+      ...(latest !== undefined && { latestDeparture: latest }),
+      ...(fallback !== undefined && { fallback })
     },
     NEVER,
     NOW
@@ -87,6 +89,9 @@ describe("tide gates", () => {
       waitMinutes: Math.round((leave - NOW) / 60_000)
     });
     expect(body.gate?.legs?.length).toBeGreaterThan(0);
+    // Its timing is the departure it is proved for. The search over the whole verdict window
+    // met the bar at its lowest water, so the route holds leaving then, not at any time.
+    expect(body.timing).toMatchObject({ departure: body.departure, holds: "now" });
     // It arrives the sailing time after it leaves, at 3 m/s.
     const sailing = (body.check.legs.reduce((m, l) => m + l.length, 0) / 3) * 1000;
     const arrives = Date.parse(body.arrival as string) - leave;
@@ -99,6 +104,12 @@ describe("tide gates", () => {
     const c = body.route.coordinates;
     const low = c.slice(1).some((b, i) => legStatus(chart, c[i] as LonLat, b, 40) !== "ok");
     expect(low).toBe(true);
+  });
+
+  test("a fallback route the gate times holds only leaving then, asked with fallback too", async () => {
+    const { r, body } = await planned(barred(falling), NOW + 12 * HOUR, true);
+    expect(r.status).toBe(200);
+    expect(body.timing).toMatchObject({ departure: body.departure, holds: "now" });
   });
 
   test("when no departure up to the latest passes, the refusal says why", async () => {

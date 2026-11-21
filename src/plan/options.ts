@@ -46,6 +46,15 @@ export interface PlanOptions {
   /** ...and at least this long, ms. */
   minWindow: number;
   /**
+   * The route passable now (`timing.ts`): when no route passes as the boat may meet the water
+   * anywhere in the verdict window, the search asks again at the time the boat can be at each
+   * square on a route at most this many times the straight distance (and at least the straight
+   * distance plus `accessMetres` at each end).
+   */
+  nowReach: number;
+  /** ...for a boat this share faster or slower than the request's speed. */
+  timingSlack: number;
+  /**
    * An end the corridor cannot reach is planned out to open water in a harbour stage, at
    * this cross-track limit (the planning API's buffer alone at 0), metres.
    */
@@ -119,6 +128,8 @@ export const DEFAULT_PLAN: PlanOptions = {
   corridorWorkPerKm: 120_000,
   windowFactor: 3,
   minWindow: 3_600_000,
+  nowReach: 1.3,
+  timingSlack: 0.2,
   harbourXte: 0,
   harbourMetres: 3000,
   harbourMargin: 300,

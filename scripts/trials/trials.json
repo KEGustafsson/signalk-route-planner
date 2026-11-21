@@ -26,7 +26,7 @@
         "status": 200,
         "lengthNm": [18, 21.5],
         "parts": ["harbour:start", "route", "harbour:end"],
-        "workAtMost": 7000000
+        "workAtMost": 8000000
       }
     },
     {
@@ -62,7 +62,7 @@
         "lengthNm": [18, 20.5],
         "parts": ["harbour:start", "route", "harbour:end"],
         "routeStatuses": ["unverified"],
-        "workAtMost": 6500000
+        "workAtMost": 7500000
       }
     },
     {
