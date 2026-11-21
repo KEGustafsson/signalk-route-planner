@@ -260,4 +260,11 @@ describe("panel model", () => {
     expect(P.worstStatus(["ok", "toString", "marginal"])).toBe("toString");
     expect(P.worstStatus(["something new", "marginal"])).toBe("something new");
   });
+
+  test("the credits of several replies, each source once, in the order they come", () => {
+    const ftia = { source: "ftia", text: "FTIA" };
+    const traficom = { source: "traficom", text: "Traficom" };
+    expect(P.credits([ftia], undefined, [traficom, ftia])).toEqual([ftia, traficom]);
+    expect(P.credits(undefined, [], [{ source: "x" }])).toEqual([]);
+  });
 });

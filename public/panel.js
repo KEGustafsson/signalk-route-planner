@@ -15,6 +15,7 @@ const button = $("plan");
 const result = $("result");
 const table = $("legs");
 const choices = $("choices");
+const creditsLine = $("credits");
 const has = (c) => client.hasCapability(c);
 
 /** The boat's last position from Signal K, when the host streams it. */
@@ -31,6 +32,14 @@ let latestOp = 0;
 function show(kind, text) {
   result.className = kind;
   result.textContent = text;
+}
+
+/** The credits for the data the route on the chart leaned on; none hides the line. */
+let shownCredits = [];
+function showCredits(list) {
+  shownCredits = list;
+  creditsLine.textContent = list.map((a) => a.text).join(" · ");
+  creditsLine.hidden = list.length === 0;
 }
 
 async function listRoutes() {
@@ -190,6 +199,7 @@ function showChoices(routeId, route, body) {
         if (await write(routeId, route, a.route.coordinates, op)) {
           body.chosen = a.name;
           showLegs(a.legs || []);
+          showCredits(P.credits(a.attributions));
           showChoices(routeId, { points: written.points }, body);
           void drawAlternatives(body.alternatives, a.name);
           show(a.status, "Wrote the " + a.name + " route: " + P.alternativeText(a));
@@ -211,6 +221,7 @@ async function planSelected() {
   button.disabled = true;
   table.hidden = true;
   dropChoices();
+  showCredits([]);
   show("muted", "Planning…");
   try {
     if ($("boat").checked && !P.hasPosition(boat)) {
@@ -239,6 +250,7 @@ async function planSelected() {
     await drawAlternatives(body.alternatives, body.chosen);
     if (status === 200 && (await write(routeId, route, body.route.coordinates, op))) {
       showLegs(body.check.legs);
+      showCredits(P.credits(body.attributions));
       if (body.alternatives) {
         showChoices(routeId, { points: written.points }, body);
       }
@@ -292,10 +304,11 @@ async function replanDrag(routeId) {
       coordinates: body.route.coordinates,
       status: body.status,
       legs: body.check.legs,
-      arrival: body.arrival
+      arrival: body.arrival,
+      attributions: body.attributions
     };
   };
-  const none = { coordinates: [], status: "ok", legs: [] };
+  const none = { coordinates: [], status: "ok", legs: [], attributions: [] };
   show("muted", "Planning the legs beside the moved waypoint…");
   const left = i > 0 ? await leg(i - 1, i) : none;
   const right =
@@ -322,6 +335,8 @@ async function replanDrag(routeId) {
   await client.call("route.replace", { routeId, points });
   const status = P.worstStatus([left.status, right.status]);
   showLegs([...left.legs, ...right.legs]);
+  // The rest of the route still leans on what it did: the new legs' credits add to its own.
+  showCredits(P.credits(shownCredits, left.attributions, right.attributions));
   show(
     status === "ok" ? "muted" : status,
     "Planned the legs beside the moved waypoint again: they are " +

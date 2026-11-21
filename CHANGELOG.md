@@ -69,5 +69,12 @@ All notable changes to signalk-route-planner are documented here.
   its length; the search asks about no square that reaches past the corridor's boxes and searches
   the square around them. `npm run trial:r2` plans Turku to Utö, 50 nm, within a 2 GB memory
   limit, and `--profile` shows where its work goes.
+- Work budget: the plugin's **Work budget per plan** setting is the work a plan may do at least,
+  and a longer trip in the chart box is given more in proportion to its distance, as a
+  corridor's is. The plugin times the plans it runs and says in its status and `GET /status`
+  what the budget takes on this machine; that only reports, and no plan depends on it.
+- Attributions: an offered route lists the open data it leaned on (`attributions`), the FTIA's
+  navigation lines it kept to and Traficom's WFS depths it crossed, and the panel shows the
+  credit under the plan.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.

@@ -278,6 +278,24 @@
     }, "ok");
   }
 
+  /**
+   * The credits the routes' replies name (`attributions`), each source once, in the order they
+   * first appear: what the route on the chart leaned on, however many plans made it.
+   */
+  function credits() {
+    const seen = {};
+    const out = [];
+    Array.prototype.slice.call(arguments).forEach(function (list) {
+      (Array.isArray(list) ? list : []).forEach(function (a) {
+        if (a && typeof a.text === "string" && !Object.prototype.hasOwnProperty.call(seen, a.source)) {
+          seen[a.source] = true;
+          out.push(a);
+        }
+      });
+    });
+    return out;
+  }
+
   /** The trip's ends with the start at the boat's position, when it is known. */
   function fromBoat(ends, position) {
     if (!ends) {
@@ -297,6 +315,7 @@
     fromBoat: fromBoat,
     hasPosition: hasPosition,
     worstStatus: worstStatus,
+    credits: credits,
     endsOf: endsOf,
     planPoints: planPoints,
     nm: nm,

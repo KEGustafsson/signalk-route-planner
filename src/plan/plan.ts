@@ -7,7 +7,7 @@ import { passes } from "../search/passes";
 import type { PlanOptions } from "./options";
 import { DEFAULT_PLAN, requestOptions } from "./options";
 import type { CheckedLeg, Proof } from "./proof";
-import { joined, prove } from "./proof";
+import { berthsOf, joined, prove } from "./proof";
 import type { Part } from "./stages";
 import type { Staged } from "./stages";
 import { stages } from "./stages";
@@ -15,6 +15,7 @@ import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
 import { listing, overBudget, reasonOf, routeRisk } from "./risk";
 import { missingFeature } from "./capabilities";
+import { credited } from "./attribution";
 
 /**
  * One plan (plan §4.1): the search in planning sessions (`stages.ts`), then the proof:
@@ -100,12 +101,6 @@ function refusal(proof: Proof, parts: readonly Part[], rule: PassRule): string |
   return closed > 0
     ? `${closed} of the ${n} planned legs cross water no route may cross at the departure`
     : undefined;
-}
-
-function berthsOf(legs: readonly CheckedLeg[]) {
-  return legs
-    .filter((l) => l.berth)
-    .map((l) => ({ end: l.index === 0 ? "start" : "end", leg: l.index, length: l.length }));
 }
 
 /** The 200 reply: the route, its legs as the route check gave them, and how it was found. */
@@ -224,7 +219,8 @@ async function proved(
       }
     };
   }
-  return { status: 200, body: offered(base, found.parts, proof, found) };
+  const body = offered(base, found.parts, proof, found);
+  return { status: 200, body: await credited(api, input, signal, body) };
 }
 
 /** `r` with `work` set to the request's total, where its body carries work. */

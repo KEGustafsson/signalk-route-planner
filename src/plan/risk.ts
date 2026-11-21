@@ -43,6 +43,7 @@ interface Offered {
   risk: number;
   status: Status;
   check: { legs: CheckedLeg[] };
+  attributions?: unknown[];
 }
 
 /**
@@ -73,7 +74,13 @@ export function listing(
     length: o.length,
     risk: o.risk,
     status: o.status,
-    legs: o.check.legs.map((l) => ({ status: l.status, risk: l.risk, length: l.length })),
+    legs: o.check.legs.map((l) => ({
+      status: l.status,
+      risk: l.risk,
+      length: l.length,
+      flags: l.flags
+    })),
+    ...(o.attributions && { attributions: o.attributions }),
     ...(same && { sameAs: same.name }),
     ...(over && { dominatedBy: over.name })
   };

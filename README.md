@@ -76,7 +76,7 @@ Base `/plugins/signalk-route-planner/v1`, open to logged-in readonly users.
 
 | Route         | Answer                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------- |
-| `GET /status` | `{ state: "ready", provider }` or `{ state: "off", reason }`                                  |
+| `GET /status` | `{ state: "ready", provider, work }` or `{ state: "off", reason }`                            |
 | `POST /plan`  | 200 with the planned `route`, its `length`, `status` and the route check; 422 with a `reason` |
 
 A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departure` (ISO 8601),
@@ -86,6 +86,17 @@ marked not for navigation (its legs stay `unverified`), and `fallback: true` ret
 route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart, or 100 nm where signalk-underkeel serves
 its depth survey: such a trip is planned in a corridor, or in a planning box where the machine
 builds its whole region, with a corridor's work budget either way.
+
+`work` gives the plan's work budget and, once a plan has run, the work units a second this
+machine does and what the budget takes here (`unitsPerSecond`, `budgetSeconds`). The plugin's
+setting **Work budget per plan** sets the budget a plan has at least; a longer trip is given more,
+in proportion to its distance. A trip in a busy harbour that is refused at the work limit plans
+with a larger budget, at the time the status says it takes.
+
+An offered route lists the open data it leaned on in `attributions`, with the credit to show
+beside it, and the panel shows it under the plan: the Finnish Transport Infrastructure Agency's
+navigation lines when the route kept to them, Traficom's WFS depths when a leg crossed them. A
+route that used neither lists none.
 
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
 `preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the
