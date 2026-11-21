@@ -247,7 +247,8 @@ async function gated(
   // One budget for the whole request: the first search, the fallback's, and the timing.
   let used = first.work;
   let candidate = first.found;
-  const sure = candidate !== undefined;
+  // Held over the whole verdict window only when the strict search found it all.
+  const sure = candidate?.parts.every((p) => p.fallback === undefined) === true;
   if (!candidate) {
     const left = opts.maxWork - used;
     if (left <= 0) {

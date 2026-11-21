@@ -49,7 +49,7 @@ interface Body {
   reason?: string;
 }
 
-async function planned(chart: Chart, latest?: number) {
+async function planned(chart: Chart, latest?: number, fallback?: boolean) {
   const r = await plan(
     syntheticApi(chart),
     {
@@ -57,7 +57,8 @@ async function planned(chart: Chart, latest?: number) {
       to: at(5000, 0),
       departure: NOW,
       speed: 3,
-      ...(latest !== undefined && { latestDeparture: latest })
+      ...(latest !== undefined && { latestDeparture: latest }),
+      ...(fallback !== undefined && { fallback })
     },
     NEVER,
     NOW
@@ -103,6 +104,12 @@ describe("tide gates", () => {
     const c = body.route.coordinates;
     const low = c.slice(1).some((b, i) => legStatus(chart, c[i] as LonLat, b, 40) !== "ok");
     expect(low).toBe(true);
+  });
+
+  test("a fallback route the gate times holds only leaving then, asked with fallback too", async () => {
+    const { r, body } = await planned(barred(falling), NOW + 12 * HOUR, true);
+    expect(r.status).toBe(200);
+    expect(body.timing).toMatchObject({ departure: body.departure, holds: "now" });
   });
 
   test("when no departure up to the latest passes, the refusal says why", async () => {
