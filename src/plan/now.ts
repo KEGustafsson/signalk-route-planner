@@ -135,3 +135,21 @@ async function tighter(
 function limited(r: Refused, work: number, squares: number): Staged {
   return { ...r, refusal: { ...r.refusal, reason: WORK_LIMIT, work, squares }, work };
 }
+
+/**
+ * `first` with its reply's timing at `departure`, the one the route is proved for. A route the
+ * search over the whole verdict window did not find holds only leaving then.
+ */
+export function retimed<T extends { base: object }>(first: T, departure: number, sure: boolean): T {
+  const base = first.base as { timing?: object };
+  if (base.timing === undefined) {
+    return first;
+  }
+  const holds: Holds = "now";
+  const timing = {
+    ...base.timing,
+    departure: new Date(departure).toISOString(),
+    ...(!sure && { holds })
+  };
+  return { ...first, base: { ...base, timing } };
+}

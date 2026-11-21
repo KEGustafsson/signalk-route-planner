@@ -322,11 +322,10 @@ window (`src/plan/timing.ts`, `src/plan/now.ts`).
   it dries later in the window.
 - The first search runs at the verdict window's own reach, so its route holds however the boat
   keeps to its timing (`timing.holds: "trip"`). When it finds none, not for want of work, and some
-  water it met could pass at another time, it runs again at a reach near the straight distance:
-  `nowReach` (1.3) times it, but at least the straight distance plus `accessMetres` at each end.
-  A route found there is kept only when it is no longer than that reach, for which its windows
-  hold; else the search runs once more at 1.1 times that route's length, at most the verdict
-  window's reach (`timing.holds: "now"`: plan again before leaving later).
+  water it met could pass at another time, it runs again at a shorter reach near the straight
+  distance. A route found there is kept only when it fits that reach, for which its windows hold;
+  else the search runs once more at a reach from that route's length, at most the verdict
+  window's (`timing.holds: "now"`: plan again before leaving later).
 - The later searches ask again only about water: a verdict no water level changes (passing water,
   land, no chart, a closed area) is the first search's, since water that passes over a window
   passes over any part of it.
@@ -476,8 +475,9 @@ Reply 200:
 ```jsonc
 {
   "plannedAt": "…",
-  // The departure and speed the route is checked for; holds "trip": at any time in the verdict
-  // window, "now": only leaving at the departure (§4.3 R3d).
+  // The departure and speed the route is checked for (with a tide gate or waits, the departure
+  // they chose); holds "trip": at any time in the verdict window, "now": only leaving at the
+  // departure (§4.3 R3d).
   "timing": { "departure": "…", "speed": 2.5, "holds": "trip" },
   "route": {
     "type": "LineString",

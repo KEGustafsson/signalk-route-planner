@@ -44,6 +44,7 @@ interface Body {
     legs?: number[];
     reason?: string;
   };
+  timing?: { departure: string; holds: string };
   fallback?: string;
   reason?: string;
 }
@@ -87,6 +88,9 @@ describe("tide gates", () => {
       waitMinutes: Math.round((leave - NOW) / 60_000)
     });
     expect(body.gate?.legs?.length).toBeGreaterThan(0);
+    // Its timing is the departure it is proved for. The search over the whole verdict window
+    // met the bar at its lowest water, so the route holds leaving then, not at any time.
+    expect(body.timing).toMatchObject({ departure: body.departure, holds: "now" });
     // It arrives the sailing time after it leaves, at 3 m/s.
     const sailing = (body.check.legs.reduce((m, l) => m + l.length, 0) / 3) * 1000;
     const arrives = Date.parse(body.arrival as string) - leave;

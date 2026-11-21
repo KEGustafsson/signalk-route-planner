@@ -10,7 +10,7 @@ import type { CheckedLeg, Proof } from "./proof";
 import { berthsOf, joined, prove } from "./proof";
 import type { Part } from "./stages";
 import type { Staged } from "./stages";
-import { nowStages } from "./now";
+import { nowStages, retimed } from "./now";
 import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
 import { listing, overBudget, reasonOf, routeRisk, withWork } from "./risk";
@@ -247,6 +247,7 @@ async function gated(
   // One budget for the whole request: the first search, the fallback's, and the timing.
   let used = first.work;
   let candidate = first.found;
+  const sure = candidate !== undefined;
   if (!candidate) {
     const left = opts.maxWork - used;
     if (left <= 0) {
@@ -275,13 +276,13 @@ async function gated(
     if (input.waitEnRoute !== true) {
       return note(timed.reason);
     }
-    return enRoute(api, input, signal, { opts, first, candidate, used, note });
+    return enRoute(api, input, signal, { opts, first, candidate, used, note, sure });
   }
   // Timed, the parts are held to the strict rule: no leg is left to the fallback.
   const parts = candidate.parts.map(({ fallback: _, ...p }) => p);
   const found = { ...candidate, parts };
   const at = { ...input, departure: timed.departure };
-  const r = await proved(api, at, signal, { ...first, found });
+  const r = await proved(api, at, signal, { ...retimed(first, timed.departure, sure), found });
   if (r.status !== 200) {
     return note(`leaving at ${new Date(timed.departure).toISOString()}, ${reasonOf(r)}`);
   }
@@ -314,6 +315,8 @@ async function enRoute(
     candidate: Extract<Staged, { ok: true }>;
     used: number;
     note: (reason: string, used: number) => Reply;
+    /** Whether the search over the whole verdict window found the route. */
+    sure: boolean;
   }
 ): Promise<Reply> {
   const { opts, first, candidate } = w;
@@ -342,6 +345,7 @@ async function enRoute(
     candidate,
     used,
     scheduled: s,
+    sure: w.sure,
     note: (r) => w.note(r, used)
   });
 }
@@ -356,6 +360,7 @@ async function waited(
     candidate: Extract<Staged, { ok: true }>;
     used: number;
     scheduled: Extract<Awaited<ReturnType<typeof scheduleWithWaits>>, { ok: true }>;
+    sure: boolean;
     note: (reason: string) => Reply;
   }
 ): Promise<Reply> {
@@ -363,7 +368,7 @@ async function waited(
   const parts = s.parts.map(({ fallback: _, ...p }) => p);
   const found = { ...candidate, parts };
   const at = { ...input, departure: s.departure };
-  const r = await proved(api, at, signal, { ...first, found });
+  const r = await proved(api, at, signal, { ...retimed(first, s.departure, w.sure), found });
   const iso = (t: number): string => new Date(t).toISOString();
   if (r.status !== 200) {
     return w.note(`leaving at ${iso(s.departure)} with its waits, ${reasonOf(r)}`);
