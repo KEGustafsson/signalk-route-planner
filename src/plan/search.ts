@@ -2,7 +2,6 @@ import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
-import { cheapest } from "../search/anytime";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
 import type { RiskCost } from "../search/fallback";
@@ -22,10 +21,14 @@ import { pull } from "../search/pull";
 import { tautRule, tautWithin } from "../search/taut";
 import type { QuadNode } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
+import type { Guide } from "../search/guide";
+import { memoBoxes } from "../search/guide";
+import { between } from "./between";
 import { stuckEnds } from "./handover";
 import type { Mode } from "./modes";
 import { fallbackMode, preferring, riskCostOf, strictMode } from "./modes";
 import { keepsDirect, treeFor } from "./region";
+import { guides } from "./steer";
 
 export type { Mode } from "./modes";
 import type { PlanOptions } from "./options";
@@ -101,9 +104,6 @@ interface Access {
   /** Where the berth leg from `joined` ends, when only a berth leg reaches it. */
   berth?: LonLat;
 }
-
-/** A*'s heuristic weight where a weight carries a preference (`Mode.fine`). */
-const FINE_GREED = 1.05;
 
 export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
@@ -268,14 +268,18 @@ function pathOf(
   };
 }
 
-/** One search from `from` to `to` in `mode`: the raw path, or why there is none. */
+/**
+ * One search from `from` to `to` in `mode`: the raw path, or why there is none. With a `guide`,
+ * made once both ends are joined, the search goes along its coarse path first.
+ */
 async function attempt(
   tree: QuadTree,
   session: Session,
   ends: [LonLat, LonLat],
   opts: PlanOptions,
   mode: Mode,
-  berth = 0
+  berth = 0,
+  guide?: () => Promise<Guide | undefined>
 ): Promise<Attempt> {
   const searchWork = opts.maxWork * opts.searchShare;
   const exhausted = (): boolean => session.work() >= searchWork;
@@ -293,25 +297,7 @@ async function attempt(
       stuck: { start: typeof start === "string", end: typeof goal === "string" }
     };
   }
-  // A risk cost or a line is a preference smaller than weighted A*'s slack: a slack of
-  // FINE_GREED keeps every one worth more than it.
-  const greed = mode.fine ? Math.min(opts.greed, FINE_GREED) : opts.greed;
-  const found =
-    start.leaf === goal.leaf
-      ? { found: true as const, points: [start.at, goal.at] }
-      : await cheapest(
-          tree,
-          (g) =>
-            aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-              exhausted,
-              pause: () => session.pause(),
-              every: 64,
-              weight: mode.weight,
-              greed: g
-            }),
-          { first: greed, fine: FINE_GREED },
-          mode.weight
-        );
+  const found = await between(tree, session, [start, goal], opts, { mode, exhausted, guide });
   if (!found.found) {
     return {
       reason:
@@ -344,7 +330,8 @@ async function searchTree(
   const { pref } = how;
   const strictWith = preferring(strictMode(how.rule, cost), pref);
   const fallbackWith = preferring(fallbackMode(cost), pref);
-  const strict = await attempt(tree, session, ends, opts, strictWith, how.berth);
+  const guide = guides(tree, session, how.rule, ends, opts);
+  const strict = await attempt(tree, session, ends, opts, strictWith, how.berth, guide(1));
   // With a risk cost or lines, pulling keeps to what the search paid for, by one price for all.
   const pulling = (path: LonLat[], mode: Mode, fallback: boolean) => {
     // A fallback route is straightened by its own rule (`riskyShortcut`) unless it carries a
@@ -385,7 +372,7 @@ async function searchTree(
   }
   const again =
     how.fallback && strict.reason !== WORK_LIMIT
-      ? await attempt(tree, session, ends, opts, fallbackWith, how.berth)
+      ? await attempt(tree, session, ends, opts, fallbackWith, how.berth, guide(opts.steerRisk))
       : undefined;
   if (again && "path" in again) {
     return {
@@ -414,7 +401,7 @@ async function searchTree(
  * end name the free water near it (`stuck`).
  */
 export async function searchRoute(
-  session: Session,
+  chart: Session,
   from: LonLat,
   to: LonLat,
   opts: PlanOptions,
@@ -422,6 +409,7 @@ export async function searchRoute(
   fallback = false,
   berth = 0
 ): Promise<SearchOutcome> {
+  const session = memoBoxes(chart);
   const direct = checkLeg(session, from, to);
   const cost = riskCostOf(opts, rule);
   const { tree, pref, shapeError } = treeFor(session, [from, to], opts, rule, cost);

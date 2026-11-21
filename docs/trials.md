@@ -37,11 +37,20 @@ Data: the Traficom INSPIRE WFS (`DepthArea_A`, `Sounding_P`) through signalk-und
 client. It is not for navigation, so every leg is at best `unverified`. It carries no survey
 quality, so each case assumes a CATZOC.
 
-| Case                      | Assumed CATZOC | Result (2026-11-21)                                   |  Work |
-| ------------------------- | -------------- | ----------------------------------------------------- | ----: |
-| `turku-guest-harbours-b`  | B              | 19.8 nm, 32 legs: harbour stage, route, harbour stage | 8.4 M |
-| `turku-guest-harbours-a1` | A1             | 19.7 nm, 30 legs: harbour stage, route, harbour stage | 8.0 M |
+| Case                      | Assumed CATZOC | Result (2026-11-21)                                   | Work (unsteered) |
+| ------------------------- | -------------- | ----------------------------------------------------- | ---------------: |
+| `turku-guest-harbours-b`  | B              | 19.8 nm, 32 legs: harbour stage, route, harbour stage |    9.8 M (9.6 M) |
+| `turku-guest-harbours-a1` | A1             | 19.7 nm, 30 legs: harbour stage, route, harbour stage |    9.5 M (9.2 M) |
 
+- Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
+  search was steered along a coarse path (`src/plan/steer.ts`).
+- Both routes are fallback routes (the Aura river, below). Since R3d the planner first searches
+  strictly at the boat's own timing before it offers one, which adds about 1.2 M work.
+- With the work to spare, the finer pass after the steered one searches again without the guide
+  (plan §4.1 step 3), so steered and unsteered plans come out alike. Steered alone, the first
+  pass took 5.4 M and 5.4 M, and the A1 route was 21.3 nm: its guide keeps the fallback to water
+  the coarse pass found free. Either way the route part is `unverified` and the harbour-stage legs
+  in the Aura river `fail`.
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
 - The Nauvo end reaches the guest harbour through its harbour stage, `unverified`.
@@ -51,11 +60,19 @@ quality, so each case assumes a CATZOC.
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
 start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
-| Case                        | Result (2026-11-21)                                                     |   Work |
-| --------------------------- | ----------------------------------------------------------------------- | -----: |
-| `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |  1.9 M |
-| `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     | 17.1 M |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |  2.4 M |
+| Case                        | Result (2026-11-21)                                                     | Work (unsteered) |
+| --------------------------- | ----------------------------------------------------------------------- | ---------------: |
+| `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |    2.5 M (2.5 M) |
+| `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     |  26.0 M (25.8 M) |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |    2.9 M (2.9 M) |
+
+- Bayside's route is the fallback's, at risk 0.99 steered or not. Most of its work is the strict
+  searches R3d runs first at the boat's own timing; the steered first pass alone took 19.7 M. The short Fisher Island and
+  Beach Marina trips share a leaf or finish before steering pays, so their work is unchanged.
+
+A refusal over water another time's tide could open asks again at the boat's own timing
+(plan §4.3, R3d): `miami-beach-marina` does, for about 0.5 M of its work, and is refused there
+too.
 
 `miami-meloy-channel-tide` plans into Meloy Channel with a modelled tide (0.0–0.7 m above
 MLLW) and up to 12 h to wait. The gate finds the route's last leg touches a 0 m band at the bank,
@@ -64,18 +81,20 @@ wait for a leg the tide cannot open.
 
 `turku-guest-harbours-b-lines` plans Turku to Nauvo with `preferLines` on the WFS cell with the
 FTIA's navigation lines (474 of them in the area): 19.9 nm in 33 legs, keeping to the lines,
-against 19.8 nm in 32 without them, for 9.6 M work units against 8.4 M.
+against 19.8 nm in 32 without them, for 10.8 M work units against 9.8 M. A search with lines is
+not steered: the guide would drown their discount.
 
-Drawing routes tight (plan §4.1 steps 3 and 4) took the Turku cases from 39 and 45 legs to 32
-and 30, and the harbour stages' failing legs from 11 to 7, for 2.6 M more work units each: about
-0.3 M for the tightening, the rest for A\* run again at the finer greed.
+Drawing routes tight (plan §4.1 steps 3 and 4) took the Turku cases from 37 and 40 legs to 32
+and 30, 20.2 nm to 19.8 nm and 21.3 nm to 19.7 nm, and the harbour stages' failing legs from 10
+and 11 to 7, for about 4 M more work units each: about 0.3 M for the tightening, the rest for
+A\* run again at the finer greed without the guide.
 
 `miami-fisher-island-alternatives` plans the same trip with `alternatives` (R4). The shortest
-route is 1894 m at risk 0.031; the balanced one (α = 2) 1903 m at 0.026, every leg `ok`. The safest
+route is 1894 m at risk 0.032; the balanced one (α = 2) 1903 m at 0.026, every leg `ok`. The safest
 (α = 10) comes out 1900 m at 0.050 with a marginal leg: in Government Cut the squares' box
 verdicts all read marginal, coarser than a leg's corridor, so the larger weight finds no safer
 line, and the reply marks it `dominatedBy: "shortest"` rather than offering it as safer. The three
-plans took 6.1 M work units together.
+plans took 7.9 M work units together.
 
 - Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at
@@ -107,6 +126,8 @@ reported. The script's header says what it keeps between runs.
   searched the square around its boxes, the same plan took 10.1 M work.
 - `--profile` shows where the work goes: most of it is boxes under 50 m along the archipelago's
   shores, and the harbour stages at the start.
+- The search in a corridor is not steered: the corridor is its coarse path already. The plan's
+  work is the same with steering on or off (2026-11-21).
 - The download is most of the time: the WFS answers a box with whole areas, about 1 MB/s.
 
 ## The panel in a chart host (R5)

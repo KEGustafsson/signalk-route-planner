@@ -10,7 +10,7 @@ import type { CheckedLeg, Proof } from "./proof";
 import { berthsOf, joined, prove } from "./proof";
 import type { Part } from "./stages";
 import type { Staged } from "./stages";
-import { stages } from "./stages";
+import { nowStages, retimed } from "./now";
 import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
 import { listing, overBudget, reasonOf, routeRisk, withWork } from "./risk";
@@ -168,7 +168,7 @@ async function planAt(
   const own = requestOptions(opts, input);
   const { riskWeight } = own;
   const st = { api, params, signal, opts: own, rule, fallback: input.fallback === true };
-  const found = await stages(st, input.from, input.to, input.xteLimit);
+  const { found, holds } = await nowStages(st, input, window);
   if ("error" in found) {
     return {
       reply: { status: found.status, body: { errors: [found.error] } },
@@ -180,6 +180,8 @@ async function planAt(
   }
   const base = {
     plannedAt: new Date(now).toISOString(),
+    // "now": the route passes only at the boat's own timing, leaving at the departure.
+    timing: { departure: new Date(input.departure).toISOString(), speed: input.speed, holds },
     riskWeight,
     direct: directOf(found.direct),
     ...(input.accept?.length && { accepted: input.accept })
@@ -245,6 +247,8 @@ async function gated(
   // One budget for the whole request: the first search, the fallback's, and the timing.
   let used = first.work;
   let candidate = first.found;
+  // Held over the whole verdict window only when the strict search found it all.
+  const sure = candidate?.parts.every((p) => p.fallback === undefined) === true;
   if (!candidate) {
     const left = opts.maxWork - used;
     if (left <= 0) {
@@ -273,13 +277,13 @@ async function gated(
     if (input.waitEnRoute !== true) {
       return note(timed.reason);
     }
-    return enRoute(api, input, signal, { opts, first, candidate, used, note });
+    return enRoute(api, input, signal, { opts, first, candidate, used, note, sure });
   }
   // Timed, the parts are held to the strict rule: no leg is left to the fallback.
   const parts = candidate.parts.map(({ fallback: _, ...p }) => p);
   const found = { ...candidate, parts };
   const at = { ...input, departure: timed.departure };
-  const r = await proved(api, at, signal, { ...first, found });
+  const r = await proved(api, at, signal, { ...retimed(first, timed.departure, sure), found });
   if (r.status !== 200) {
     return note(`leaving at ${new Date(timed.departure).toISOString()}, ${reasonOf(r)}`);
   }
@@ -312,6 +316,8 @@ async function enRoute(
     candidate: Extract<Staged, { ok: true }>;
     used: number;
     note: (reason: string, used: number) => Reply;
+    /** Whether the search over the whole verdict window found the route. */
+    sure: boolean;
   }
 ): Promise<Reply> {
   const { opts, first, candidate } = w;
@@ -340,6 +346,7 @@ async function enRoute(
     candidate,
     used,
     scheduled: s,
+    sure: w.sure,
     note: (r) => w.note(r, used)
   });
 }
@@ -354,6 +361,7 @@ async function waited(
     candidate: Extract<Staged, { ok: true }>;
     used: number;
     scheduled: Extract<Awaited<ReturnType<typeof scheduleWithWaits>>, { ok: true }>;
+    sure: boolean;
     note: (reason: string) => Reply;
   }
 ): Promise<Reply> {
@@ -361,7 +369,7 @@ async function waited(
   const parts = s.parts.map(({ fallback: _, ...p }) => p);
   const found = { ...candidate, parts };
   const at = { ...input, departure: s.departure };
-  const r = await proved(api, at, signal, { ...first, found });
+  const r = await proved(api, at, signal, { ...retimed(first, s.departure, w.sure), found });
   const iso = (t: number): string => new Date(t).toISOString();
   if (r.status !== 200) {
     return w.note(`leaving at ${iso(s.departure)} with its waits, ${reasonOf(r)}`);

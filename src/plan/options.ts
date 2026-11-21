@@ -13,10 +13,21 @@ export interface PlanOptions {
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
   /**
-   * A*'s heuristic weight (weighted A*): the search's path costs at most this many times
-   * the cheapest before string pulling, for far fewer squares classified. 1 is plain A*.
+   * A*'s heuristic weight (weighted A*), for far fewer squares classified. Unsteered, the
+   * search's path costs at most this many times the cheapest before string pulling; a steered
+   * search's guide may overestimate, so its path has no such bound. 1 is plain A*.
    */
   greed: number;
+  /**
+   * Steering (`steer.ts`): the coarse pass cuts squares no finer than this, metres, at this
+   * heuristic weight; its path orders the search. It may use this share of the search's work;
+   * 0 turns steering off. The fallback's guide counts each metre of the path through a coarse
+   * square that may hold no way through as `steerRisk` metres: the risk it will likely cross.
+   */
+  steerCell: number;
+  steerGreed: number;
+  steerShare: number;
+  steerRisk: number;
   /** The region's side may be at most this many smallest squares (a power of two). */
   maxSideUnits: number;
   /** Smallest square, metres, at least; also at least half the corridor half-width. */
@@ -45,6 +56,15 @@ export interface PlanOptions {
   windowFactor: number;
   /** ...and at least this long, ms. */
   minWindow: number;
+  /**
+   * The route passable now (`timing.ts`): when no route passes as the boat may meet the water
+   * anywhere in the verdict window, the search asks again at the time the boat can be at each
+   * square on a route at most this many times the straight distance (and at least the straight
+   * distance plus `accessMetres` at each end).
+   */
+  nowReach: number;
+  /** ...for a boat this share faster or slower than the request's speed. */
+  timingSlack: number;
   /**
    * An end the corridor cannot reach is planned out to open water in a harbour stage, at
    * this cross-track limit (the planning API's buffer alone at 0), metres.
@@ -108,6 +128,10 @@ export const DEFAULT_PLAN: PlanOptions = {
   workPerKm: 100_000,
   searchShare: 0.8,
   greed: 1.25,
+  steerCell: 200,
+  steerGreed: 3,
+  steerShare: 0.15,
+  steerRisk: 100,
   maxSideUnits: 4096,
   minCell: 10,
   corridorCell: 40,
@@ -119,6 +143,8 @@ export const DEFAULT_PLAN: PlanOptions = {
   corridorWorkPerKm: 120_000,
   windowFactor: 3,
   minWindow: 3_600_000,
+  nowReach: 1.3,
+  timingSlack: 0.2,
   harbourXte: 0,
   harbourMetres: 3000,
   harbourMargin: 300,
