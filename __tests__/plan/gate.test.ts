@@ -34,8 +34,9 @@ interface Body {
   status: string;
   work?: number;
   departure?: string;
+  arrival?: string;
   route: { coordinates: LonLat[] };
-  check: { legs: { status: string }[] };
+  check: { legs: { status: string; length: number }[] };
   gate?: {
     requested?: string;
     departure?: string;
@@ -86,6 +87,10 @@ describe("tide gates", () => {
       waitMinutes: Math.round((leave - NOW) / 60_000)
     });
     expect(body.gate?.legs?.length).toBeGreaterThan(0);
+    // It arrives the sailing time after it leaves, at 3 m/s.
+    const sailing = (body.check.legs.reduce((m, l) => m + l.length, 0) / 3) * 1000;
+    const arrives = Date.parse(body.arrival as string) - leave;
+    expect(Math.abs(arrives - sailing)).toBeLessThan(sailing * 0.01);
     // Through the gap, and every leg passes as the route check sees it then.
     const ys = body.route.coordinates.map((p) => p[1]);
     expect(Math.max(...ys)).toBeGreaterThan(at(0, 1000)[1]);

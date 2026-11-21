@@ -141,4 +141,123 @@ describe("panel model", () => {
     expect(P.samePoints(pts, [{ position: [22, 60] }])).toBe(false);
     expect(P.samePoints(pts, undefined)).toBe(false);
   });
+
+  test("a single dragged waypoint is found; any other change is not one", () => {
+    const pts = [{ position: [22, 60] }, { position: [22.1, 60.1] }, { position: [22.2, 60.2] }];
+    const moved = [pts[0], { position: [22.12, 60.1] }, pts[2]];
+    expect(P.movedPoint(pts, moved)).toBe(1);
+    expect(P.movedPoint(pts, pts)).toBe(-1);
+    expect(P.movedPoint(pts, [pts[0], pts[2]])).toBe(-1);
+    expect(P.movedPoint(pts, [{ position: [21, 60] }, moved[1], pts[2]])).toBe(-1);
+    expect(P.movedPoint(pts, undefined)).toBe(-1);
+  });
+
+  test("the legs beside a dragged waypoint are spliced in, every other point kept", () => {
+    const pts = [
+      { position: [22, 60], name: "Home" },
+      { position: [22.1, 60.1] },
+      { position: [22.12, 60.1], name: "Moved" },
+      { position: [22.3, 60.3], name: "Harbour" }
+    ];
+    const left: [number, number][] = [
+      [22.1, 60.1],
+      [22.11, 60.12],
+      [22.12, 60.1]
+    ];
+    const right: [number, number][] = [
+      [22.12, 60.1],
+      [22.2, 60.15],
+      [22.3, 60.3]
+    ];
+    expect(P.spliceLegs(pts, 2, left, right)).toEqual([
+      pts[0],
+      pts[1],
+      { position: [22.11, 60.12] },
+      pts[2],
+      { position: [22.2, 60.15] },
+      pts[3]
+    ]);
+    // An end point has a leg on one side only.
+    expect(
+      P.spliceLegs(
+        pts,
+        0,
+        [],
+        [
+          [22, 60],
+          [22.05, 60.02],
+          [22.1, 60.1]
+        ]
+      )
+    ).toEqual([pts[0], { position: [22.05, 60.02] }, pts[1], pts[2], pts[3]]);
+  });
+
+  test("a leg's flags in words, alternatives in one line each, and the map's lines", () => {
+    expect(P.legNote({ flags: ["AIR_DRAFT", "SWEPT"] })).toBe(
+      "a bridge or overhead cable too low for the mast; swept"
+    );
+    expect(P.legNote({ flags: ["SOMETHING_NEW"] })).toBe("SOMETHING_NEW");
+    expect(P.legNote({})).toBe("");
+    const shortest = {
+      name: "shortest",
+      length: 1852,
+      risk: 0.0123,
+      status: "ok",
+      route: {
+        type: "LineString",
+        coordinates: [
+          [22, 60],
+          [22.1, 60]
+        ]
+      }
+    };
+    const safest = { ...shortest, name: "safest", dominatedBy: "shortest" };
+    const balanced = { ...shortest, name: "balanced", sameAs: "shortest" };
+    expect(P.alternativeText(shortest)).toBe("shortest: 1.0 nm, risk 1.23 %, ok");
+    expect(P.alternativeText(safest)).toMatch(/no safer than shortest$/);
+    expect(P.alternativeText({ name: "safest", reason: "over the budget" })).toBe(
+      "safest: not offered, over the budget"
+    );
+    const map = P.alternativesGeoJSON([shortest, balanced, safest], "shortest");
+    const props = map.features.map((f: { properties: { name: string; chosen: boolean } }) => [
+      f.properties.name,
+      f.properties.chosen
+    ]);
+    expect(props).toEqual([
+      ["shortest", true],
+      ["safest", false]
+    ]);
+  });
+
+  test("the start is the boat's position when it is known", () => {
+    const ends = { from: [22, 60] as [number, number], to: [22.2, 60.2] as [number, number] };
+    expect(P.fromBoat(ends, { longitude: 21.9, latitude: 59.9 })).toEqual({
+      from: [21.9, 59.9],
+      to: [22.2, 60.2]
+    });
+    expect(P.fromBoat(ends, undefined)).toEqual(ends);
+    expect(P.fromBoat(null, { longitude: 21.9, latitude: 59.9 })).toBeNull();
+  });
+
+  test("a boat position is known only with a finite longitude and latitude", () => {
+    expect(P.hasPosition({ longitude: 21.9, latitude: 59.9 })).toBe(true);
+    expect(P.hasPosition(undefined)).toBe(false);
+    expect(P.hasPosition({ longitude: Number.NaN, latitude: 59.9 })).toBe(false);
+    expect(P.hasPosition({ latitude: 59.9 })).toBe(false);
+    expect(P.hasPosition({ longitude: null, latitude: null })).toBe(false);
+    expect(P.hasPosition({ longitude: "21.9", latitude: "59.9" })).toBe(false);
+  });
+
+  test("the worst of check statuses, ok for none", () => {
+    expect(P.worstStatus([])).toBe("ok");
+    expect(P.worstStatus(["ok", "marginal"])).toBe("marginal");
+    expect(P.worstStatus(["marginal", "unverified", "ok"])).toBe("unverified");
+    expect(P.worstStatus(["fail", "unverified"])).toBe("fail");
+    // A status this panel does not know is never read as passing.
+    expect(P.worstStatus(["ok", "something new"])).toBe("something new");
+    expect(P.worstStatus(["something new", "fail"])).toBe("fail");
+    expect(P.worstStatus(["constructor"])).toBe("constructor");
+    expect(P.worstStatus(["ok", "toString", "marginal"])).toBe("toString");
+    expect(P.worstStatus(["something new", "marginal"])).toBe("something new");
+  });
 });

@@ -292,7 +292,12 @@ async function main() {
   process.exit(bad > 0 ? 1 : 0);
 }
 
-main().catch((err) => {
-  process.stderr.write(`trial: ${err.stack ?? err}\n`);
-  process.exit(2);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    process.stderr.write(`trial: ${err.stack ?? err}\n`);
+    process.exit(2);
+  });
+}
+
+// The panel trial (panel-trial.js) plans on the same charts and planning API.
+module.exports = { apiFor, indexFor };

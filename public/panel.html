@@ -19,6 +19,8 @@
       .ok { color: var(--ok); } .marginal { color: var(--warn); } .fail { color: var(--todo); } .unverified { color: var(--unverified); }
       .muted { color: var(--muted); font-size: 12px; }
       label.check { display: flex; gap: 6px; align-items: flex-start; color: var(--ink); font-size: 13px; }
+      #choices div { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 13px; }
+      #choices button { margin-top: 0; min-height: 28px; }
     </style>
     <script src="theme.js"></script>
     <script src="planner-shared.js"></script>
@@ -31,6 +33,7 @@
     </div>
     <label for="route">Route: its first point is the start, its last the destination</label>
     <select id="route"></select>
+    <label class="check"><input id="boat" type="checkbox" /> Start from the boat's position, not the route's first point</label>
     <label class="check"><input id="accept" type="checkbox" /> Plan on depth data marked not for navigation (its legs stay unverified)</label>
     <label class="check"><input id="fallback" type="checkbox" /> If no route passes, show the lowest risk-weighted route, its risky legs marked</label>
     <label for="wait">Wait for the tide, at most</label>
@@ -41,10 +44,14 @@
       <option value="24">24 hours</option>
     </select>
     <label class="check"><input id="waitEnRoute" type="checkbox" /> If no departure passes, also wait on the way, where there is room to swing at anchor</label>
+    <label class="check"><input id="lines" type="checkbox" /> Keep to leading lines, fairway lines and my own tracks where that costs little more distance</label>
+    <label class="check"><input id="alternatives" type="checkbox" /> Offer the shortest, balanced and safest routes, drawn on the map (plans for leaving now)</label>
+    <label class="check"><input id="replan" type="checkbox" checked /> Re-plan the legs beside a waypoint I drag on the planned route</label>
     <button id="plan" type="button">Plan through safe water</button>
     <div id="result" role="status"></div>
+    <div id="choices"></div>
     <table id="legs" hidden>
-      <thead><tr><th>Leg</th><th>Length</th><th>Status</th><th>Risk</th></tr></thead>
+      <thead><tr><th>Leg</th><th>Length</th><th>Status</th><th>Risk</th><th>Why</th></tr></thead>
       <tbody></tbody>
     </table>
     <p class="muted">The plan replaces the route's points as an unsaved change. Save it, or undo it, in the route editor.</p>

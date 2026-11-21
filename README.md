@@ -44,6 +44,12 @@ the trip: about half a minute on a Raspberry Pi 4 for 50 nm.
    P(UKC < 0) in the panel. The route's first and last points keep their names. Save the route,
    or undo the change, in Freeboard's route editor.
 
+The panel can start from the boat's position instead of the route's first point, and offer the
+shortest, balanced and safest routes: they are drawn on the map, each listed with its length and
+risk, and **Use** writes another in place of the one written. Drag a waypoint of the planned
+route and the legs on either side of it are planned again. Freeboard finds the planner as the
+`routePlan` service of its `navigationSafety` services.
+
 When no route passes the check, the panel says why: land or shoals close every way, the only way
 through is water the check cannot verify (no chart coverage or an unassessed survey), the start
 or destination is not in water the check passes, or the search reached its work limit.

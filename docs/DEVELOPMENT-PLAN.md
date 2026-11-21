@@ -364,11 +364,28 @@ the candidate route.
 
 ### 4.5 R5: Freeboard UX and upstream
 
-- Extension panel: start at the vessel or at the first point of a selected two-point route,
-  destination at its last point; alternatives drawn as overlays; the chosen one written with
-  `route.replace` as an unsaved draft; the timed plan and each leg's explanation in the panel.
-- Interactive editing: a dragged waypoint re-plans the two legs beside it.
-- `routePlan` in the `navigationSafety` services contract (Freeboard core).
+- Extension panel: start at the vessel (`navigation.position` from the host's Signal K stream)
+  or at the first point of a selected route, destination at its last point; alternatives drawn
+  as a data overlay (`alternatives`, the written one marked), each listed with its length, risk
+  and status and a button that writes it instead; the chosen one written with `route.replace` as
+  an unsaved draft; the timed plan and each leg's flags in words in the panel. Alternatives plan
+  at one departure, so the panel leaves its wait for the tide out while they are asked for.
+- Interactive editing: when exactly one point of the route the panel wrote moves (`route.dirty`
+  from the host), the legs from the point before it to it and from it to the point after are
+  planned again, each as a plan of its own, and spliced in; the dragged point stays where it was
+  left. Each leg is checked at the time the boat sails it, without waiting for the tide: the leg
+  after the point from the first one's `arrival`. A leg that cannot be planned so, needing a wait
+  among other reasons, leaves the drag as it is, with the reason, and a route changed again
+  meanwhile is not written. The panel notes the whole route is then to be planned
+  again for its check.
+- `routePlan` in the `navigationSafety` services contract: the manifest offers it
+  (`services.navigationSafety.provides: ["routePlan"]`, `POST {base}/plan` with the request and
+  reply of §5); Freeboard core and signalk-underkeel's copy of the contract schema list it next.
+- **Panel trial** (`npm run trial:panel`, `scripts/trials/panel-trial.js`): the panel in
+  Chromium, hosted by the bus's own host implementation over one route, planning through
+  signalk-underkeel's planning API on the field trials' charts. It plans with alternatives,
+  writes another, drags a waypoint and waits for its legs to be planned again. Freeboard itself
+  is the release trial (R5's exit).
 
 ## 5. REST API
 
@@ -416,6 +433,7 @@ Reply 200:
     ]
   },
   "length": 14250, // metres
+  "arrival": "…", // when the boat reaches the end: departure, waits and sailing time
   "risk": 0.0021, // 1 − Π(1 − P) over the legs
   "riskWeight": 0,
   "status": "ok", // worst leg status
