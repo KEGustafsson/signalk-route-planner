@@ -31,10 +31,17 @@ export interface SearchLimits {
   pause(): Promise<void>;
   every: number;
   /**
-   * The heuristic's weight, at least 1: weighted A*, whose path costs at most this many
-   * times the cheapest, for far fewer squares classified in a maze of islands. 1 when absent.
+   * The heuristic's weight, at least 1: weighted A*, for far fewer squares classified in a maze
+   * of islands. Unsteered, its path costs at most this many times the cheapest; a `heuristic`
+   * may overestimate, so a steered search's path has no such bound. 1 when absent.
    */
   greed?: number;
+  /**
+   * The estimate of the way on from a point to the goal, units; absent, the straight line. A
+   * steered search's (`guide.ts`) follows a coarse path: it orders the search, and may
+   * overestimate, so it lifts `greed`'s bound on the path's cost.
+   */
+  heuristic?(p: XY): number;
 }
 
 export type SearchResult =
@@ -50,6 +57,9 @@ interface State {
   enter: (n: QuadNode) => boolean;
   goal: XY;
   greed: number;
+  /** The estimate from a point, and a lower bound of it over a square not yet classified. */
+  h: (p: XY) => number;
+  hSquare: (n: QuadNode) => number;
   g: Map<number, number>;
   back: Map<number, { prev: QuadNode; portal: XY }>;
   closed: Map<number, QuadNode>;
@@ -90,7 +100,7 @@ function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
   if (m.state === "unknown" && m.size > 1) {
     // The centre's cost and the square's key are separate: the key is the lowest bound any
     // predecessor gives, so a later one with a cheaper centre but a higher bound keeps it.
-    const f = gn + toSquare(m, st.pos(n)) * weightOf(st, n) + st.greed * toSquare(m, st.goal);
+    const f = gn + toSquare(m, st.pos(n)) * weightOf(st, n) + st.greed * st.hSquare(m);
     if (f < (st.queued.get(m.id) ?? Infinity)) {
       st.queued.set(m.id, f);
       st.open.push(m, f);
@@ -98,7 +108,7 @@ function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
     return;
   }
   if (better) {
-    const f = gm + st.greed * dist(st.pos(m), st.goal);
+    const f = gm + st.greed * st.h(st.pos(m));
     st.queued.set(m.id, f);
     st.open.push(m, f);
   }
@@ -157,6 +167,7 @@ export async function aStar(
   limits: SearchLimits
 ): Promise<SearchResult> {
   const { weight, enter } = weighing(limits);
+  const { h, hSquare } = estimates(limits, goal);
   const st: State = {
     tree,
     pos: (n) => (n === from ? start : n === to ? goal : centre(n)),
@@ -164,13 +175,15 @@ export async function aStar(
     enter,
     goal,
     greed: Math.max(1, limits.greed ?? 1),
+    h,
+    hSquare,
     g: new Map([[from.id, 0]]),
     back: new Map(),
     closed: new Map(),
     open: new Heap<QuadNode>(),
-    queued: new Map([[from.id, dist(start, goal)]])
+    queued: new Map([[from.id, h(start)]])
   };
-  st.open.push(from, dist(start, goal));
+  st.open.push(from, h(start));
   let expanded = 0;
   while (st.open.size > 0) {
     const key = st.open.peekKey();
@@ -201,6 +214,32 @@ export async function aStar(
     }
   }
   return { found: false, reason: "unreachable", expanded };
+}
+
+/**
+ * The estimate on to `goal`: the straight line, or the limits' heuristic, never below the
+ * straight line. A square's bound is its nearest point's straight line, or the heuristic at its
+ * centre less twice its half diagonal, whichever is more.
+ */
+function estimates(
+  limits: SearchLimits,
+  goal: XY
+): { h: (p: XY) => number; hSquare: (n: QuadNode) => number } {
+  const guide = limits.heuristic;
+  if (!guide) {
+    return { h: (p) => dist(p, goal), hSquare: (n) => toSquare(n, goal) };
+  }
+  const h = (p: XY): number => Math.max(dist(p, goal), guide(p));
+  const seen = new Map<number, number>();
+  const hSquare = (n: QuadNode): number => {
+    let v = seen.get(n.id);
+    if (v === undefined) {
+      v = Math.max(toSquare(n, goal), guide(centre(n)) - Math.SQRT2 * n.size);
+      seen.set(n.id, v);
+    }
+    return v;
+  };
+  return { h, hSquare };
 }
 
 /** The per-metre weight of a leaf and whether it may be entered at all. */

@@ -77,6 +77,14 @@ All notable changes to signalk-route-planner are documented here.
   its length; the search asks about no square that reaches past the corridor's boxes and searches
   the square around them. `npm run trial:r2` plans Turku to Utö, 50 nm, within a 2 GB memory
   limit, and `--profile` shows where its work goes.
+- Steering: between joined ends, a coarse pass over the same region's larger squares, sharing
+  their box verdicts, finds the way that likely leads through, and the search reaches the
+  squares along it first. It changes only the order of the search, never a square's verdict or
+  the route check. Field trials: Turku to Nauvo 7.0 M → 5.4 M work units, the Bayside fallback
+  25.7 M → 19.7 M, kept to water the coarse pass found free. Not used with preference lines, a
+  risk cost or in a corridor.
+- A depth survey underkeel refuses as too large is asked for in up to eight overlapping pieces
+  along the trip and joined, so a long diagonal trip still gets its corridor.
 - Work budget: the plugin's **Work budget per plan** setting is the work a plan may do at least,
   and a longer trip in the chart box is given more in proportion to its distance, as a
   corridor's is. The plugin times the plans it runs and says in its status and `GET /status`
