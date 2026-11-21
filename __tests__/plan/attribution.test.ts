@@ -59,6 +59,14 @@ describe("keepsTo", () => {
     expect(keepsTo([at(0, 0), at(4000, 0)], [], 60)).toBe(false);
     expect(keepsTo([at(0, 0), at(4000, 0)], [[at(2000, -500), at(2000, 500)]], 30)).toBe(false);
   });
+
+  test("crossing a line at right angles is not keeping to it, at the default reach", () => {
+    const reach = DEFAULT_PLAN.preferReach;
+    // 2 · reach of the route lies within reach of the crossing line: as much as KEPT_METRES.
+    expect(reach * 2).toBeGreaterThanOrEqual(100);
+    expect(keepsTo([at(0, 0), at(4000, 0)], [[at(2000, -500), at(2000, 500)]], reach)).toBe(false);
+    expect(keepsTo([at(0, 0), at(4000, 0)], [[at(1000, 20), at(3000, 20)]], reach)).toBe(true);
+  });
 });
 
 describe("attributionsOf", () => {
@@ -120,6 +128,26 @@ describe("a plan's attributions", () => {
 
   test("without preferLines no FTIA line is kept to, so none is credited", async () => {
     expect(await credits(bent("NAVLINE"), { preferLines: false })).toEqual([]);
+  });
+
+  test("lines the search did not weigh, or kept to past their reach, credit no one", async () => {
+    const r = await plan(
+      syntheticApi(bent("NAVLINE"), { features: ["objects"] }),
+      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3, preferLines: true },
+      NEVER,
+      NOW,
+      { ...DEFAULT_PLAN, preferWeight: 0 }
+    );
+    expect((r.body as { attributions: unknown[] }).attributions).toEqual([]);
+    // The route keeps to the line within the search's 50 m reach: a 5 m reach credits no one.
+    const close = await plan(
+      syntheticApi(bent("NAVLINE"), { features: ["objects"] }),
+      { from: at(0, 0), to: at(4000, 0), departure: NOW, speed: 3, preferLines: true },
+      NEVER,
+      NOW,
+      { ...DEFAULT_PLAN, preferReach: 5 }
+    );
+    expect((close.body as { attributions: unknown[] }).attributions).not.toContainEqual(FTIA);
   });
 
   test("an FTIA line the route only meets at its start credits no one", async () => {

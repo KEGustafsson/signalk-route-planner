@@ -139,7 +139,9 @@ export function joined(parts: readonly Part[]): LonLat[] {
 }
 
 /** The berth legs of a proved route, as the reply lists them: at which end, and how long. */
-export function berthsOf(legs: readonly CheckedLeg[]) {
+export function berthsOf(
+  legs: readonly CheckedLeg[]
+): { end: "start" | "end"; leg: number; length: number }[] {
   return legs
     .filter((l) => l.berth)
     .map((l) => ({ end: l.index === 0 ? "start" : "end", leg: l.index, length: l.length }));

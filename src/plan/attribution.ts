@@ -1,7 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import { EARTH_RADIUS } from "../foundation/geo";
 import type { ChartObject, PlanningApiV1, SessionParams } from "../oracle/contract";
-import { DEFAULT_PLAN } from "./options";
+import type { PlanOptions } from "./options";
 
 /**
  * Credit for the open data an offered route leaned on (plan §5, `attributions`): named only when
@@ -31,8 +31,11 @@ const FTIA_CLASS = "NAVLINE";
 /** The route is sampled this often when it is held against the lines, metres. */
 const SAMPLE_METRES = 25;
 
-/** A route keeps to a line when this much of it lies within the line's reach, metres. */
+/** A route keeps to a line when this much of it runs along it, within the line's reach, metres. */
 const KEPT_METRES = 100;
+
+/** Along a line: the route's way within this of the line's, either way, degrees. */
+const ALONG_DEGREES = 30;
 
 const DEG = Math.PI / 180;
 
@@ -53,25 +56,44 @@ function toSegment(p: XY, a: XY, b: XY): number {
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
 }
 
+interface Piece {
+  at: XY;
+  length: number;
+  /** The way the route runs there, a unit vector. */
+  way: XY;
+}
+
 /** The midpoints of `route` cut in pieces of at most `SAMPLE_METRES`, each with its length. */
-function pieces(route: readonly XY[]): { at: XY; length: number }[] {
-  const out: { at: XY; length: number }[] = [];
+function pieces(route: readonly XY[]): Piece[] {
+  const out: Piece[] = [];
   for (let i = 1; i < route.length; i++) {
     const a = route[i - 1] as XY;
     const b = route[i] as XY;
     const d = Math.hypot(b[0] - a[0], b[1] - a[1]);
-    const n = Math.max(1, Math.ceil(d / SAMPLE_METRES));
+    if (d === 0) {
+      continue;
+    }
+    const way: XY = [(b[0] - a[0]) / d, (b[1] - a[1]) / d];
+    const n = Math.ceil(d / SAMPLE_METRES);
     for (let k = 0; k < n; k++) {
       const t = (k + 0.5) / n;
-      out.push({ at: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], length: d / n });
+      out.push({ at: [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], length: d / n, way });
     }
   }
   return out;
 }
 
+/** Whether a piece of route runs along the segment a–b, either way. */
+function along(p: Piece, a: XY, b: XY): boolean {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const cos = len === 0 ? 0 : Math.abs((p.way[0] * (b[0] - a[0]) + p.way[1] * (b[1] - a[1])) / len);
+  return cos >= Math.cos((ALONG_DEGREES * Math.PI) / 180);
+}
+
 /**
- * Whether `route` keeps to one of `lines`: `KEPT_METRES` of it lie within `reach` metres of
- * them. Crossing a fairway, or meeting a line at the start, is not keeping to it.
+ * Whether `route` keeps to one of `lines`: `KEPT_METRES` of it run along them, within `reach`
+ * metres and in their direction. Crossing a fairway, or meeting a line at the start, is not
+ * keeping to it.
  */
 export function keepsTo(
   route: readonly LonLat[],
@@ -84,11 +106,11 @@ export function keepsTo(
   }
   const xy = local(first);
   const segs = lines.flatMap((l) => l.slice(1).map((b, i) => [xy(l[i] as LonLat), xy(b)] as const));
-  let along = 0;
+  let kept = 0;
   for (const p of pieces(route.map(xy))) {
-    if (segs.some(([a, b]) => toSegment(p.at, a, b) <= reach)) {
-      along += p.length;
-      if (along >= KEPT_METRES) {
+    if (segs.some(([a, b]) => toSegment(p.at, a, b) <= reach && along(p, a, b))) {
+      kept += p.length;
+      if (kept >= KEPT_METRES) {
         return true;
       }
     }
@@ -175,24 +197,26 @@ interface Credited {
 
 /**
  * The offered route's reply `body` with the data its route leaned on credited (`attributions`).
- * The FTIA's lines are only kept to with `preferLines`; when they cannot be listed the FTIA is
- * credited all the same, as a route that may have kept to them.
+ * `opts` are the options its search ran with: the FTIA's lines are kept to only with lines on
+ * and a weight for them, and within their reach. When they cannot be listed the FTIA is credited
+ * all the same, as a route that may have kept to them.
  */
 export async function credited<T extends Credited>(
   api: PlanningApiV1,
-  input: { departure: number; speed: number; preferLines?: boolean },
+  input: { departure: number; speed: number },
   signal: AbortSignal,
-  body: T
+  body: T,
+  opts: PlanOptions
 ): Promise<T & { attributions: Attribution[] }> {
   const route = body.route.coordinates;
-  const { preferReach: reach, minWindow } = DEFAULT_PLAN;
+  const { preferReach: reach, minWindow } = opts;
   const params = {
     departure: input.departure,
     until: input.departure + minWindow,
     speed: input.speed
   };
-  const lines =
-    input.preferLines === true ? await ftiaLinesAbout(api, params, route, reach, signal) : [];
+  const kept = opts.preferLines && opts.preferWeight > 0;
+  const lines = kept ? await ftiaLinesAbout(api, params, route, reach, signal) : [];
   const found = attributionsOf(route, body.check.legs, lines ?? [], reach);
   const attributions = lines === undefined && !found.includes(FTIA) ? [FTIA, ...found] : found;
   return { ...body, attributions };

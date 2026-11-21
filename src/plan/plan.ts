@@ -13,7 +13,7 @@ import type { Staged } from "./stages";
 import { stages } from "./stages";
 import { timeDeparture } from "./gate";
 import { scheduleWithWaits } from "./waits";
-import { listing, overBudget, reasonOf, routeRisk } from "./risk";
+import { listing, overBudget, reasonOf, routeRisk, withWork } from "./risk";
 import { missingFeature } from "./capabilities";
 import { credited } from "./attribution";
 
@@ -136,6 +136,8 @@ interface Planned {
   found?: Extract<Staged, { ok: true }>;
   /** The planning API work its search did, offered or refused. */
   work: number;
+  /** The options the search ran with: the request's own weights and lines on the plan's. */
+  opts: PlanOptions;
 }
 
 async function planAt(
@@ -172,7 +174,8 @@ async function planAt(
       reply: { status: found.status, body: { errors: [found.error] } },
       base: {},
       rule,
-      work: 0
+      work: 0,
+      opts: own
     };
   }
   const base = {
@@ -189,10 +192,10 @@ async function planAt(
       ...(r.unverified > 0 && { unverifiedSquares: r.unverified }),
       work: found.work
     };
-    return { reply: { status: 422, body }, base, rule, work: found.work };
+    return { reply: { status: 422, body }, base, rule, work: found.work, opts: own };
   }
-  const reply = await proved(api, input, signal, { base, rule, found });
-  return { reply, base, rule, found, work: found.work };
+  const reply = await proved(api, input, signal, { base, rule, found, opts: own });
+  return { reply, base, rule, found, work: found.work, opts: own };
 }
 
 /** The route check of `found` at `input.departure`, and the reply it makes. */
@@ -200,7 +203,7 @@ async function proved(
   api: PlanningApiV1,
   input: PlanInput,
   signal: AbortSignal,
-  p: { base: object; rule: PassRule; found: Extract<Staged, { ok: true }> }
+  p: { base: object; rule: PassRule; found: Extract<Staged, { ok: true }>; opts: PlanOptions }
 ): Promise<Reply> {
   const { base, rule, found } = p;
   const proof = await prove(api, input, found.parts, signal);
@@ -220,13 +223,7 @@ async function proved(
     };
   }
   const body = offered(base, found.parts, proof, found);
-  return { status: 200, body: await credited(api, input, signal, body) };
-}
-
-/** `r` with `work` set to the request's total, where its body carries work. */
-function withWork(r: Reply, work: number): Reply {
-  const body = r.body as { work?: number };
-  return body && typeof body === "object" && "work" in body ? { ...r, body: { ...body, work } } : r;
+  return { status: 200, body: await credited(api, input, signal, body, p.opts) };
 }
 
 /** True when a reply offers a route that passes as planned, with no leg left to the tide. */
@@ -282,7 +279,7 @@ async function gated(
   const parts = candidate.parts.map(({ fallback: _, ...p }) => p);
   const found = { ...candidate, parts };
   const at = { ...input, departure: timed.departure };
-  const r = await proved(api, at, signal, { base: first.base, rule: first.rule, found });
+  const r = await proved(api, at, signal, { ...first, found });
   if (r.status !== 200) {
     return note(`leaving at ${new Date(timed.departure).toISOString()}, ${reasonOf(r)}`);
   }
@@ -364,7 +361,7 @@ async function waited(
   const parts = s.parts.map(({ fallback: _, ...p }) => p);
   const found = { ...candidate, parts };
   const at = { ...input, departure: s.departure };
-  const r = await proved(api, at, signal, { base: first.base, rule: first.rule, found });
+  const r = await proved(api, at, signal, { ...first, found });
   const iso = (t: number): string => new Date(t).toISOString();
   if (r.status !== 200) {
     return w.note(`leaving at ${iso(s.departure)} with its waits, ${reasonOf(r)}`);

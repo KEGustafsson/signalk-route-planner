@@ -124,7 +124,9 @@ describe("REST routes", () => {
     );
     const r = await f.call("POST", "/v1/plan", { from: at(0, 0), to: at(5000, 0) });
     expect(r.code).toBe(200);
-    expect(seen).toEqual([[(r.body as { work: number }).work, 1000]]);
+    const work = (r.body as { work?: unknown }).work;
+    expect(typeof work === "number" && Number.isFinite(work) && work > 0).toBe(true);
+    expect(seen).toEqual([[work, 1000]]);
     expect(planned).toBe(1);
     expect((await f.call("GET", "/v1/status")).body).toMatchObject({
       work: { budget: 1_200_000, plans: 1, unitsPerSecond: 2_400_000, budgetSeconds: 0.5 }

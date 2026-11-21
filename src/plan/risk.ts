@@ -37,6 +37,12 @@ export function reasonOf(r: Reply): string {
   return typeof reason === "string" ? reason : "the route check does not pass the route";
 }
 
+/** `r` with `work` set to the request's total, where its body carries work. */
+export function withWork(r: Reply, work: number): Reply {
+  const body = r.body as { work?: number };
+  return body && typeof body === "object" && "work" in body ? { ...r, body: { ...body, work } } : r;
+}
+
 interface Offered {
   route: { coordinates: LonLat[] };
   length: number;

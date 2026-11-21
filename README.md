@@ -87,8 +87,9 @@ route passes, the lowest risk-weighted route through charted water with its risk
 its depth survey: such a trip is planned in a corridor, or in a planning box where the machine
 builds its whole region, with a corridor's work budget either way.
 
-`work` gives the plan's work budget and, once a plan has run, the work units a second this
-machine does and what the budget takes here (`unitsPerSecond`, `budgetSeconds`). The plugin's
+`work` gives the plan's work budget and, once a plan of at least 100 000 work units has run, the
+work units a second this machine does and what the budget takes here (`unitsPerSecond`,
+`budgetSeconds`). The plugin's
 setting **Work budget per plan** sets the budget a plan has at least; a longer trip is given more,
 in proportion to its distance. A trip in a busy harbour that is refused at the work limit plans
 with a larger budget, at the time the status says it takes.

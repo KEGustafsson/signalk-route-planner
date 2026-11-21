@@ -527,9 +527,9 @@ for underkeel to build on the machine.
 
 ## 6. Performance budget
 
-Raspberry Pi 4 is the reference. One plan may do at least 1 200 000 underkeel work units, the
-plugin's work budget setting (about 3 s on a Pi 4 at underkeel's calibration, 0.4 s on an i5
-laptop); a longer trip may do more, in proportion to its straight distance, and a trip planned in
+Raspberry Pi 4 is the reference. One plan may do at least the plugin's work budget setting, by
+default 1 200 000 underkeel work units (about 3 s on a Pi 4 at underkeel's calibration, 0.4 s on
+an i5 laptop) and settable from 100 000; a longer trip may do more, in proportion to its straight distance, and a trip planned in
 a corridor more still (§4.2), since a longer trip meets more shore. A\* stops at 80 % of that and
 string pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
 draw on that one budget, each with what the stages before it left. The proof is underkeel's
@@ -537,8 +537,8 @@ route check, bounded by `/route-check`'s own limits; its work is not counted in 
 is counted, never timed, so a request gives the same answer on any machine.
 
 What a budget takes on the machine at hand is measured, not assumed: the plugin times the plans
-it runs, and its status and `GET /status` give its work units a second and what the budget takes
-here. The rate only reports; no plan's result depends on it.
+it runs, and once a plan of at least 100 000 work units has run, its status and `GET /status`
+give its work units a second and what the budget takes here. The rate only reports; no plan's result depends on it.
 
 **Where the work goes** (`npm run trial -- --profile`): nine tenths of it is boxes under 50 m, at
 the shores the search meets. R2 cuts those by asking about fewer of them:

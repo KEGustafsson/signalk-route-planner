@@ -29,7 +29,7 @@ const SCHEMA = {
       type: "integer",
       title: "Work budget per plan (signalk-underkeel work units)",
       description:
-        "The work one plan may do at least; a longer trip may do more, in proportion to its distance. The plugin's status says what it takes on this machine once a plan has run.",
+        "The work one plan may do at least; a longer trip may do more, in proportion to its distance. The plugin's status says what it takes on this machine once a plan of at least 100 000 work units has run.",
       default: DEFAULT_PLAN.maxWork,
       minimum: WORK_SETTING.min,
       maximum: WORK_SETTING.max

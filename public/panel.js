@@ -171,7 +171,8 @@ async function write(routeId, route, coordinates, op) {
   // Set first: the host's event for this write must not read as a drag of the old points.
   written = { routeId, points };
   await client.call("route.replace", { routeId, points });
-  return true;
+  // A later plan or choice may have started while the route was written: the panel is its now.
+  return op === latestOp;
 }
 
 /** The alternatives and their overlay withdrawn: the route they were planned for has changed. */
@@ -221,7 +222,7 @@ async function planSelected() {
   button.disabled = true;
   table.hidden = true;
   dropChoices();
-  showCredits([]);
+  // The credits stay with the route on the chart until a plan replaces it.
   show("muted", "Planning…");
   try {
     if ($("boat").checked && !P.hasPosition(boat)) {

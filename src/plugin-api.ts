@@ -37,8 +37,18 @@ export interface PlanHooks {
   planned?: () => void;
 }
 
+/** `GET /status`'s `work`: the budget a plan gets at least, and the plans that measured the rate. */
+export interface WorkStatus {
+  budget: number;
+  plans: number;
+  /** Work units a second here, once a plan has been measured. */
+  unitsPerSecond?: number;
+  /** What the budget takes here, seconds, once a plan has been measured. */
+  budgetSeconds?: number;
+}
+
 /** The work budget a plan gets at least, and what it takes here once a plan has been measured. */
-export function workStatus(opts: PlanOptions, rate: WorkRate) {
+export function workStatus(opts: PlanOptions, rate: WorkRate): WorkStatus {
   const perSecond = rate.unitsPerSecond();
   return {
     budget: opts.maxWork,
