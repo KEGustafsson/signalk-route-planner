@@ -316,7 +316,7 @@ window (`src/plan/timing.ts`, `src/plan/now.ts`).
   the start to it takes, and no later than the latest departure plus the reach less the straight
   line from the point to the destination. String pulling only shortens a route, so every point of
   the pulled route keeps to the same bounds. A square or leg is asked about that window alone,
-  widened for a boat `timingSlack` (20 %) faster or slower, within the session's.
+  widened for a boat somewhat faster or slower (`timingSlack`), within the session's.
 - The window lies within the trip's, so the water there is never lower: a square the trip-wide
   question passed passes, and a bar the tide covers while the boat crosses it passes too, though
   it dries later in the window.
