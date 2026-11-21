@@ -139,5 +139,5 @@ panel, and the planner planned through signalk-underkeel's planning API.
   alternative is covered by the panel trial above, not here.
 - Dragging a waypoint in Freeboard's route editor was not shown here: a scripted drag in
   Freeboard's modify mode moved no point. The panel trial covers the re-plan.
-- Plugins start in no set order. The planner's status now waits for signalk-underkeel and turns
-  to ready once its planning API appears, where it used to stay at "Waiting".
+- Plugins start in no set order: the planner's status waits for signalk-underkeel and turns to
+  ready once its planning API appears.
