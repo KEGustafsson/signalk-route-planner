@@ -256,6 +256,8 @@ describe("panel model", () => {
     // A status this panel does not know is never read as passing.
     expect(P.worstStatus(["ok", "something new"])).toBe("something new");
     expect(P.worstStatus(["something new", "fail"])).toBe("fail");
+    expect(P.worstStatus(["constructor"])).toBe("constructor");
+    expect(P.worstStatus(["ok", "toString", "marginal"])).toBe("toString");
     expect(P.worstStatus(["something new", "marginal"])).toBe("something new");
   });
 });

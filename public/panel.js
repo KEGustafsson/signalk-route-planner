@@ -273,12 +273,17 @@ async function replanDrag(routeId) {
   // What was shown was for the route before the drag.
   table.hidden = true;
   dropChoices();
-  // The leg after the waypoint is checked from when the boat reaches it, without a wait there.
+  // Each leg is checked at the time the boat sails it, without waiting for the tide: a drag
+  // that would need a wait is refused, never written with the wait left unsaid. The leg after
+  // the waypoint is checked from when the boat reaches it.
   const leg = async (a, b, departure) => {
     const ends = { from: pts[a].position, to: pts[b].position };
-    const request = departure
-      ? { ...requestFor(ends, false), departure, latestDeparture: undefined, waitEnRoute: undefined }
-      : requestFor(ends, false);
+    const request = {
+      ...requestFor(ends, false),
+      departure,
+      latestDeparture: undefined,
+      waitEnRoute: undefined
+    };
     const { status, body } = await planRequest(request);
     if (status !== 200) {
       return P.summary(status, body).text;
