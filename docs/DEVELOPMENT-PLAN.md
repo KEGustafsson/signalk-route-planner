@@ -326,6 +326,9 @@ window (`src/plan/timing.ts`, `src/plan/now.ts`).
   distance. A route found there is kept only when it fits that reach, for which its windows hold;
   else the search runs once more at a reach from that route's length, at most the verdict
   window's (`timing.holds: "now"`: plan again before leaving later).
+- A fallback route is the last resort: when the first search can only fall back, the searches at
+  the boat's own timing run first, strictly, and a fallback route offered after them holds
+  only at the departure (`timing.holds: "now"`).
 - The later searches ask again only about water: a verdict no water level changes (passing water,
   land, no chart, a closed area) is the first search's, since water that passes over a window
   passes over any part of it.

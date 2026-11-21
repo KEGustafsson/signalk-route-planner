@@ -57,11 +57,13 @@ export async function nowStages(
   // The first search's verdicts no water changes serve the tighter ones as they are.
   const met = newMet();
   const runWith =
-    (record: boolean): Run =>
+    (record: boolean, strict = false): Run =>
     (reach, maxWork) =>
       stages(
         {
           ...st,
+          // The searches at the boat's own timing look for a route that passes, never a fallback.
+          ...(strict && { fallback: false }),
           api: record
             ? timedApi(st.api, { ...timing, reach }, met)
             : timedApi(st.api, { ...timing, reach }, undefined, met),
@@ -73,20 +75,47 @@ export async function nowStages(
       );
   const tripReach = (window / 1000) * input.speed;
   const first = await runWith(true)(tripReach, st.opts.maxWork);
+  if ("error" in first) {
+    return { found: first, holds: "trip" };
+  }
+  // A fallback route holds nowhere in the window for certain: the last resort, after the
+  // searches at the boat's own timing.
+  const fallen = first.ok && first.parts.some((p) => p.fallback !== undefined);
+  if (first.ok && !fallen) {
+    return { found: first, holds: "trip" };
+  }
   // Asked again only when some water it met could pass at another time: land stays land. A
   // request that may wait for the tide has the gate time it instead (plan §4.3, R3a).
   if (
-    "error" in first ||
-    first.ok ||
-    first.refusal.reason === WORK_LIMIT ||
+    (!first.ok && first.refusal.reason === WORK_LIMIT) ||
     met.waterBound === 0 ||
     input.latestDeparture !== undefined
   ) {
-    return { found: first, holds: "trip" };
+    return { found: first, holds: fallen ? "now" : "trip" };
   }
   const d = haversine(input.from, input.to);
   const reach = Math.max(st.opts.nowReach * d, d + 2 * st.opts.accessMetres);
-  return tighter(runWith(false), first, { reach, tripReach, maxWork: st.opts.maxWork });
+  const r = { reach, tripReach, maxWork: st.opts.maxWork };
+  if (!first.ok) {
+    return tighter(runWith(false, true), first, r);
+  }
+  const strict = await tighter(runWith(false, true), asRefused(first), r);
+  if ("parts" in strict.found) {
+    return strict;
+  }
+  const work = "work" in strict.found ? strict.found.work : first.work;
+  return { found: { ...first, work }, holds: "now" };
+}
+
+/** A fallback route as the refusal the strict searches start from: its work and squares. */
+function asRefused(found: Extract<Staged, { ok: true }>): Refused {
+  const { direct, work, squares } = found;
+  return {
+    ok: false,
+    refusal: { ok: false, reason: "", direct, squares, unverified: 0, work },
+    direct,
+    work
+  };
 }
 
 /** The searches at reaches tighter than the trip's, after `first` found none. */

@@ -31,14 +31,21 @@ const fallsAt =
 
 interface Body {
   reason?: string;
+  fallback?: string;
   timing?: { departure: string; speed: number; holds: string };
   check: { legs: { status: string }[] };
 }
 
-async function planned(chart: Chart) {
+async function planned(chart: Chart, fallback?: boolean) {
   const r = await plan(
     syntheticApi(chart),
-    { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3 },
+    {
+      from: at(0, 0),
+      to: at(5000, 0),
+      departure: NOW,
+      speed: 3,
+      ...(fallback !== undefined && { fallback })
+    },
     NEVER,
     NOW
   );
@@ -53,6 +60,21 @@ describe("the route passable now", () => {
     expect(body.timing).toMatchObject({ departure: new Date(NOW).toISOString(), speed: 3 });
     expect(body.timing?.holds).toBe("now");
     expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
+  });
+
+  test("asked with fallback, the route passable at the boat's timing comes before a fallback", async () => {
+    const { r, body } = await planned(barred(fallsAt(40)), true);
+    expect(r.status).toBe(200);
+    expect(body.fallback).toBeUndefined();
+    expect(body.timing?.holds).toBe("now");
+    expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
+  });
+
+  test("a fallback route, when none passes at any timing, does not hold for the trip", async () => {
+    const { r, body } = await planned(barred(fallsAt(5)), true);
+    expect(r.status).toBe(200);
+    expect(body.fallback).toBeDefined();
+    expect(body.timing?.holds).toBe("now");
   });
 
   test("a bar that dries before the boat gets there is refused, naming the boat's timing", async () => {
