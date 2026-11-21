@@ -99,8 +99,24 @@ export async function nowStages(
   if (!first.ok) {
     return tighter(runWith(false, true), first, r);
   }
-  const strict = await tighter(runWith(false, true), asRefused(first), r);
-  if ("parts" in strict.found) {
+  return afterFallback(runWith(false, true), first, r);
+}
+
+/**
+ * After a fallback route, the strict searches at the boat's own timing: their route if they find
+ * one, else the fallback, holding only at its departure. A strict search cut short says why,
+ * never offers the fallback in its place: a route at the boat's timing may have been past its work.
+ */
+async function afterFallback(
+  run: Run,
+  first: Extract<Staged, { ok: true }>,
+  r: { reach: number; tripReach: number; maxWork: number }
+): Promise<{ found: Staged; holds: Holds }> {
+  const strict = await tighter(run, asRefused(first), r);
+  const unfinished =
+    "error" in strict.found ||
+    ("refusal" in strict.found && strict.found.refusal.reason === WORK_LIMIT);
+  if ("parts" in strict.found || unfinished) {
     return strict;
   }
   const work = "work" in strict.found ? strict.found.work : first.work;

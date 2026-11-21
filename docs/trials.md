@@ -39,9 +39,12 @@ quality, so each case assumes a CATZOC.
 
 | Case                      | Assumed CATZOC | Result (2026-11-19)                                   |  Work |
 | ------------------------- | -------------- | ----------------------------------------------------- | ----: |
-| `turku-guest-harbours-b`  | B              | 19.8 nm, 39 legs: harbour stage, route, harbour stage | 5.8 M |
-| `turku-guest-harbours-a1` | A1             | 19.9 nm, 45 legs: harbour stage, route, harbour stage | 5.4 M |
+| `turku-guest-harbours-b`  | B              | 19.8 nm, 39 legs: harbour stage, route, harbour stage | 7.0 M |
+| `turku-guest-harbours-a1` | A1             | 19.9 nm, 45 legs: harbour stage, route, harbour stage | 6.6 M |
 
+- Both routes are fallback routes (the Aura river, below). Since R3d the planner first searches
+  strictly at the boat's own timing before it offers one, which adds about 1.2 M work: 5.8 M and
+  5.4 M before.
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
 - The Nauvo end reaches the guest harbour through its harbour stage, `unverified`.
