@@ -59,10 +59,10 @@
       "fallback": true,
       "expect": {
         "status": 200,
-        "lengthNm": [18, 20.5],
+        "lengthNm": [18, 21.5],
         "parts": ["harbour:start", "route", "harbour:end"],
         "routeStatuses": ["unverified"],
-        "workAtMost": 6500000
+        "workAtMost": 5000000
       }
     },
     {
@@ -107,7 +107,7 @@
       "expect": {
         "status": 200,
         "lengthNm": [3.2, 4.4],
-        "workAtMost": 44000000
+        "workAtMost": 13000000
       }
     },
     {
