@@ -36,6 +36,21 @@ describe("panel model", () => {
     ]);
   });
 
+  test("a route passable only at the boat's timing says so", () => {
+    const body = {
+      status: "ok",
+      length: 1852,
+      check: { legs: [{}] },
+      timing: { departure: "2026-11-18T07:00:00.000Z", speed: 3, holds: "now" }
+    };
+    const text = P.summary(200, body).text;
+    expect(text).toMatch(/Passable at your speed leaving now/);
+    expect(text).toMatch(/plan again if you leave later/);
+    expect(P.summary(200, { ...body, timing: { ...body.timing, holds: "trip" } }).text).not.toMatch(
+      /leaving now/
+    );
+  });
+
   test("one line for each kind of reply", () => {
     expect(P.summary(200, { status: "ok", length: 5556, check: { legs: [{}, {}] } })).toEqual({
       kind: "ok",
@@ -259,5 +274,30 @@ describe("panel model", () => {
     expect(P.worstStatus(["constructor"])).toBe("constructor");
     expect(P.worstStatus(["ok", "toString", "marginal"])).toBe("toString");
     expect(P.worstStatus(["something new", "marginal"])).toBe("something new");
+  });
+
+  test("the credits of several replies, each source once, in the order they come", () => {
+    const ftia = { source: "ftia", text: "FTIA" };
+    const traficom = { source: "traficom", text: "Traficom" };
+    expect(P.credits([ftia], undefined, [traficom, ftia])).toEqual([ftia, traficom]);
+    expect(P.credits(undefined, [], [{ source: "x" }])).toEqual([]);
+  });
+
+  test("a completed write is shown unless a write issued after it completed first", () => {
+    const w = P.writes();
+    const first = w.take();
+    // A later plan that is refused, or has no boat position, takes no ticket.
+    expect(w.done(first)).toBe(true);
+    const second = w.take();
+    const third = w.take();
+    expect(w.done(third)).toBe(true);
+    expect(w.done(second)).toBe(false);
+  });
+
+  test("a write that fails does not hide the earlier write that completed after it was issued", () => {
+    const w = P.writes();
+    const first = w.take();
+    w.take(); // its route.replace fails, so it never reports done
+    expect(w.done(first)).toBe(true);
   });
 });

@@ -1,7 +1,15 @@
 /** Limits of one plan (plan §6). Work is counted in signalk-underkeel's work units, never timed. */
 export interface PlanOptions {
-  /** Work one plan may do, search and pulling together; sized for about 3 s on a Raspberry Pi 4. */
+  /**
+   * Work one plan may do at least, search and pulling together; sized for about 3 s on a
+   * Raspberry Pi 4. The plugin's setting; a longer trip may do more (`workPerKm`).
+   */
   maxWork: number;
+  /**
+   * ...and a trip in the chart box may do this much per km of its straight distance, if that is
+   * more: a longer trip meets more shore, and an archipelago passage most of all.
+   */
+  workPerKm: number;
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
   /**
@@ -47,6 +55,15 @@ export interface PlanOptions {
   windowFactor: number;
   /** ...and at least this long, ms. */
   minWindow: number;
+  /**
+   * The route passable now (`timing.ts`): when no route passes as the boat may meet the water
+   * anywhere in the verdict window, the search asks again at the time the boat can be at each
+   * square on a route at most this many times the straight distance (and at least the straight
+   * distance plus `accessMetres` at each end).
+   */
+  nowReach: number;
+  /** ...for a boat this share faster or slower than the request's speed. */
+  timingSlack: number;
   /**
    * An end the corridor cannot reach is planned out to open water in a harbour stage, at
    * this cross-track limit (the planning API's buffer alone at 0), metres.
@@ -107,6 +124,7 @@ export interface PlanOptions {
 
 export const DEFAULT_PLAN: PlanOptions = {
   maxWork: 1_200_000,
+  workPerKm: 100_000,
   searchShare: 0.8,
   greed: 1.25,
   steerCell: 200,
@@ -124,6 +142,8 @@ export const DEFAULT_PLAN: PlanOptions = {
   corridorWorkPerKm: 120_000,
   windowFactor: 3,
   minWindow: 3_600_000,
+  nowReach: 1.3,
+  timingSlack: 0.2,
   harbourXte: 0,
   harbourMetres: 3000,
   harbourMargin: 300,
@@ -143,19 +163,45 @@ export const DEFAULT_PLAN: PlanOptions = {
 };
 
 /**
- * The limits for a trip `d` metres long: `opts`, or when `corridor` (the trip is planned in a
- * corridor, or past `maxDistance` where one can be made), the corridor's reach and work in
- * proportion to the trip.
+ * The limits for a trip `d` metres long: `opts` with work in proportion to the trip where that is
+ * more, or when `corridor` (the trip is planned in a corridor, or past `maxDistance` where one can
+ * be made), the corridor's reach and work. Work grows with the distance, never with time taken,
+ * so a request gives the same answer on any machine.
  */
 export function limitsFor(opts: PlanOptions, d: number, corridor: boolean): PlanOptions {
+  const perKm = corridor ? opts.corridorWorkPerKm : opts.workPerKm;
+  const maxWork = Math.max(opts.maxWork, Math.ceil((d / 1000) * perKm));
   if (!corridor) {
-    return opts;
+    return maxWork === opts.maxWork ? opts : { ...opts, maxWork };
   }
-  return {
-    ...opts,
-    maxDistance: Math.max(opts.maxDistance, opts.corridorDistance),
-    maxWork: Math.max(opts.maxWork, Math.ceil((d / 1000) * opts.corridorWorkPerKm))
-  };
+  return { ...opts, maxDistance: Math.max(opts.maxDistance, opts.corridorDistance), maxWork };
+}
+
+/** The work budget a plugin setting may give one plan: the settable range, units. */
+export const WORK_SETTING = { min: 100_000, max: 100_000_000 };
+
+/**
+ * `opts` with the plugin's work setting, when it is a whole number of units in range; else
+ * `opts` as they are, and why the setting was not used.
+ */
+export function withWorkSetting(
+  opts: PlanOptions,
+  setting: unknown
+): { opts: PlanOptions; ignored?: string } {
+  if (setting === undefined || setting === null) {
+    return { opts };
+  }
+  const ok =
+    typeof setting === "number" &&
+    Number.isInteger(setting) &&
+    setting >= WORK_SETTING.min &&
+    setting <= WORK_SETTING.max;
+  return ok
+    ? { opts: { ...opts, maxWork: setting } }
+    : {
+        opts,
+        ignored: `work budget must be a whole number from ${String(WORK_SETTING.min)} to ${String(WORK_SETTING.max)}; using ${String(opts.maxWork)}`
+      };
 }
 
 /** `opts` with a request's own risk weight, preference for lines and draft for them. */

@@ -9,14 +9,15 @@ const g = globalThis as unknown as Record<symbol, unknown>;
 
 function fakeApp() {
   const statuses: string[] = [];
+  const errors: string[] = [];
   const providers: { type: string }[] = [];
   const app = {
     setPluginStatus: (s: string) => statuses.push(s),
     registerResourceProvider: (p: { type: string }) => providers.push(p),
-    error: () => undefined,
+    error: (m: string) => errors.push(m),
     use: () => undefined
   };
-  return { app, statuses, providers };
+  return { app, statuses, errors, providers };
 }
 
 describe("plugin lifecycle", () => {
@@ -45,7 +46,7 @@ describe("plugin lifecycle", () => {
       expect(f.statuses).toHaveLength(1);
       g[PLANNING_API] = syntheticApi({ obstacles: [] });
       jest.advanceTimersByTime(5_000);
-      expect(f.statuses.at(-1)).toBe("Ready (synthetic)");
+      expect(f.statuses.at(-1)).toBe("Ready (synthetic) · 1.2 M work units");
       jest.advanceTimersByTime(20_000);
       expect(f.statuses).toHaveLength(2);
       plugin.stop();
@@ -59,7 +60,23 @@ describe("plugin lifecycle", () => {
     const f = fakeApp();
     const plugin = routePlanner(f.app as never);
     plugin.start({}, () => undefined);
-    expect(f.statuses).toEqual(["Ready (synthetic)"]);
+    expect(f.statuses).toEqual(["Ready (synthetic) · 1.2 M work units"]);
+    plugin.stop();
+  });
+
+  test("the work budget setting is the plan's, and one out of range is reported and not used", () => {
+    g[PLANNING_API] = syntheticApi({ obstacles: [] });
+    const f = fakeApp();
+    const plugin = routePlanner(f.app as never);
+    const schema = plugin.schema as () => unknown;
+    expect(schema()).toMatchObject({
+      properties: { maxWork: { type: "integer", default: 1_200_000 } }
+    });
+    plugin.start({ maxWork: 2_500_000 }, () => undefined);
+    expect(f.statuses.at(-1)).toBe("Ready (synthetic) · 2.5 M work units");
+    plugin.start({ maxWork: 5 }, () => undefined);
+    expect(f.statuses.at(-1)).toBe("Ready (synthetic) · 1.2 M work units");
+    expect(f.errors).toEqual([expect.stringMatching(/work budget must be a whole number/)]);
     plugin.stop();
   });
 

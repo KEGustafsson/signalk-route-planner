@@ -76,7 +76,7 @@ Base `/plugins/signalk-route-planner/v1`, open to logged-in readonly users.
 
 | Route         | Answer                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------- |
-| `GET /status` | `{ state: "ready", provider }` or `{ state: "off", reason }`                                  |
+| `GET /status` | `{ state: "ready", provider, work }` or `{ state: "off", reason }`                            |
 | `POST /plan`  | 200 with the planned `route`, its `length`, `status` and the route check; 422 with a `reason` |
 
 A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departure` (ISO 8601),
@@ -87,6 +87,18 @@ route passes, the lowest risk-weighted route through charted water with its risk
 its depth survey: such a trip is planned in a corridor, or in a planning box where the machine
 builds its whole region, with a corridor's work budget either way.
 
+`work` gives the plan's work budget and, once a plan of at least 100 000 work units has run, the
+work units a second this machine does and what the budget takes here (`unitsPerSecond`,
+`budgetSeconds`). The plugin's
+setting **Work budget per plan** sets the budget a plan has at least; a longer trip is given more,
+in proportion to its distance. A trip in a busy harbour that is refused at the work limit plans
+with a larger budget, at the time the status says it takes.
+
+An offered route lists the open data it leaned on in `attributions`, with the credit to show
+beside it, and the panel shows it under the plan: the Finnish Transport Infrastructure Agency's
+navigation lines when the route kept to them, Traficom's WFS depths when a leg crossed them. A
+route that used neither lists none.
+
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
 `preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the
 machine is 413 with underkeel's reason.
@@ -94,6 +106,11 @@ machine is 413 with underkeel's reason.
 An end in a harbour narrower than the corridor (a guest harbour in a river, a marina) is planned
 out to open water in a harbour stage at a 10 m corridor, and a point alongside a quay leaves by a
 short berth leg the reply marks (`berths`, and `underway` for the status of every other leg).
+
+The plan is the route passable now: each stretch is checked at the water the boat meets there,
+leaving at the departure at its speed, so a bar the tide covers while you cross it is used though
+it dries later. When the route holds only for that timing, the reply says so
+(`timing.holds: "now"`) and the panel says to plan again if you leave later.
 
 With `latestDeparture` (ISO 8601, at most 24 h after the departure), a route that passes only at
 some states of the tide is offered leaving at the earliest departure up to then at which the

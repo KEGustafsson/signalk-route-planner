@@ -314,8 +314,39 @@ or where the route crosses it (`src/plan/wait-places.ts`).
 - The offered route goes out to the place and back, the piece after the wait starting at the
   place; each wait names its `place` (`user`, `anchorage`, `route`).
 
-Still to come: waiting off the route farther than a detour, which needs the time-dependent
-search over the quadtree's leaves, state (leaf, arrival slot), in place of the candidate route.
+**R3d, the route passable now (built).** With no waiting asked for, the plan is the route the
+boat can sail leaving at the departure, at its speed: the search asks about each square and leg
+at the water of the time the boat can be there, not at the lowest water of the whole verdict
+window (`src/plan/timing.ts`, `src/plan/now.ts`).
+
+- On any route at most `reach` long, the boat is at a point no earlier than the straight line from
+  the start to it takes, and no later than the latest departure plus the reach less the straight
+  line from the point to the destination. String pulling only shortens a route, so every point of
+  the pulled route keeps to the same bounds. A square or leg is asked about that window alone,
+  widened for a boat somewhat faster or slower (`timingSlack`), within the session's.
+- The window lies within the trip's, so the water there is never lower: a square the trip-wide
+  question passed passes, and a bar the tide covers while the boat crosses it passes too, though
+  it dries later in the window.
+- The first search runs at the verdict window's own reach, so its route holds however the boat
+  keeps to its timing (`timing.holds: "trip"`). When it finds none, not for want of work, and some
+  water it met could pass at another time, it runs again at a shorter reach near the straight
+  distance. A route found there is kept only when it fits that reach, for which its windows hold;
+  else the search runs once more at a reach from that route's length, at most the verdict
+  window's (`timing.holds: "now"`: plan again before leaving later).
+- A fallback route is the last resort: when the first search can only fall back, the searches at
+  the boat's own timing run first, strictly, and a fallback route offered after them holds
+  only at the departure (`timing.holds: "now"`).
+- The later searches ask again only about water: a verdict no water level changes (passing water,
+  land, no chart, a closed area) is the first search's, since water that passes over a window
+  passes over any part of it.
+- Monotonic: each window depends on the geometry and timing alone, never on the water, so more
+  water passes every square at least as well, and a tighter reach gives windows within a wider
+  one's. Refused at the tightest, no route is passable now.
+- The proof stays the authority: every offered leg is the route check's at its own arrival
+  (invariant 1). A request with `latestDeparture` is timed by the gate (R3a) instead.
+
+Waiting farther off the route than a detour is not planned: the plan is the route passable now,
+or a wait the request asks for.
 
 ### 4.4 R4: risk, alternatives, air draft, rules
 
@@ -454,6 +485,10 @@ Reply 200:
 ```jsonc
 {
   "plannedAt": "…",
+  // The departure and speed the route is checked for (with a tide gate or waits, the departure
+  // they chose); holds "trip": at any time in the verdict window, "now": only leaving at the
+  // departure (§4.3 R3d).
+  "timing": { "departure": "…", "speed": 2.5, "holds": "trip" },
   "route": {
     "type": "LineString",
     "coordinates": [
@@ -474,6 +509,11 @@ Reply 200:
     "parts": [{ "part": "harbour", "end": "start", "xteLimit": 0, "legs": [0, 4] }]
   },
   "underway": "ok", // with berth legs: the worst status of the other legs
+  // The open data the route leaned on, each to be credited where the route is shown: the FTIA's
+  // navigation lines it kept to, Traficom's WFS depths a leg crossed. None, [].
+  "attributions": [
+    { "source": "ftia", "text": "Source: Finnish Transport Infrastructure Agency …" }
+  ],
   // With latestDeparture, when the plan waits for the tide (§4.3):
   "departure": "2026-11-18T13:15:00.000Z",
   "gate": {
@@ -529,13 +569,18 @@ for underkeel to build on the machine.
 
 ## 6. Performance budget
 
-Raspberry Pi 4 is the reference. One plan may do 1 200 000 underkeel work units (about 3 s on a
-Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop); a trip planned in a corridor may do
-more, in proportion to its length (§4.2). A\* stops at 80 % of that and string
-pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
+Raspberry Pi 4 is the reference. One plan may do at least the plugin's work budget setting, by
+default 1 200 000 underkeel work units (about 3 s on a Pi 4 at underkeel's calibration, 0.4 s on
+an i5 laptop) and settable from 100 000; a longer trip may do more, in proportion to its straight distance, and a trip planned in
+a corridor more still (§4.2), since a longer trip meets more shore. A\* stops at 80 % of that and
+string pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
 draw on that one budget, each with what the stages before it left. The proof is underkeel's
 route check, bounded by `/route-check`'s own limits; its work is not counted in the plan's. Work
 is counted, never timed, so a request gives the same answer on any machine.
+
+What a budget takes on the machine at hand is measured, not assumed: the plugin times the plans
+it runs, and once a plan of at least 100 000 work units has run, its status and `GET /status`
+give its work units a second and what the budget takes here. The rate only reports; no plan's result depends on it.
 
 **Where the work goes** (`npm run trial -- --profile`): nine tenths of it is boxes under 50 m, at
 the shores the search meets. R2 cuts those by asking about fewer of them:
@@ -575,8 +620,8 @@ pass found free and leaves the rest of the region alone.
   their small preferences. A search in a corridor is not steered: the corridor is its coarse
   path already.
 
-Steered, the 20 nm archipelago passage took 4.3 M work against 5.8 M, and the Bayside fallback
-11.0 M against 17.0 M (`docs/trials.md`).
+Steered, the 20 nm archipelago passage took 5.4 M work against 7.0 M, and the Bayside fallback
+19.7 M against 25.7 M (`docs/trials.md`).
 
 Still open: the 20 nm passage is still three to four times the budget, most of it the shores
 the coarse path runs along, and preference lines get nothing from steering. The trials cap each
@@ -612,8 +657,5 @@ case's work (`workAtMost`) so a change cannot give this back unnoticed.
 
 ## 9. Open questions
 
-- The Pi 4 work-unit calibration is underkeel's laptop measurement times 3–5 (its plan §10);
-  the planner inherits that until measured on a Pi.
-- FTIA open data licence attribution must show in the panel; confirm the exact wording.
 - Whether waiting in deep water off the fairway needs a minimum distance from the fairway edge
   beyond the swing radius.
