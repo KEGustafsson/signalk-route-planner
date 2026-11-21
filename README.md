@@ -100,7 +100,10 @@ some states of the tide is offered leaving at the earliest departure up to then 
 route check passes every leg as the boat reaches it (`departure`, `gate`). The panel offers it as
 "wait for the tide, at most". With `waitEnRoute` as well, when no single departure passes, the
 boat may wait on the way, in water with room to swing at anchor, as long in all as it may wait to
-leave (`gate.waits`): for two bars too far apart to cross in one high water.
+leave (`gate.waits`): for two bars too far apart to cross in one high water. It waits at a charted
+anchorage, or at one of up to ten `waitPoints` of your own, when one of them serves: on the route,
+or within a nautical mile of it by a detour out and back, which counts as waiting. Each wait names
+its `place` (`user`, `anchorage` or `route`).
 
 `airHeight` (m above the waterline; unset, signalk-underkeel's Air height or Signal K
 `design.airHeight`) keeps the route off bridges and overhead cables the mast does not clear by

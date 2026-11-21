@@ -79,6 +79,7 @@ export function apiFor(
           fallback: req.fallback,
           latestDeparture: req.latestDeparture,
           waitEnRoute: req.waitEnRoute,
+          waitPoints: req.waitPoints,
           riskWeight: req.riskWeight,
           riskBudget: req.riskBudget,
           alternatives: req.alternatives,

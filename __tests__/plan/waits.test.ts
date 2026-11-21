@@ -2,7 +2,7 @@ import type { LonLat } from "../../src/foundation/geo";
 import { parsePlanRequest } from "../../src/api/plan-request";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
-import { leaveTimes } from "../../src/plan/waits";
+import { leaveTimes } from "../../src/plan/leave-times";
 import type { PlanningApiV1 } from "../../src/oracle/contract";
 import type { Chart } from "../helpers/synthetic-oracle";
 import { at, syntheticApi, xy } from "../helpers/synthetic-oracle";
@@ -54,7 +54,7 @@ interface Body {
     departure?: string;
     legs?: number[];
     reason?: string;
-    waits?: { at: LonLat; arrive: string; leave: string; minutes: number }[];
+    waits?: { at: LonLat; place: string; arrive: string; leave: string; minutes: number }[];
   };
 }
 
@@ -65,11 +65,17 @@ interface Over {
   fallback?: boolean;
   /** Charts marked not for navigation, accepted for the legs. */
   notForNavigation?: boolean;
+  waitPoints?: LonLat[];
+  areas?: Chart["areas"];
   api?: (a: PlanningApiV1) => PlanningApiV1;
 }
 
 async function planned(over: Over) {
-  const api = syntheticApi({ ...twoBars(over.narrow), notForNavigation: over.notForNavigation });
+  const api = syntheticApi({
+    ...twoBars(over.narrow),
+    notForNavigation: over.notForNavigation,
+    ...(over.areas && { areas: over.areas })
+  });
   const r = await plan(
     over.api ? over.api(api) : api,
     {
@@ -79,6 +85,7 @@ async function planned(over: Over) {
       speed: 1.5,
       ...(over.latest !== undefined && { latestDeparture: over.latest }),
       ...(over.waitEnRoute !== undefined && { waitEnRoute: over.waitEnRoute }),
+      ...(over.waitPoints && { waitPoints: over.waitPoints }),
       ...(over.fallback !== undefined && { fallback: over.fallback }),
       ...(over.notForNavigation && { accept: ["NOT_FOR_NAVIGATION"] })
     },
@@ -198,5 +205,109 @@ describe("waiting en route", () => {
     );
     const ok = parsePlanRequest({ ...base, latestDeparture: latest, waitEnRoute: true }, NOW);
     expect(ok.ok && ok.value.waitEnRoute).toBe(true);
+  });
+});
+
+/** A square ring `h` metres about (x, y), closed. */
+const square = (x: number, y: number, h: number): [number, number][] => [
+  [x - h, y - h],
+  [x + h, y - h],
+  [x + h, y + h],
+  [x - h, y + h],
+  [x - h, y - h]
+];
+
+const DAY = { latest: NOW + 24 * HOUR, waitEnRoute: true };
+
+/** Whether every gated leg the reply names crosses a bar. */
+function gatedCrossBars(body: Body): boolean {
+  const route = body.route?.coordinates ?? [];
+  return (body.gate?.legs ?? []).every((k) => {
+    const [ax] = xy(route[k] as LonLat);
+    const [bx] = xy(route[k + 1] as LonLat);
+    return [1500, 4500].some(
+      (bar) => Math.min(ax, bx) <= bar + 450 && Math.max(ax, bx) >= bar - 450
+    );
+  });
+}
+
+describe("waiting at anchorages and the user's points", () => {
+  test("a waiting point off the route is reached by a detour and waited at", async () => {
+    const point = at(3000, 300);
+    const { r, body } = await planned({ ...DAY, waitPoints: [point] });
+    expect(r.status).toBe(200);
+    const waits = body.gate?.waits ?? [];
+    expect(waits).toHaveLength(1);
+    expect(waits[0]).toMatchObject({ at: point, place: "user" });
+    // Out to the point and back: the route meets the route point it left from twice.
+    const route = body.route?.coordinates ?? [];
+    const k = route.findIndex((q) => q[0] === point[0] && q[1] === point[1]);
+    expect(k).toBeGreaterThan(0);
+    expect(route[k - 1]).toEqual(route[k + 1]);
+    expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
+    expect(body.gate?.legs?.length).toBeGreaterThan(0);
+    expect(gatedCrossBars(body)).toBe(true);
+  });
+
+  test("a charted anchorage off the route is waited at, at its centre", async () => {
+    const { r, body } = await planned({
+      ...DAY,
+      areas: [{ class: "ACHARE", ring: square(3000, 250, 60) }]
+    });
+    expect(r.status).toBe(200);
+    const w = body.gate?.waits?.[0];
+    expect(w?.place).toBe("anchorage");
+    const [x, y] = xy(w?.at as LonLat);
+    expect(Math.abs(x - 3000)).toBeLessThan(1);
+    expect(Math.abs(y - 250)).toBeLessThan(1);
+    expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
+    expect(gatedCrossBars(body)).toBe(true);
+  });
+
+  test("an anchorage the route crosses is waited at on the route", async () => {
+    const { r, body } = await planned({
+      ...DAY,
+      areas: [{ class: "ACHARE", ring: square(3000, 0, 300) }]
+    });
+    expect(r.status).toBe(200);
+    const w = body.gate?.waits?.[0];
+    expect(w?.place).toBe("anchorage");
+    const [x, y] = xy(w?.at as LonLat);
+    // In the area, at one of the route's own points: no detour.
+    expect(Math.abs(x - 3000)).toBeLessThanOrEqual(300);
+    expect(Math.abs(y)).toBeLessThanOrEqual(300);
+    expect(body.check.legs.every((l) => l.status === "ok")).toBe(true);
+    const route = body.route?.coordinates ?? [];
+    const k = route.findIndex((q) => q[0] === w?.at[0] && q[1] === w.at[1]);
+    expect(k).toBeGreaterThan(0);
+    expect(route[k - 1]).not.toEqual(route[k + 1]);
+  });
+
+  test("an area where anchoring is prohibited is no place: the route's own places serve", async () => {
+    const { r, body } = await planned({
+      ...DAY,
+      areas: [{ class: "ACHARE", ring: square(3000, 250, 60), restrictions: [1] }]
+    });
+    expect(r.status).toBe(200);
+    expect(body.gate?.waits?.[0]?.place).toBe("route");
+  });
+
+  test("a waiting point out of reach is left out, and the route's own places serve", async () => {
+    const { r, body } = await planned({ ...DAY, waitPoints: [at(3000, -2500)] });
+    expect(r.status).toBe(200);
+    expect(body.gate?.waits?.[0]?.place).toBe("route");
+  });
+
+  test("waitPoints needs waitEnRoute and at most ten positions", () => {
+    const base = { from: [22, 60], to: [22.1, 60.1], latestDeparture: "2026-11-18T12:00:00Z" };
+    const now = NOW;
+    expect(parsePlanRequest({ ...base, waitPoints: [[22, 60]] }, now).ok).toBe(false);
+    const ok = parsePlanRequest({ ...base, waitEnRoute: true, waitPoints: [[22.05, 60.05]] }, now);
+    expect(ok.ok && ok.value.waitPoints).toEqual([[22.05, 60.05]]);
+    const many = Array.from({ length: 11 }, () => [22, 60]);
+    expect(parsePlanRequest({ ...base, waitEnRoute: true, waitPoints: many }, now).ok).toBe(false);
+    expect(parsePlanRequest({ ...base, waitEnRoute: true, waitPoints: [[200, 0]] }, now).ok).toBe(
+      false
+    );
   });
 });

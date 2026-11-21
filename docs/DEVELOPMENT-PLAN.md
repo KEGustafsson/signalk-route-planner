@@ -285,10 +285,30 @@ departure` in all, at the start and on the way together (`src/plan/waits.ts`).
   `gate.waits`. Timing that does not finish (its work limit, or the planning API's error)
   answers with its reason alone, never a route.
 
-Still to come: charted anchorage areas and user waiting points as waiting places, which need
-the planning API to serve S-57 objects (§4.4 `features`), and waiting off the route, which needs
-the time-dependent search over the quadtree's leaves, state (leaf, arrival slot), in place of
-the candidate route.
+**R3c, waiting places (built).** A wait is at a designated place when one serves: one of the
+request's `waitPoints` (up to 10), or a charted anchorage the session lists (feature "objects",
+class `ACHARE`, unless its `RESTRN` prohibits or restricts anchoring), at the anchorage's centre
+or where the route crosses it (`src/plan/wait-places.ts`).
+
+- A designated place within `waitReach` (1852 m) of an inner point of the candidate route is
+  joined to the nearest one by a detour out and back, which must pass, as the place's room to
+  swing must, at the lowest water of the whole horizon. The detour counts as waiting.
+- At each point two places are kept of those that pass: the one the boat would rather wait at
+  (a user's point, then an anchorage on the route, then one off it, the nearer first) and the
+  nearest. A designated place within a metre of a route point is waited at on the route only
+  when that point has room to swing.
+- The schedule is searched first over the preferred designated places, then over the nearest
+  ones, and only when those find none over the route's own places too: the boat anchors where
+  anchoring is meant to be. The nearest places serve any schedule the others do, and more of
+  them pass at higher water, so a plan that passes at some water level passes at every higher
+  one.
+- The boat may leave a place as soon as it is back from the detour, besides the slot
+  boundaries.
+- The offered route goes out to the place and back, the piece after the wait starting at the
+  place; each wait names its `place` (`user`, `anchorage`, `route`).
+
+Still to come: waiting off the route farther than a detour, which needs the time-dependent
+search over the quadtree's leaves, state (leaf, arrival slot), in place of the candidate route.
 
 ### 4.4 R4: risk, alternatives, air draft, rules
 
@@ -403,6 +423,7 @@ the candidate route.
   "airHeight": 17, // optional, metres above the waterline; default underkeel's vessel
   "latestDeparture": "2026-11-18T19:00:00Z", // optional: wait for the tide up to this, ≤ 24 h
   "waitEnRoute": true, // optional, with latestDeparture: wait on the way too (§4.3 R3b)
+  "waitPoints": [[22.05, 60.01]], // optional, with waitEnRoute: where to rather wait (§4.3 R3c)
   "riskWeight": 2, // optional, 0..100, default 0: the risk cost's α (§4.4)
   "riskBudget": 0.01 // optional: refuse a route whose risk is over this
 }
@@ -452,7 +473,9 @@ Reply 200:
     "waitMinutes": 375,
     "legs": [3],
     // With waitEnRoute, each wait on the way, in order:
-    "waits": [{ "at": [22.04, 60.0], "arrive": "…", "leave": "…", "minutes": 678 }]
+    "waits": [
+      { "at": [22.04, 60.0], "place": "anchorage", "arrive": "…", "leave": "…", "minutes": 678 }
+    ]
   },
   "berths": [{ "end": "start", "leg": 0, "length": 12 }],
   "direct": { "status": "fail", "worst": [22.21, 60.24] }, // the straight line's check

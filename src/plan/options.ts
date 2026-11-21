@@ -59,6 +59,11 @@ export interface PlanOptions {
   /** ...and places are tried along each leg this far apart, and at the route's turns, metres. */
   waitSpacing: number;
   /**
+   * A charted anchorage or a user's waiting point this far off the route is reached by a
+   * detour from the route and back, metres.
+   */
+  waitReach: number;
+  /**
    * The risk cost's weight α (plan §4.4): the cost per metre is 1 + α · P / threshold, P the
    * water's P(UKC < 0) and threshold the accepted probability. 0 plans the shortest route.
    */
@@ -111,6 +116,7 @@ export const DEFAULT_PLAN: PlanOptions = {
   berthMetres: 40,
   waitSwing: 60,
   waitSpacing: 500,
+  waitReach: 1852,
   riskWeight: 0,
   riskSplit: 0.1,
   riskCell: 80,
