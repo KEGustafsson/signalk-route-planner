@@ -385,13 +385,15 @@ describe("tripLimits", () => {
     const far = tripLimits(surveys(p.api), region, 87_800);
     expect(far.maxDistance).toBe(DEFAULT_PLAN.corridorDistance);
     expect(far.maxWork).toBeGreaterThan(DEFAULT_PLAN.maxWork);
-    // Without a survey the trip keeps the default limits, and plan() refuses it.
-    expect(tripLimits(p.api, region, 87_800)).toBe(DEFAULT_PLAN);
+    // Without a survey the trip keeps the chart box's reach, and plan() refuses it.
+    expect(tripLimits(p.api, region, 87_800).maxDistance).toBe(DEFAULT_PLAN.maxDistance);
   });
 
-  test("within maxDistance on a planning box: the default limits; in a corridor: a corridor's", () => {
+  test("within maxDistance on a planning box: the chart box's limits; in a corridor: a corridor's", () => {
     const p = preparing(syntheticApi({ obstacles: [] }));
-    expect(tripLimits(surveys(p.api), onPrepared(p.api, p.prepared), 40_000)).toBe(DEFAULT_PLAN);
+    const box = tripLimits(surveys(p.api), onPrepared(p.api, p.prepared), 40_000);
+    expect(box.maxDistance).toBe(DEFAULT_PLAN.maxDistance);
+    expect(box.maxWork).toBe(40 * DEFAULT_PLAN.workPerKm);
     const corridor = onPrepared(p.api, p.prepared, [[21, 59, 23, 61]]);
     expect(tripLimits(p.api, corridor, 40_000).maxWork).toBeGreaterThan(DEFAULT_PLAN.maxWork);
   });

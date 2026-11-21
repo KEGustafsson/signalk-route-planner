@@ -281,6 +281,47 @@
     }, "ok");
   }
 
+  /**
+   * The credits the routes' replies name (`attributions`), each source once, in the order they
+   * first appear: what the route on the chart leaned on, however many plans made it.
+   */
+  function credits() {
+    const seen = {};
+    const out = [];
+    Array.prototype.slice.call(arguments).forEach(function (list) {
+      (Array.isArray(list) ? list : []).forEach(function (a) {
+        if (a && typeof a.text === "string" && !Object.prototype.hasOwnProperty.call(seen, a.source)) {
+          seen[a.source] = true;
+          out.push(a);
+        }
+      });
+    });
+    return out;
+  }
+
+  /**
+   * The order of the panel's writes to the route: each takes a ticket when it writes and reports
+   * its completion; a completed write's leg table, choices and credits are shown only when no
+   * write issued after it has completed first. A write that fails, or a plan that writes nothing,
+   * leaves the last completed route's own shown.
+   */
+  function writes() {
+    let issued = 0;
+    let completed = 0;
+    return {
+      take: function () {
+        return ++issued;
+      },
+      done: function (ticket) {
+        if (ticket <= completed) {
+          return false;
+        }
+        completed = ticket;
+        return true;
+      }
+    };
+  }
+
   /** The trip's ends with the start at the boat's position, when it is known. */
   function fromBoat(ends, position) {
     if (!ends) {
@@ -300,6 +341,8 @@
     fromBoat: fromBoat,
     hasPosition: hasPosition,
     worstStatus: worstStatus,
+    credits: credits,
+    writes: writes,
     endsOf: endsOf,
     planPoints: planPoints,
     nm: nm,

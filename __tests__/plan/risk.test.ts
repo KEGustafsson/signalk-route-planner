@@ -235,6 +235,6 @@ describe("listing alternatives", () => {
       unknown
     >;
     expect(listed.dominatedBy).toBeUndefined();
-    expect(listed.legs).toEqual([{ status: "ok", risk: 0.01, length: 1100 }]);
+    expect(listed.legs).toEqual([{ status: "ok", risk: 0.01, length: 1100, flags: [] }]);
   });
 });

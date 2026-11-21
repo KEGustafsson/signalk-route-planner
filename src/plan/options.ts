@@ -1,7 +1,15 @@
 /** Limits of one plan (plan §6). Work is counted in signalk-underkeel's work units, never timed. */
 export interface PlanOptions {
-  /** Work one plan may do, search and pulling together; sized for about 3 s on a Raspberry Pi 4. */
+  /**
+   * Work one plan may do at least, search and pulling together; sized for about 3 s on a
+   * Raspberry Pi 4. The plugin's setting; a longer trip may do more (`workPerKm`).
+   */
   maxWork: number;
+  /**
+   * ...and a trip in the chart box may do this much per km of its straight distance, if that is
+   * more: a longer trip meets more shore, and an archipelago passage most of all.
+   */
+  workPerKm: number;
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
   /**
@@ -106,6 +114,7 @@ export interface PlanOptions {
 
 export const DEFAULT_PLAN: PlanOptions = {
   maxWork: 1_200_000,
+  workPerKm: 100_000,
   searchShare: 0.8,
   greed: 1.25,
   maxSideUnits: 4096,
@@ -140,19 +149,45 @@ export const DEFAULT_PLAN: PlanOptions = {
 };
 
 /**
- * The limits for a trip `d` metres long: `opts`, or when `corridor` (the trip is planned in a
- * corridor, or past `maxDistance` where one can be made), the corridor's reach and work in
- * proportion to the trip.
+ * The limits for a trip `d` metres long: `opts` with work in proportion to the trip where that is
+ * more, or when `corridor` (the trip is planned in a corridor, or past `maxDistance` where one can
+ * be made), the corridor's reach and work. Work grows with the distance, never with time taken,
+ * so a request gives the same answer on any machine.
  */
 export function limitsFor(opts: PlanOptions, d: number, corridor: boolean): PlanOptions {
+  const perKm = corridor ? opts.corridorWorkPerKm : opts.workPerKm;
+  const maxWork = Math.max(opts.maxWork, Math.ceil((d / 1000) * perKm));
   if (!corridor) {
-    return opts;
+    return maxWork === opts.maxWork ? opts : { ...opts, maxWork };
   }
-  return {
-    ...opts,
-    maxDistance: Math.max(opts.maxDistance, opts.corridorDistance),
-    maxWork: Math.max(opts.maxWork, Math.ceil((d / 1000) * opts.corridorWorkPerKm))
-  };
+  return { ...opts, maxDistance: Math.max(opts.maxDistance, opts.corridorDistance), maxWork };
+}
+
+/** The work budget a plugin setting may give one plan: the settable range, units. */
+export const WORK_SETTING = { min: 100_000, max: 100_000_000 };
+
+/**
+ * `opts` with the plugin's work setting, when it is a whole number of units in range; else
+ * `opts` as they are, and why the setting was not used.
+ */
+export function withWorkSetting(
+  opts: PlanOptions,
+  setting: unknown
+): { opts: PlanOptions; ignored?: string } {
+  if (setting === undefined || setting === null) {
+    return { opts };
+  }
+  const ok =
+    typeof setting === "number" &&
+    Number.isInteger(setting) &&
+    setting >= WORK_SETTING.min &&
+    setting <= WORK_SETTING.max;
+  return ok
+    ? { opts: { ...opts, maxWork: setting } }
+    : {
+        opts,
+        ignored: `work budget must be a whole number from ${String(WORK_SETTING.min)} to ${String(WORK_SETTING.max)}; using ${String(opts.maxWork)}`
+      };
 }
 
 /** `opts` with a request's own risk weight, preference for lines and draft for them. */
