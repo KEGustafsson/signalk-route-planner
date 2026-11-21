@@ -132,6 +132,10 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
 3. **A\*** over free leaves that share an edge, through the midpoint of the shared edge, with the
    straight-line distance as the heuristic, weighted 1.25 (`greed`): the path costs at most 1.25
    times the cheapest before string pulling, for far fewer squares classified among islands.
+   That slack can take a longer channel round an island, so A\* runs again at 1.05 over the
+   squares the first already classified (`src/search/anytime.ts`), and its path is kept when it
+   is cheaper by at least a thousandth and crosses no more water that is not free. Out of work,
+   the first path stands.
    A neighbour is queued unclassified at the cost it would have in free water and classified
    only when it comes off the queue, so squares A\* never reaches are never asked about.
 4. **String pulling.** From each kept waypoint, later path points are tried farthest first, then
@@ -139,6 +143,14 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    becomes the next waypoint. This bounded heuristic costs O(log n) checks a waypoint and can
    miss a longer shortcut that passes after a shorter one failed. Every leg of the result has
    passed the corridor check over the trip window.
+   The pulled route still turns at the search's square centres and edge midpoints, so it is then
+   drawn tight (`src/search/taut.ts`): shortcuts are tried outward from each point, and each turn
+   is moved toward the straight line between its neighbours, binary searched, as far as its two
+   legs still pass, round after round until a round gains next to nothing. A turn so ends at the
+   corner of what stops it. A change is kept only when its legs are checked, cost less at the
+   search's own price, carry no higher risk than the worst leg they replace, and at no status
+   worse than passing add legs or length. It draws on half the work left, so the stages after it
+   keep the rest, and stops cleanly with the last checked route when that is spent.
 5. **Proof.** `routeCheck` checks the route at its departure, leg by leg at each leg's own arrival.
    Its statuses are the answer. A plan without `fallback` is offered only when every leg but a
    berth leg (step 13) is `ok`, `marginal` or an accepted `unverified`; otherwise the reply is

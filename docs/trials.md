@@ -37,10 +37,10 @@ Data: the Traficom INSPIRE WFS (`DepthArea_A`, `Sounding_P`) through signalk-und
 client. It is not for navigation, so every leg is at best `unverified`. It carries no survey
 quality, so each case assumes a CATZOC.
 
-| Case                      | Assumed CATZOC | Result (2026-11-19)                                   |  Work |
+| Case                      | Assumed CATZOC | Result (2026-11-21)                                   |  Work |
 | ------------------------- | -------------- | ----------------------------------------------------- | ----: |
-| `turku-guest-harbours-b`  | B              | 19.8 nm, 39 legs: harbour stage, route, harbour stage | 5.8 M |
-| `turku-guest-harbours-a1` | A1             | 19.9 nm, 45 legs: harbour stage, route, harbour stage | 5.4 M |
+| `turku-guest-harbours-b`  | B              | 19.8 nm, 32 legs: harbour stage, route, harbour stage | 8.4 M |
+| `turku-guest-harbours-a1` | A1             | 19.7 nm, 30 legs: harbour stage, route, harbour stage | 8.0 M |
 
 - The Aura river is one 0–10 m depth area in the WFS, so its harbour-stage legs come back
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
@@ -51,10 +51,10 @@ quality, so each case assumes a CATZOC.
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
 start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
-| Case                        | Result (2026-11-19)                                                     |   Work |
+| Case                        | Result (2026-11-21)                                                     |   Work |
 | --------------------------- | ----------------------------------------------------------------------- | -----: |
 | `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |  1.9 M |
-| `miami-bayside`             | 3.67 nm, route then harbour stage; unassessed water in it is marked     | 17.0 M |
+| `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     | 17.1 M |
 | `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |  2.4 M |
 
 `miami-meloy-channel-tide` plans into Meloy Channel with a modelled tide (0.0–0.7 m above
@@ -63,8 +63,12 @@ which no state of the water level clears, and refuses naming that leg: the gate 
 wait for a leg the tide cannot open.
 
 `turku-guest-harbours-b-lines` plans Turku to Nauvo with `preferLines` on the WFS cell with the
-FTIA's navigation lines (474 of them in the area): 20.0 nm in 41 legs, keeping to the lines,
-against 19.8 nm in 39 without them, for 9.4 M work units against 5.8 M and 7 s against 3 s.
+FTIA's navigation lines (474 of them in the area): 19.9 nm in 33 legs, keeping to the lines,
+against 19.8 nm in 32 without them, for 9.6 M work units against 8.4 M.
+
+Drawing routes tight (plan §4.1 steps 3 and 4) took the Turku cases from 39 and 45 legs to 32
+and 30, and the harbour stages' failing legs from 11 to 7, for 2.6 M more work units each: about
+0.3 M for the tightening, the rest for A\* run again at the finer greed.
 
 `miami-fisher-island-alternatives` plans the same trip with `alternatives` (R4). The shortest
 route is 1894 m at risk 0.031; the balanced one (α = 2) 1903 m at 0.026, every leg `ok`. The safest

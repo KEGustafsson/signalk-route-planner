@@ -2,6 +2,7 @@ import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { Session, Verdict } from "../oracle/contract";
 import { aStar } from "../search/astar";
+import { cheapest } from "../search/anytime";
 import type { PassRule } from "../search/passes";
 import { OK_ONLY, passes } from "../search/passes";
 import type { RiskCost } from "../search/fallback";
@@ -18,6 +19,7 @@ import type { Preferred, PreferredLine } from "../search/prefer";
 import { offLine, offShare, preferredIn, splitsForLines } from "../search/prefer";
 import type { Priced, Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
+import { tautRule, tautWithin } from "../search/taut";
 import type { QuadNode } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
 import { stuckEnds } from "./handover";
@@ -291,18 +293,25 @@ async function attempt(
       stuck: { start: typeof start === "string", end: typeof goal === "string" }
     };
   }
+  // A risk cost or a line is a preference smaller than weighted A*'s slack: a slack of
+  // FINE_GREED keeps every one worth more than it.
+  const greed = mode.fine ? Math.min(opts.greed, FINE_GREED) : opts.greed;
   const found =
     start.leaf === goal.leaf
       ? { found: true as const, points: [start.at, goal.at] }
-      : await aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-          exhausted,
-          pause: () => session.pause(),
-          every: 64,
-          weight: mode.weight,
-          // A risk cost or a line is a preference smaller than weighted A*'s slack: a slack of
-          // FINE_GREED keeps every one worth more than it.
-          greed: mode.fine ? Math.min(opts.greed, FINE_GREED) : opts.greed
-        });
+      : await cheapest(
+          tree,
+          (g) =>
+            aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
+              exhausted,
+              pause: () => session.pause(),
+              every: 64,
+              weight: mode.weight,
+              greed: g
+            }),
+          { first: greed, fine: FINE_GREED },
+          mode.weight
+        );
   if (!found.found) {
     return {
       reason:
@@ -452,9 +461,15 @@ export async function searchRoute(
   if (coordinates === "work" || session.work() >= opts.maxWork) {
     return refuse(WORK_LIMIT);
   }
+  const tight = await tautWithin(
+    coordinates,
+    (a, b) => checkLeg(session, a, b),
+    { session, maxWork: opts.maxWork },
+    tautRule(tree, rule, { fallback: found.fallback !== undefined, cost, pref })
+  );
   return {
     ok: true,
-    coordinates,
+    coordinates: tight,
     direct,
     squares: tree.classified,
     work: session.work(),
