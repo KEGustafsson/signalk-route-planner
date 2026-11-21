@@ -105,7 +105,11 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    fallback water level is reported `unverified` with the reason, and is never ranked as `ok`.
 3. **Monotonic.** A deeper draft, a taller air draft, a lower water level or a smaller accepted
    probability never yields a route that a less constrained request rejected. Covered by a
-   fast-check property over the synthetic oracle.
+   fast-check property over the synthetic oracle. A refusal at the work limit is not a
+   rejection of the water and is outside this: the search's order, steered or not, depends on
+   the request, so within the same budget a less constrained request may run out of work where
+   a more constrained one finds its route. It is refused with the work limit, never offered a
+   route the route check did not prove, and the property test checks that at tight budgets too.
 4. **Hard rules stay hard.** Entry-prohibited restricted areas and traffic separation lane
    direction are never traded for distance.
 5. **Own data only adds caution.** Tracks the boat has sailed may lower cost, never risk, and only
@@ -242,9 +246,16 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
 - R2's exit trial (`npm run trial:r2`, `docs/trials.md`) plans Turku to Utö, 50 nm, on
   underkeel's own planning boxes, survey and build processes in a 2 GB memory limit.
 
+- A survey too large for underkeel's cap on its area (413) is asked for in pieces: the trip cut
+  into two to `MAX_SURVEY_TILES` parts along its line, each part's region grown by the whole
+  trip's reach, so the pieces overlap and together cover the region a whole survey would have
+  covered near the line. Their grids are joined at the coarsest piece's cell size, each cell
+  the deepest any piece gives it and the least `shallowest`, as one survey would read it: the
+  survey is optimistic either way, and the route check decides. Any other failure is the
+  survey's.
+
 **Still open:** most of a corridor's work is the search along the archipelago's shores, as in
-§6; steering the search along the coarse route could cut it. A survey reaches only so far
-(underkeel's cap on its area), so a long diagonal trip may be refused before its corridor.
+§6. The corridor already steers that search, so §6's steering does not cut it.
 
 ### 4.3 R3: time-dependent search and tide gates
 
@@ -307,8 +318,39 @@ or where the route crosses it (`src/plan/wait-places.ts`).
 - The offered route goes out to the place and back, the piece after the wait starting at the
   place; each wait names its `place` (`user`, `anchorage`, `route`).
 
-Still to come: waiting off the route farther than a detour, which needs the time-dependent
-search over the quadtree's leaves, state (leaf, arrival slot), in place of the candidate route.
+**R3d, the route passable now (built).** With no waiting asked for, the plan is the route the
+boat can sail leaving at the departure, at its speed: the search asks about each square and leg
+at the water of the time the boat can be there, not at the lowest water of the whole verdict
+window (`src/plan/timing.ts`, `src/plan/now.ts`).
+
+- On any route at most `reach` long, the boat is at a point no earlier than the straight line from
+  the start to it takes, and no later than the latest departure plus the reach less the straight
+  line from the point to the destination. String pulling only shortens a route, so every point of
+  the pulled route keeps to the same bounds. A square or leg is asked about that window alone,
+  widened for a boat somewhat faster or slower (`timingSlack`), within the session's.
+- The window lies within the trip's, so the water there is never lower: a square the trip-wide
+  question passed passes, and a bar the tide covers while the boat crosses it passes too, though
+  it dries later in the window.
+- The first search runs at the verdict window's own reach, so its route holds however the boat
+  keeps to its timing (`timing.holds: "trip"`). When it finds none, not for want of work, and some
+  water it met could pass at another time, it runs again at a shorter reach near the straight
+  distance. A route found there is kept only when it fits that reach, for which its windows hold;
+  else the search runs once more at a reach from that route's length, at most the verdict
+  window's (`timing.holds: "now"`: plan again before leaving later).
+- A fallback route is the last resort: when the first search can only fall back, the searches at
+  the boat's own timing run first, strictly, and a fallback route offered after them holds
+  only at the departure (`timing.holds: "now"`).
+- The later searches ask again only about water: a verdict no water level changes (passing water,
+  land, no chart, a closed area) is the first search's, since water that passes over a window
+  passes over any part of it.
+- Monotonic: each window depends on the geometry and timing alone, never on the water, so more
+  water passes every square at least as well, and a tighter reach gives windows within a wider
+  one's. Refused at the tightest, no route is passable now.
+- The proof stays the authority: every offered leg is the route check's at its own arrival
+  (invariant 1). A request with `latestDeparture` is timed by the gate (R3a) instead.
+
+Waiting farther off the route than a detour is not planned: the plan is the route passable now,
+or a wait the request asks for.
 
 ### 4.4 R4: risk, alternatives, air draft, rules
 
@@ -447,6 +489,10 @@ Reply 200:
 ```jsonc
 {
   "plannedAt": "…",
+  // The departure and speed the route is checked for (with a tide gate or waits, the departure
+  // they chose); holds "trip": at any time in the verdict window, "now": only leaving at the
+  // departure (§4.3 R3d).
+  "timing": { "departure": "…", "speed": 2.5, "holds": "trip" },
   "route": {
     "type": "LineString",
     "coordinates": [
@@ -556,10 +602,36 @@ the shores the search meets. R2 cuts those by asking about fewer of them:
 With these the field trials' work fell on every case but the Bayside fallback, most where a
 harbour end had sent the whole route to the fallback; `docs/trials.md` records each case's work.
 
-Still open: a 20 nm passage through the archipelago is three to four times the budget, and a
-fallback route across risky water (Bayside, through unassessed water) reaches across its whole
-region. The trials cap each case's work (`workAtMost`) so a change cannot give this back
-unnoticed.
+**Steering** (`src/plan/steer.ts`, `src/search/guide.ts`). Before the main search between the
+joined ends, a coarse pass searches the same region at squares no finer than `steerCell`: a
+second quadtree on the same frame, its unit a power of two of the fine one, so each of its
+squares is one of the fine tree's and their box verdicts are shared, asked once. A coarse square
+that is not free costs `STEER_MAYBE` per unit, since it may hold a way through; one with no
+coverage, or too large to ask about, is closed. The coarse path then orders the fine search: its
+heuristic at a point is the distance to the path's nearest point plus the rest of the path from
+there, never less than the straight line, so A\* reaches first the squares along the way that
+likely leads through. The strict search counts the path at its length; the fallback counts a
+part through a "maybe" square at `steerRisk` times its length, so it keeps to water the coarse
+pass found free and leaves the rest of the region alone.
+
+- Steering only orders the search. A square's verdict is the box query's, every square stays
+  reachable, and every route is still the route check's (invariants 1–3). A deeper draft never
+  finds a route the shallower one rejects; the search's property test checks it on a steered
+  region. At a tight budget the coarse path, which depends on the draft, may cost the shallower
+  search its work where the deeper one finishes: that is a work-limit refusal (§3, invariant 3),
+  checked steered and unsteered.
+- The coarse pass may use `steerShare` of the search's work and runs only when the fine search
+  needs it, after both ends are joined; it counts the same work units.
+- A search with preference lines or a risk cost is not steered: the guide's weight would drown
+  their small preferences. A search in a corridor is not steered: the corridor is its coarse
+  path already.
+
+Steered, the 20 nm archipelago passage took 5.4 M work against 7.0 M, and the Bayside fallback
+19.7 M against 25.7 M (`docs/trials.md`).
+
+Still open: the 20 nm passage is still three to four times the budget, most of it the shores
+the coarse path runs along, and preference lines get nothing from steering. The trials cap each
+case's work (`workAtMost`) so a change cannot give this back unnoticed.
 
 ## 7. Testing
 

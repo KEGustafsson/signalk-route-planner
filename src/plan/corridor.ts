@@ -48,23 +48,145 @@ const MAX_PARTS = 400;
 
 const M_PER_DEG = (EARTH_RADIUS * Math.PI) / 180;
 
+/** How far the survey reaches past the trip's box: a quarter of the trip, within its bounds, metres. */
+const surveyReach = (from: LonLat, to: LonLat): number =>
+  Math.min(SURVEY_MAX_REACH, Math.max(SURVEY_MIN_REACH, haversine(from, to) / 4));
+
 /** The survey's region for the trip `from`–`to`: their box grown by a quarter of the trip. */
-export function surveyRegion(from: LonLat, to: LonLat): Bbox {
-  const reach = Math.min(SURVEY_MAX_REACH, Math.max(SURVEY_MIN_REACH, haversine(from, to) / 4));
+export function surveyRegion(from: LonLat, to: LonLat, reach = surveyReach(from, to)): Bbox {
   const s = Math.max(-85, Math.min(from[1], to[1]) - reach / M_PER_DEG);
   const n = Math.min(85, Math.max(from[1], to[1]) + reach / M_PER_DEG);
   const dLon = reach / (M_PER_DEG * Math.cos(Math.max(Math.abs(s), Math.abs(n)) * (Math.PI / 180)));
   return [Math.min(from[0], to[0]) - dLon, s, Math.max(from[0], to[0]) + dLon, n];
 }
 
+/**
+ * The survey's region for the trip cut in `n` along its line: `n` regions, each the box of its
+ * piece of the line grown by the whole trip's reach, so neighbours overlap by twice that. A
+ * diagonal trip's one box holds far more than its line needs; its pieces' boxes hold the line
+ * and its reach, each within what one survey may cover.
+ */
+export function surveyTiles(from: LonLat, to: LonLat, n: number): Bbox[] {
+  const reach = surveyReach(from, to);
+  const at = (t: number): LonLat => [
+    from[0] + (to[0] - from[0]) * t,
+    from[1] + (to[1] - from[1]) * t
+  ];
+  return Array.from({ length: n }, (_, i) => surveyRegion(at(i / n), at((i + 1) / n), reach));
+}
+
+/**
+ * One grid over the surveys `grids`, at the coarsest of their cells: each cell the deepest
+ * depth and the least least bound of every cell of every grid it touches, so the mosaic is as
+ * optimistic as any of its tiles about where water may be and no surer than the least sure of
+ * them. A cell touching one with no charted depth, or that no one grid holds whole, is not sure
+ * all over (NaN least bound); NaN where no grid holds it.
+ */
+export function mosaic(grids: readonly Survey[]): Survey {
+  if (grids.length === 1) {
+    return grids[0] as Survey;
+  }
+  const bbox = boxOf(grids.map((g) => g.bbox));
+  const cellMetres = Math.max(...grids.map((g) => g.cellMetres));
+  const [dLat, dLon] = cellDegrees({ bbox, cellMetres });
+  const cols = Math.max(1, Math.ceil((bbox[2] - bbox[0]) / dLon));
+  const rows = Math.max(1, Math.ceil((bbox[3] - bbox[1]) / dLat));
+  const out: Cells = {
+    depth: new Float32Array(cols * rows).fill(NaN),
+    shallowest: new Float32Array(cols * rows).fill(NaN),
+    unsure: new Uint8Array(cols * rows)
+  };
+  const sure = grids.every((g) => g.shallowest !== undefined);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cell: Bbox = [
+        bbox[0] + c * dLon,
+        bbox[1] + r * dLat,
+        bbox[0] + (c + 1) * dLon,
+        bbox[1] + (r + 1) * dLat
+      ];
+      const i = r * cols + c;
+      for (const g of grids) {
+        merge(g, cell, i, out);
+      }
+      if (!grids.some((g) => holds(g.bbox, cell))) {
+        out.unsure[i] = 1;
+      }
+    }
+  }
+  out.unsure.forEach((u, i) => {
+    if (u === 1) {
+      out.shallowest[i] = NaN;
+    }
+  });
+  return {
+    bbox,
+    cols,
+    rows,
+    cellMetres,
+    depth: out.depth,
+    ...(sure && { shallowest: out.shallowest })
+  };
+}
+
+interface Cells {
+  depth: Float32Array;
+  shallowest: Float32Array;
+  /** A cell touching one of a grid's with no charted depth. */
+  unsure: Uint8Array;
+}
+
+/** A cell's edges are pulled in by this share of it, so a neighbour it only meets is not touched. */
+const EDGE = 1e-6;
+
+/** Whether `box` holds all of `cell`, but for the share EDGE of it at each side. */
+function holds(box: Bbox, cell: Bbox): boolean {
+  const inset = EDGE * Math.min(cell[2] - cell[0], cell[3] - cell[1]);
+  return (
+    box[0] <= cell[0] + inset &&
+    box[1] <= cell[1] + inset &&
+    box[2] >= cell[2] - inset &&
+    box[3] >= cell[3] - inset
+  );
+}
+
+/** Into cell `i` of `out`, every cell of grid `g` that `cell` touches: the deeper, the less sure. */
+function merge(g: Survey, cell: Bbox, i: number, out: Cells): void {
+  const [dLat, dLon] = cellDegrees(g);
+  const inset = EDGE * Math.min(cell[2] - cell[0], cell[3] - cell[1]);
+  const c0 = Math.max(0, Math.floor((cell[0] + inset - g.bbox[0]) / dLon));
+  const c1 = Math.min(g.cols - 1, Math.floor((cell[2] - inset - g.bbox[0]) / dLon));
+  const r0 = Math.max(0, Math.floor((cell[1] + inset - g.bbox[1]) / dLat));
+  const r1 = Math.min(g.rows - 1, Math.floor((cell[3] - inset - g.bbox[1]) / dLat));
+  for (let gr = r0; gr <= r1; gr++) {
+    for (let gc = c0; gc <= c1; gc++) {
+      const j = gr * g.cols + gc;
+      const d = g.depth[j] as number;
+      if (Number.isNaN(d)) {
+        out.unsure[i] = 1;
+        continue;
+      }
+      if (!((out.depth[i] as number) >= d)) {
+        out.depth[i] = d;
+      }
+      const least = g.shallowest?.[j];
+      if (least === undefined || Number.isNaN(least)) {
+        out.unsure[i] = 1;
+      } else if (!((out.shallowest[i] as number) <= least)) {
+        out.shallowest[i] = least;
+      }
+    }
+  }
+}
+
 /** The cell size in degrees: north–south, east–west. */
-function cellDegrees(g: Survey): [number, number] {
+function cellDegrees(g: Pick<Survey, "bbox" | "cellMetres">): [number, number] {
   const mid = ((g.bbox[1] + g.bbox[3]) / 2) * (Math.PI / 180);
   return [g.cellMetres / M_PER_DEG, g.cellMetres / (M_PER_DEG * Math.cos(mid))];
 }
 
 /** The cell `[lon, lat]` lies in, as [column, row], possibly off the grid. */
-function cellOf(g: Survey, p: LonLat): [number, number] {
+function cellOf(g: Pick<Survey, "bbox" | "cellMetres">, p: LonLat): [number, number] {
   const [dLat, dLon] = cellDegrees(g);
   return [Math.floor((p[0] - g.bbox[0]) / dLon), Math.floor((p[1] - g.bbox[1]) / dLat)];
 }

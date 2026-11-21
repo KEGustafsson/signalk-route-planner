@@ -36,6 +36,14 @@ All notable changes to signalk-route-planner are documented here.
   anchor at the trip's lowest water, at most as long in all as the boat may wait to leave. The
   route is split where it waits, each piece proved from when the boat leaves for it, and the
   reply lists the waits (`gate.waits`); the panel offers it as a check box.
+- The route passable now: with no waiting asked for, each square and leg is asked about at the water
+  of the times the boat can be there, not at the lowest water of the whole verdict window. The
+  first search allows the boat any timing within the verdict window, so its route holds however
+  the boat keeps to it. When it finds none and the tide could change that, it searches again at a
+  reach near the straight distance, where each square's window is the boat's own timing from the
+  departure, widened by `timingSlack`; a route found there holds only leaving at the departure.
+  The proof then checks each leg at the time the boat reaches it. Route replies and refusals name
+  the timing they hold for (`timing`); error replies carry none.
 - Waiting places: a wait is at the user's `waitPoints` or a charted anchorage (`ACHARE`, not one
   where anchoring is prohibited or restricted) when one serves, on the route or within
   `waitReach` (1 nm) of it by a detour out and back the planning API passes at the trip's lowest
@@ -70,6 +78,14 @@ All notable changes to signalk-route-planner are documented here.
   its length; the search asks about no square that reaches past the corridor's boxes and searches
   the square around them. `npm run trial:r2` plans Turku to Utö, 50 nm, within a 2 GB memory
   limit, and `--profile` shows where its work goes.
+- Steering: between joined ends, a coarse pass over the same region's larger squares, sharing
+  their box verdicts, finds the way that likely leads through, and the search reaches the
+  squares along it first. It changes only the order of the search, never a square's verdict or
+  the route check. Field trials: Turku to Nauvo 7.0 M → 5.4 M work units, the Bayside fallback
+  25.7 M → 19.7 M, kept to water the coarse pass found free. Not used with preference lines, a
+  risk cost or in a corridor.
+- A depth survey underkeel refuses as too large is asked for in up to eight overlapping pieces
+  along the trip and joined, so a long diagonal trip still gets its corridor.
 - Work budget: the plugin's **Work budget per plan** setting is the work a plan may do at least,
   and a longer trip in the chart box is given more in proportion to its distance, as a
   corridor's is. The plugin times the plans it runs and says in its status and `GET /status`
