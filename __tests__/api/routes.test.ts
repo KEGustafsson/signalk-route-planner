@@ -3,6 +3,7 @@ import { PassThrough } from "stream";
 import type { Request, RequestHandler, Response } from "express";
 import { PLANNING_API } from "../../src/oracle/contract";
 import { MAX_BODY_BYTES, readJsonBody, registerRoutes } from "../../src/api/routes";
+import { WorkRate } from "../../src/plan/work-rate";
 import { apiFor } from "../../src/plugin-api";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
 
@@ -91,12 +92,45 @@ describe("REST routes", () => {
     const f = mount();
     expect((await f.call("GET", "/v1/status")).body).toEqual({
       state: "ready",
-      provider: "synthetic"
+      provider: "synthetic",
+      work: { budget: 1_200_000, plans: 0 }
     });
     const r = await f.call("POST", "/v1/plan", { from: at(0, 0), to: at(5000, 0) });
     expect(r.code).toBe(200);
     expect(r.body).toMatchObject({ status: "ok", direct: { status: "fail" } });
     expect(api.sessions[0]).toMatchObject({ departure: NOW, speed: 3 });
+  });
+
+  test("each plan's work and time are recorded, and the status says what the budget takes", async () => {
+    g[PLANNING_API] = syntheticApi({ obstacles: [{ x: 2500, y: 0, r: 600 }] });
+    let t = NOW;
+    const clock = { now: () => (t += 1000) };
+    const seen: [unknown, number][] = [];
+    class Spy extends WorkRate {
+      override record(work: unknown, ms: number): void {
+        seen.push([work, ms]);
+        super.record(2_400_000, ms);
+      }
+    }
+    let planned = 0;
+    const f = fakeRouter();
+    registerRoutes(
+      f.router,
+      apiFor(clock, () => new AbortController().signal, undefined, {
+        rate: new Spy(),
+        planned: () => planned++
+      }),
+      () => undefined
+    );
+    const r = await f.call("POST", "/v1/plan", { from: at(0, 0), to: at(5000, 0) });
+    expect(r.code).toBe(200);
+    const work = (r.body as { work?: unknown }).work;
+    expect(typeof work === "number" && Number.isFinite(work) && work > 0).toBe(true);
+    expect(seen).toEqual([[work, 1000]]);
+    expect(planned).toBe(1);
+    expect((await f.call("GET", "/v1/status")).body).toMatchObject({
+      work: { budget: 1_200_000, plans: 1, unitsPerSecond: 2_400_000, budgetSeconds: 0.5 }
+    });
   });
 
   test("a bad body is 400; a stopped plugin is 503", async () => {

@@ -467,6 +467,11 @@ Reply 200:
     "parts": [{ "part": "harbour", "end": "start", "xteLimit": 0, "legs": [0, 4] }]
   },
   "underway": "ok", // with berth legs: the worst status of the other legs
+  // The open data the route leaned on, each to be credited where the route is shown: the FTIA's
+  // navigation lines it kept to, Traficom's WFS depths a leg crossed. None, [].
+  "attributions": [
+    { "source": "ftia", "text": "Source: Finnish Transport Infrastructure Agency …" }
+  ],
   // With latestDeparture, when the plan waits for the tide (§4.3):
   "departure": "2026-11-18T13:15:00.000Z",
   "gate": {
@@ -522,13 +527,18 @@ for underkeel to build on the machine.
 
 ## 6. Performance budget
 
-Raspberry Pi 4 is the reference. One plan may do 1 200 000 underkeel work units (about 3 s on a
-Pi 4 at underkeel's calibration, 0.4 s on an i5 laptop); a trip planned in a corridor may do
-more, in proportion to its length (§4.2). A\* stops at 80 % of that and string
-pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
+Raspberry Pi 4 is the reference. One plan may do at least the plugin's work budget setting, by
+default 1 200 000 underkeel work units (about 3 s on a Pi 4 at underkeel's calibration, 0.4 s on
+an i5 laptop) and settable from 100 000; a longer trip may do more, in proportion to its straight distance, and a trip planned in
+a corridor more still (§4.2), since a longer trip meets more shore. A\* stops at 80 % of that and
+string pulling at the whole. A plan's stages (the main search, harbour stages, the main search again)
 draw on that one budget, each with what the stages before it left. The proof is underkeel's
 route check, bounded by `/route-check`'s own limits; its work is not counted in the plan's. Work
 is counted, never timed, so a request gives the same answer on any machine.
+
+What a budget takes on the machine at hand is measured, not assumed: the plugin times the plans
+it runs, and once a plan of at least 100 000 work units has run, its status and `GET /status`
+give its work units a second and what the budget takes here. The rate only reports; no plan's result depends on it.
 
 **Where the work goes** (`npm run trial -- --profile`): nine tenths of it is boxes under 50 m, at
 the shores the search meets. R2 cuts those by asking about fewer of them:
@@ -581,8 +591,5 @@ unnoticed.
 
 ## 9. Open questions
 
-- The Pi 4 work-unit calibration is underkeel's laptop measurement times 3–5 (its plan §10);
-  the planner inherits that until measured on a Pi.
-- FTIA open data licence attribution must show in the panel; confirm the exact wording.
 - Whether waiting in deep water off the fairway needs a minimum distance from the fairway edge
   beyond the swing radius.

@@ -260,4 +260,29 @@ describe("panel model", () => {
     expect(P.worstStatus(["ok", "toString", "marginal"])).toBe("toString");
     expect(P.worstStatus(["something new", "marginal"])).toBe("something new");
   });
+
+  test("the credits of several replies, each source once, in the order they come", () => {
+    const ftia = { source: "ftia", text: "FTIA" };
+    const traficom = { source: "traficom", text: "Traficom" };
+    expect(P.credits([ftia], undefined, [traficom, ftia])).toEqual([ftia, traficom]);
+    expect(P.credits(undefined, [], [{ source: "x" }])).toEqual([]);
+  });
+
+  test("a completed write is shown unless a write issued after it completed first", () => {
+    const w = P.writes();
+    const first = w.take();
+    // A later plan that is refused, or has no boat position, takes no ticket.
+    expect(w.done(first)).toBe(true);
+    const second = w.take();
+    const third = w.take();
+    expect(w.done(third)).toBe(true);
+    expect(w.done(second)).toBe(false);
+  });
+
+  test("a write that fails does not hide the earlier write that completed after it was issued", () => {
+    const w = P.writes();
+    const first = w.take();
+    w.take(); // its route.replace fails, so it never reports done
+    expect(w.done(first)).toBe(true);
+  });
 });
