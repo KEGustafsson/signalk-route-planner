@@ -82,6 +82,8 @@ async function planned(over: Over) {
       from: at(0, 0),
       to: at(6000, 0),
       departure: NOW,
+      // Tide timing at the request's corridor alone: `narrows.test.ts` times narrows.
+      narrows: false,
       speed: 1.5,
       ...(over.latest !== undefined && { latestDeparture: over.latest }),
       ...(over.waitEnRoute !== undefined && { waitEnRoute: over.waitEnRoute }),

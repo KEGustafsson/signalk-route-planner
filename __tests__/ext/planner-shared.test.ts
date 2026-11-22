@@ -124,6 +124,67 @@ describe("panel model", () => {
     expect(P.legLabel({ status: "fail", part: "harbour", berth: true })).toBe("fail (berth)");
     expect(P.legLabel({ status: "ok", part: "harbour" })).toBe("ok (harbour)");
     expect(P.legLabel({ status: "ok", part: "route" })).toBe("ok");
+    expect(P.legLabel({ status: "ok", part: "narrows", xteLimit: 0 })).toBe("ok (narrow, xte 0 m)");
+    expect(P.legLabel({ status: "unverified", part: "narrows", flags: ["PILOTAGE"] })).toBe(
+      "unverified (swept fairway, pilotage)"
+    );
+    expect(
+      P.legLabel({
+        status: "ok",
+        part: "narrows",
+        flags: ["PILOTAGE"],
+        pilotage: { buffer: 3, room: 3.3 }
+      })
+    ).toBe("ok (swept fairway, keep within ±3.3 m)");
+    const narrow = P.summary(200, {
+      status: "ok",
+      length: 3704,
+      check: { legs: [{ part: "route" }, { part: "narrows" }, { part: "narrows" }] }
+    }).text;
+    expect(narrow).toMatch(
+      /2 legs pass water narrower than your corridor, checked at the harbour corridor$/
+    );
+    const swept = (flags: string[][]) =>
+      P.summary(200, {
+        status: "ok",
+        length: 3704,
+        check: { legs: flags.map((f) => ({ part: "narrows", flags: f })) }
+      }).text;
+    const marks = "in a swept fairway: keep between its marks";
+    const ends = (text: string) => new RegExp(`${text}$`);
+    expect(swept([["PILOTAGE"], [], ["PILOTAGE"]])).toMatch(ends(`; 2 of them are ${marks}`));
+    expect(swept([[], ["PILOTAGE"]])).toMatch(ends(`; 1 of them is ${marks}`));
+    expect(swept([["PILOTAGE"], ["PILOTAGE"]])).toMatch(ends(`; all are ${marks}`));
+    expect(swept([["PILOTAGE"]])).toMatch(
+      ends(
+        `1 leg passes water narrower than your corridor, checked at the harbour corridor; it is ${marks}`
+      )
+    );
+    // The ± is named only when a piloted leg carries a finite room.
+    const roomed = (room: number) =>
+      P.summary(200, {
+        status: "ok",
+        length: 3704,
+        check: {
+          legs: [
+            { part: "narrows", flags: ["PILOTAGE"] },
+            { part: "narrows", flags: ["PILOTAGE"], pilotage: { buffer: 3, room } }
+          ]
+        }
+      }).text;
+    expect(roomed(3.3)).toMatch(ends(`; all are ${marks}, within the ± the leg names`));
+    expect(roomed(Number.NaN)).toMatch(ends(`; all are ${marks}`));
+    // A leg outside the narrows flagged PILOTAGE says nothing of the narrows.
+    expect(
+      P.summary(200, {
+        status: "ok",
+        length: 3704,
+        check: { legs: [{ part: "route", flags: ["PILOTAGE"] }, { part: "narrows" }] }
+      }).text
+    ).not.toMatch(/swept/);
+    expect(P.summary(200, { status: "ok", length: 1852, check: { legs: [{}] } }).text).not.toMatch(
+      /narrower/
+    );
     expect(P.summary(422, { reason: "land, shoals or obstacles close every way" })).toEqual({
       kind: "fail",
       text: "No route: land, shoals or obstacles close every way"

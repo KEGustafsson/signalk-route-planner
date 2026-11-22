@@ -35,6 +35,8 @@ export interface Leg {
   a: LonLat;
   b: LonLat;
   xteLimit?: number;
+  /** Checked with pilotage in swept water, as its part (`narrows.ts`). */
+  pilotage?: true;
   /** A berth leg: alongside its quay by design, held only to `berthable`, as the proof holds it. */
   berth?: true;
   /** Time from departure to the leg's start and end, ms. */
@@ -55,6 +57,7 @@ export function legsOf(parts: readonly Part[], speed: number): Leg[] {
         a,
         b,
         ...(p.xteLimit !== undefined && { xteLimit: p.xteLimit }),
+        ...(p.pilotage && { pilotage: true as const }),
         ...(isBerth(p, i - 1) && { berth: true as const }),
         from: t,
         to: t + dt
@@ -99,12 +102,16 @@ export async function passWindows(
   const slots = Math.ceil((horizon.end - horizon.start) / SLOT_MS);
   const gated = new Map<number, boolean[]>();
   let work = 0;
-  for (const width of new Set(legs.map((l) => l.xteLimit))) {
+  // One session per corridor: its cross-track limit, and pilotage or not.
+  const corridors = new Map(legs.map((l) => [`${String(l.xteLimit)}|${String(l.pilotage)}`, l]));
+  for (const [key, first] of corridors) {
+    const width = first.xteLimit;
     const params = {
       departure: horizon.start,
       until: horizon.end,
       speed: g.speed,
       ...(width !== undefined && { xteLimit: width }),
+      ...(first.pilotage && { pilotage: true }),
       ...(g.probability !== undefined && { probability: g.probability }),
       ...(g.draft !== undefined && { draft: g.draft }),
       ...(g.airHeight !== undefined && { airHeight: g.airHeight })
@@ -116,7 +123,7 @@ export async function passWindows(
       try {
         const over = (): boolean => work + s.work() >= ctx.budget;
         for (const [i, leg] of legs.entries()) {
-          if (leg.xteLimit !== width) {
+          if (`${String(leg.xteLimit)}|${String(leg.pilotage)}` !== key) {
             continue;
           }
           // Every query is within the budget, the full-horizon one included.

@@ -122,7 +122,8 @@ describe("taut-string refinement", () => {
     };
     const r = await plan(
       syntheticApi(islands),
-      { from: at(0, 0), to: at(5000, 0), departure: 0, speed: 3, xteLimit: 30 },
+      // At the request's corridor alone: narrows price squares, not legs (`narrows.test.ts`).
+      { from: at(0, 0), to: at(5000, 0), departure: 0, speed: 3, xteLimit: 30, narrows: false },
       NEVER,
       0
     );

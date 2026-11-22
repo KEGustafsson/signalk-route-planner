@@ -25,8 +25,8 @@
       "expect": {
         "status": 200,
         "lengthNm": [18, 21.5],
-        "parts": ["harbour:start", "route", "harbour:end"],
-        "workAtMost": 11000000
+        "parts": ["harbour:start", "route", "narrows", "route", "harbour:end"],
+        "workAtMost": 14500000
       }
     },
     {
@@ -44,7 +44,7 @@
         "status": 200,
         "lengthNm": [18, 22.5],
         "parts": ["harbour:start", "route", "harbour:end"],
-        "workAtMost": 12000000
+        "workAtMost": 15000000
       }
     },
     {
@@ -60,9 +60,26 @@
       "expect": {
         "status": 200,
         "lengthNm": [18, 21.5],
-        "parts": ["harbour:start", "route", "harbour:end"],
+        "parts": ["harbour:start", "route", "narrows", "route", "harbour:end"],
         "routeStatuses": ["unverified"],
-        "workAtMost": 10500000
+        "workAtMost": 11500000
+      }
+    },
+    {
+      "name": "nauvo-killingholm-narrows",
+      "area": "turku",
+      "catzoc": 3,
+      "from": [21.91646, 60.19741],
+      "to": [22.00774, 60.21079],
+      "draft": 0.9,
+      "xteLimit": 30,
+      "accept": ["NOT_FOR_NAVIGATION"],
+      "maxWork": 1200000,
+      "expect": {
+        "status": 200,
+        "lengthNm": [2.9, 3.4],
+        "parts": ["route", "narrows", "route", "narrows"],
+        "workAtMost": 1200000
       }
     },
     {
@@ -91,7 +108,7 @@
       "expect": {
         "status": 200,
         "lengthNm": [0.9, 1.3],
-        "parts": ["route"],
+        "parts": ["narrows", "route"],
         "routeStatuses": ["ok", "marginal"],
         "workAtMost": 2500000
       }

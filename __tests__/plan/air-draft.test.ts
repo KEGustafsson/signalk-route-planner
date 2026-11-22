@@ -31,8 +31,9 @@ function bridged(tide: number, closed = false): Chart {
       { x: 2000, y: 4100, r: 1500 },
       ...(closed ? wall : [])
     ],
-    // Closed, the bridge spans the whole gap (-120..150 m at x = 2000): nothing passes beside it.
-    bridges: [{ x: 2000, y: 0, r: closed ? 160 : 60, clearance: 18 }],
+    // The bridge spans the whole gap (-120..150 m at x = 2000): nothing passes beside it, not
+    // even at the narrow corridor of a harbour stage or narrows.
+    bridges: [{ x: 2000, y: 0, r: 160, clearance: 18 }],
     tide: () => tide
   };
 }

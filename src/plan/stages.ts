@@ -1,6 +1,8 @@
 import type { LonLat } from "../foundation/geo";
 import type { PlanningApiV1, SessionParams, SessionResult, Verdict } from "../oracle/contract";
 import type { PassRule } from "../search/passes";
+import type { Main } from "./narrows";
+import { mainSearch } from "./narrows";
 import type { PlanOptions } from "./options";
 import { same } from "./proof";
 import type { SearchOutcome } from "./search";
@@ -11,16 +13,22 @@ import { searchRoute, WORK_LIMIT } from "./search";
  * corridor. When it cannot join the start or the destination, because the end lies in a
  * harbour narrower than that corridor, a harbour stage plans that end out to free water at
  * the narrow `harbourXte` corridor, in a session of its own, and the main search runs again
- * between the handover points. Each part is proved at its own corridor (`proof.ts`).
+ * between the handover points. The main search plans narrows (`narrows.ts`) at that corridor
+ * too. Each part is proved at its own corridor (`proof.ts`).
  */
 
 export interface Part {
-  kind: "harbour" | "route";
-  /** For a harbour part: the end it leaves from or arrives at. */
+  kind: "harbour" | "route" | "narrows";
+  /**
+   * A narrows part (`narrows.ts`) passes only at the harbour corridor, inside the route. For a
+   * harbour part: the end it leaves from or arrives at.
+   */
   end?: "start" | "end";
   coordinates: LonLat[];
   /** The cross-track limit the part was searched at and is proved at; absent: the default. */
   xteLimit?: number;
+  /** Proved with pilotage in swept water (`narrows.ts`), as it was searched. */
+  pilotage?: true;
   /** Set when no route passed and this part is the lowest risk-weighted route: why none passed. */
   fallback?: string;
   /** The inner point of the part's berth leg, from or to the end point. */
@@ -34,7 +42,7 @@ export type Staged =
   | { ok: false; refusal: Extract<SearchOutcome, { ok: false }>; direct: Verdict; work: number }
   | { ok: false; status: number; error: string };
 
-interface Stage {
+export interface Stage {
   api: PlanningApiV1;
   params: SessionParams;
   signal: AbortSignal;
@@ -42,6 +50,10 @@ interface Stage {
   rule: PassRule;
   fallback: boolean;
 }
+
+/** The parts of a main search's route: its narrows and the rest, or one route part. */
+const mainParts = (o: Extract<Main, { ok: true }>, xteLimit?: number): Part[] =>
+  o.parts ?? [routePart(o, xteLimit)];
 
 const routePart = (o: Extract<SearchOutcome, { ok: true }>, xteLimit?: number): Part => ({
   kind: "route",
@@ -199,10 +211,7 @@ export async function stages(
   to: LonLat,
   xteLimit?: number
 ): Promise<Staged> {
-  const run = (a: LonLat, b: LonLat, opts: Partial<PlanOptions>) =>
-    st.api.session(st.params, st.signal, (s) =>
-      searchRoute(s, a, b, { ...st.opts, ...opts }, st.rule, st.fallback)
-    );
+  const run: Run = (a, b, opts) => mainSearch(st, [a, b], opts, xteLimit);
   const first = await run(from, to, {});
   if (!first.ok) {
     return first;
@@ -211,7 +220,7 @@ export async function stages(
   if (o.ok) {
     return {
       ok: true,
-      parts: [routePart(o, xteLimit)],
+      parts: mainParts(o, xteLimit),
       direct: o.direct,
       work: o.work,
       squares: o.squares
@@ -227,11 +236,7 @@ export async function stages(
   return between(st, o, h, [from, to], xteLimit, run);
 }
 
-type Run = (
-  a: LonLat,
-  b: LonLat,
-  opts: Partial<PlanOptions>
-) => Promise<SessionResult<SearchOutcome>>;
+type Run = (a: LonLat, b: LonLat, opts: Partial<PlanOptions>) => Promise<SessionResult<Main>>;
 
 /** After the harbour stages: the main search between their handovers, within the one budget. */
 async function between(
@@ -276,6 +281,6 @@ async function between(
   if (work >= st.opts.maxWork) {
     return limit();
   }
-  const parts = harbourParts([routePart(inner.value, xteLimit)]);
+  const parts = harbourParts(mainParts(inner.value, xteLimit));
   return { ok: true, parts, direct: o.direct, work, squares: h.squares + inner.value.squares };
 }

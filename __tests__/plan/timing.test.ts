@@ -43,6 +43,8 @@ async function planned(chart: Chart, fallback?: boolean) {
       from: at(0, 0),
       to: at(5000, 0),
       departure: NOW,
+      // Tide timing at the request's corridor alone: `narrows.test.ts` times narrows.
+      narrows: false,
       speed: 3,
       ...(fallback !== undefined && { fallback })
     },

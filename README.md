@@ -66,6 +66,14 @@ or destination is not in water the check passes, or the search reached its work 
 4. signalk-underkeel's route check checks the final route at its departure, each leg at its own
    arrival time. The statuses you see are that check's.
 
+A sound or fairway narrower than the corridor (the route check's cross-track limit plus its
+planning buffer) is planned through at the harbour corridor, 10 m. The search runs at that
+corridor, and water only it passes costs twice as much per metre, unless it lies on a charted
+fairway line laid out for the boat's draft: the route keeps your corridor where the way round
+costs less and follows the fairway through a sound where it does not. The legs your corridor does
+not pass are checked at 10 m and named in the panel: keep to the fairway there. **Through sounds
+and fairways narrower than the corridor**, on by default, turns this off (`narrows: false`).
+
 `docs/DEVELOPMENT-PLAN.md` describes the design and the milestones that follow: planning past
 the chart box, waiting for the tide, risk-weighted alternatives, air draft under bridges and
 seamanship rules.
@@ -102,6 +110,19 @@ route that used neither lists none.
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
 `preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the
 machine is 413 with underkeel's reason.
+
+A fairway narrower than the search can resolve is followed along its charted navigation line;
+with signalk-underkeel's pilotage, a leg between the marks of a swept fairway is checked at the
+boat's planned position accuracy rather than the least position buffer, flagged `PILOTAGE`: the
+configured σ, or the boat's own fix over the last week when that has been worse; pilotage does
+not use the current fix directly. Such a leg carries
+`pilotage: { buffer, room }`, the room being how far off the line its swept water reaches; the
+panel shows it as "keep within ±room m", and underway signalk-underkeel warns when the live fix
+is wider than the room of the leg the boat is on.
+
+`narrows: false` keeps every leg but a harbour stage's to the request's corridor; by default a
+passage narrower than it is planned at the harbour corridor (above), in parts the reply marks
+(`check.parts[].part: "narrows"`, `xteLimit: 0`).
 
 An end in a harbour narrower than the corridor (a guest harbour in a river, a marina) is planned
 out to open water in a harbour stage at a 10 m corridor, and a point alongside a quay leaves by a

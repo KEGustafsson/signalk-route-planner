@@ -37,10 +37,17 @@ Data: the Traficom INSPIRE WFS (`DepthArea_A`, `Sounding_P`) through signalk-und
 client. It is not for navigation, so every leg is at best `unverified`. It carries no survey
 quality, so each case assumes a CATZOC.
 
-| Case                      | Assumed CATZOC | Result (2026-11-21)                                   | Work (unsteered) |
-| ------------------------- | -------------- | ----------------------------------------------------- | ---------------: |
-| `turku-guest-harbours-b`  | B              | 19.8 nm, 32 legs: harbour stage, route, harbour stage |    9.8 M (9.6 M) |
-| `turku-guest-harbours-a1` | A1             | 19.7 nm, 30 legs: harbour stage, route, harbour stage |    9.5 M (9.2 M) |
+| Case                      | Assumed CATZOC | Result (2026-11-22)                                                  | Work (before: steered, unsteered) |
+| ------------------------- | -------------- | -------------------------------------------------------------------- | --------------------------------: |
+| `turku-guest-harbours-b`  | B              | 19.9 nm, 31 legs: harbour stage, route with a narrows, harbour stage |             13.8 M (9.8 M, 9.6 M) |
+| `turku-guest-harbours-a1` | A1             | 19.1 nm, 32 legs: harbour stage, route with a narrows, harbour stage |             10.8 M (9.5 M, 9.2 M) |
+
+- Narrows (plan §4.1 step 14, 2026-11-22): the main search runs at the harbour corridor with
+  narrow water off the fairway lines priced, so both routes cross one stretch the 10 m xte
+  corridor does not pass in a `narrows` part, 0.6 nm shorter at A1 than before. The search at the
+  harbour corridor is fine and asks about smaller squares: B took 13.8 M work against 9.8 M, A1
+  10.8 M against 9.5 M, and B with lines 14.5 M against 10.8 M.
+- The work in brackets is from 2026-11-21, before narrows; it has not been re-run unsteered since.
 
 - Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
   search was steered along a coarse path (`src/plan/steer.ts`).
@@ -55,16 +62,34 @@ quality, so each case assumes a CATZOC.
   `fail`, at a charted 0 m. The river is deep enough on the chart; the WFS does not say so.
 - The Nauvo end reaches the guest harbour through its harbour stage, `unverified`.
 
+## Nauvo → Kaldö through Killingholms sund (Finland)
+
+`nauvo-killingholm-narrows`, on the Turku WFS cell, plans from the basin off Nauvo guest harbour
+(21.91646 E, 60.19741 N) east to the fairway off Kaldö (22.00774 E, 60.21079 N) for a 0.9 m
+draft at the route check's default xte of 30 m, at the plugin's default 1.2 M work budget. The
+FTIA's navigation line through the sound is laid out for 4.3 m, and the WFS land is 19.7 m from
+it at 21.926 E.
+
+| Run                         | Result                                                     |   Work |
+| --------------------------- | ---------------------------------------------------------- | -----: |
+| narrows (2026-11-22)        | 3.2 nm, 10 legs through the sound: route and narrows parts | 1.19 M |
+| before narrows, 12 M budget | refused at the work limit                                  | 11.2 M |
+| before narrows, xte 10 m    | 5.4 nm round Svartholm to the north                        |  1.8 M |
+
 ## Miami from sea (Florida)
 
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
 start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 
-| Case                        | Result (2026-11-21)                                                     | Work (unsteered) |
-| --------------------------- | ----------------------------------------------------------------------- | ---------------: |
-| `miami-fisher-island-basin` | 1.02 nm, 4 legs through Government Cut, all `ok`                        |    2.5 M (2.5 M) |
-| `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     |  26.0 M (25.8 M) |
-| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |    2.9 M (2.9 M) |
+| Case                        | Result (2026-11-22)                                                     | Work (before: steered, unsteered) |
+| --------------------------- | ----------------------------------------------------------------------- | --------------------------------: |
+| `miami-fisher-island-basin` | 1.02 nm, 6 legs through Government Cut, one narrows leg at the basin    |             0.69 M (2.5 M, 2.5 M) |
+| `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     |           23.4 M (26.0 M, 25.8 M) |
+| `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |              2.7 M (2.9 M, 2.9 M) |
+
+- With narrows the main search names the free water near an end it cannot join, so an end in a
+  marina goes to its harbour stage without a second search at the request's corridor: Bayside and
+  Beach Marina take less work than before.
 
 - Bayside's route is the fallback's, at risk 0.99 steered or not. Most of its work is the strict
   searches R3d runs first at the boat's own timing; the steered first pass alone took 19.7 M. The short Fisher Island and
@@ -80,9 +105,10 @@ which no state of the water level clears, and refuses naming that leg: the gate 
 wait for a leg the tide cannot open.
 
 `turku-guest-harbours-b-lines` plans Turku to Nauvo with `preferLines` on the WFS cell with the
-FTIA's navigation lines (474 of them in the area): 19.9 nm in 33 legs, keeping to the lines,
-against 19.8 nm in 32 without them, for 10.8 M work units against 9.8 M. A search with lines is
-not steered: the guide would drown their discount.
+FTIA's navigation lines (474 of them in the area): in the same run as the table above
+(2026-11-22), 20.0 nm in 51 legs, keeping to the lines, against 19.9 nm in 31 legs without them
+(`turku-guest-harbours-b`), for 14.5 M work units against 13.8 M. A search with lines is not
+steered: the guide would drown their discount.
 
 Drawing routes tight (plan §4.1 steps 3 and 4) took the Turku cases from 37 and 40 legs to 32
 and 30, 20.2 nm to 19.8 nm and 21.3 nm to 19.7 nm, and the harbour stages' failing legs from 10

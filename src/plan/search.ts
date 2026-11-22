@@ -14,6 +14,8 @@ import {
   strictWeight,
   verdictWeight
 } from "../search/fallback";
+import type { Narrow } from "../search/narrow";
+import { narrowShare } from "../search/narrow";
 import type { Preferred, PreferredLine } from "../search/prefer";
 import { offLine, offShare, preferredIn, splitsForLines } from "../search/prefer";
 import type { Priced, Shortcut } from "../search/pull";
@@ -26,7 +28,7 @@ import { memoBoxes } from "../search/guide";
 import { between } from "./between";
 import { stuckEnds } from "./handover";
 import type { Mode } from "./modes";
-import { fallbackMode, preferring, riskCostOf, strictMode } from "./modes";
+import { fallbackMode, narrowing, preferring, riskCostOf, strictMode } from "./modes";
 import { keepsDirect, treeFor } from "./region";
 import { guides } from "./steer";
 
@@ -107,6 +109,12 @@ interface Access {
 
 export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
+
+/** The search reached every square it could from both joined ends, and none led through. */
+export const NO_WAY =
+  "no route the check passes connects the points: land, shoals or obstacles close every way";
+export const UNVERIFIED_WAY =
+  "no route the check passes connects the points; the search met water the check cannot verify (no chart coverage or unassessed survey), which a route may need";
 
 /**
  * The square the search leaves from or arrives at for point `p`: the one holding
@@ -300,12 +308,7 @@ async function attempt(
   const found = await between(tree, session, [start, goal], opts, { mode, exhausted, guide });
   if (!found.found) {
     return {
-      reason:
-        found.reason === "work"
-          ? WORK_LIMIT
-          : tree.unverified > 0
-            ? "no route the check passes connects the points; the search met water the check cannot verify (no chart coverage or unassessed survey), which a route may need"
-            : "no route the check passes connects the points: land, shoals or obstacles close every way"
+      reason: found.reason === "work" ? WORK_LIMIT : tree.unverified > 0 ? UNVERIFIED_WAY : NO_WAY
     };
   }
   return pathOf(tree, [start, goal], ends, found.points);
@@ -324,28 +327,31 @@ async function searchTree(
   session: Session,
   ends: [LonLat, LonLat],
   opts: PlanOptions,
-  how: { rule: PassRule; fallback: boolean; berth: number; pref?: Preferred }
+  how: { rule: PassRule; fallback: boolean; berth: number; pref?: Preferred; narrow?: Narrow }
 ): Promise<Searched> {
   const cost = riskCostOf(opts, how.rule);
-  const { pref } = how;
-  const strictWith = preferring(strictMode(how.rule, cost), pref);
-  const fallbackWith = preferring(fallbackMode(cost), pref);
+  const { pref, narrow } = how;
+  const strictWith = narrowing(preferring(strictMode(how.rule, cost), pref), narrow);
+  const fallbackWith = narrowing(preferring(fallbackMode(cost), pref), narrow);
   const guide = guides(tree, session, how.rule, ends, opts);
   const strict = await attempt(tree, session, ends, opts, strictWith, how.berth, guide(1));
-  // With a risk cost or lines, pulling keeps to what the search paid for, by one price for all.
+  // With a risk cost, lines or narrow water, pulling keeps to what the search paid for, by one
+  // price for all: a shortcut through narrow water costs what the squares it crosses cost.
   const pulling = (path: LonLat[], mode: Mode, fallback: boolean) => {
     // A fallback route is straightened by its own rule (`riskyShortcut`) unless it carries a
     // risk cost: priced at a whole leg's verdict, its shortcuts through risky water never pass.
-    if (!cost && (!pref || fallback)) {
+    if (!cost && (fallback || (!pref && !narrow))) {
       return {};
     }
+    const stop = () => session.work() >= opts.maxWork;
     const priced = costShortcut(
       tree,
       path,
       (n) => mode.weight?.(n) ?? 1,
       (v, a, b) =>
         verdictWeight(v, how.rule, { fallback, cost }) +
-        (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0),
+        (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0) +
+        (narrow ? narrow.weight * narrowShare(narrow, tree, a, b, stop) : 0),
       cost
     );
     return { priced };
@@ -412,10 +418,8 @@ export async function searchRoute(
   const session = memoBoxes(chart);
   const direct = checkLeg(session, from, to);
   const cost = riskCostOf(opts, rule);
-  const { tree, pref, shapeError } = treeFor(session, [from, to], opts, rule, cost);
-  if (keepsDirect(direct, { rule, opts, cost, tree, pref }, [from, to])) {
-    return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
-  }
+  const { tree, pref, narrow, shapeError } = treeFor(session, [from, to], opts, rule, cost);
+  const spent = (): boolean => session.work() >= opts.maxWork;
   const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,
     reason,
@@ -425,6 +429,12 @@ export async function searchRoute(
     work: session.work(),
     ...(stuck && { stuck })
   });
+  if (keepsDirect(direct, { rule, opts, cost, tree, pref, narrow, stop: spent }, [from, to])) {
+    // Classifying its narrow water may have spent the work, and stopped before it was done.
+    return spent()
+      ? refuse(WORK_LIMIT)
+      : { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
+  }
   if (!tree) {
     return refuse(shapeError as string);
   }
@@ -432,7 +442,8 @@ export async function searchRoute(
     rule,
     fallback,
     berth,
-    ...(pref && { pref })
+    pref,
+    narrow
   });
   if ("reason" in found) {
     return refuse(found.reason, found.stuck);
@@ -453,7 +464,7 @@ export async function searchRoute(
     coordinates,
     (a, b) => checkLeg(session, a, b),
     { session, maxWork: opts.maxWork },
-    tautRule(tree, rule, { fallback: found.fallback !== undefined, cost, pref })
+    tautRule(tree, rule, { fallback: found.fallback !== undefined, cost, pref, narrow })
   );
   // Refinement's last checked leg may have taken the work past the limit.
   if (session.work() >= opts.maxWork) {

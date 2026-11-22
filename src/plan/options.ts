@@ -70,6 +70,19 @@ export interface PlanOptions {
    * this cross-track limit (the planning API's buffer alone at 0), metres.
    */
   harbourXte: number;
+  /**
+   * Narrows (`narrows.ts`, plan §4.1 step 14): the main search runs at the harbour corridor
+   * (`harbourXte`), and water only that corridor passes, not the request's, costs
+   * `narrowWeight` more per metre. Off: every leg but a harbour stage's keeps to the request's
+   * corridor.
+   */
+  narrows: boolean;
+  narrowWeight: number;
+  /**
+   * Set by narrows for its search alone: the request's corridor less the session's, metres. A
+   * square whose box grown by it does not pass is narrow water. 0: no narrow water.
+   */
+  wideMargin: number;
   /** The harbour stage reaches at most this far from its end, metres. */
   harbourMetres: number;
   /** The harbour stage's region reaches past its end and its handover by this, metres. */
@@ -146,6 +159,9 @@ export const DEFAULT_PLAN: PlanOptions = {
   nowReach: 1.3,
   timingSlack: 0.2,
   harbourXte: 0,
+  narrows: true,
+  narrowWeight: 1,
+  wideMargin: 0,
   harbourMetres: 3000,
   harbourMargin: 300,
   berthMetres: 40,
@@ -205,15 +221,16 @@ export function withWorkSetting(
       };
 }
 
-/** `opts` with a request's own risk weight, preference for lines and draft for them. */
+/** `opts` with a request's own risk weight, preference for lines, narrows and draft for lines. */
 export function requestOptions(
   opts: PlanOptions,
-  input: { riskWeight?: number; preferLines?: boolean; draft?: number }
+  input: { riskWeight?: number; preferLines?: boolean; narrows?: boolean; draft?: number }
 ): PlanOptions {
   return {
     ...opts,
     riskWeight: input.riskWeight ?? opts.riskWeight,
     preferLines: input.preferLines ?? opts.preferLines,
+    narrows: input.narrows ?? opts.narrows,
     ...(input.draft !== undefined && { preferDraft: input.draft })
   };
 }

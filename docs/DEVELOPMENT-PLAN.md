@@ -199,6 +199,50 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     touches, but a berth leg is never taken into water a hard rule or no chart closes. The
     planner cannot check a berth leg, so the panel says to steer it by eye. Defaults are in
     `src/plan/options.ts`.
+14. **Narrows.** A sound or a fairway narrower than the request's corridor closes the main search
+    as a harbour closes an end: through Killingholms sund at Nauvo the land is 19.7 m from the
+    FTIA's 4.3 m navigation line, and at the route check's default xte of 30 m (40 m half-width)
+    the planner refused the 3.1 nm passage at the work limit or, at xte 10 m, went 5.4 nm round
+    it. So the main search runs at the harbour corridor (`harbourXte`), with the fallback when the
+    request asks for one, and water only that corridor passes costs `narrowWeight`
+    (`src/plan/options.ts`) more per metre, except on a charted line (`NAVLINE`, `NAVLNE`,
+    `RECTRC`, `TRACK`, not one laid out for less than the draft): there a corridor narrower than
+    the request's is how the fairway is laid out. The route keeps the request's corridor wherever
+    the way round costs less. The search is fine, without the guide and at `FINE_GREED`
+    (`Mode.fine` in `src/plan/modes.ts`, `src/plan/between.ts`), as for a risk cost: the way
+    through a sound and the way round may differ by less than weighted A\*'s slack (Turku to
+    Nauvo went 5 % round Seili with it). Which squares are narrow and how a leg is priced is in
+    `src/search/narrow.ts`; the route's parts are in `src/plan/narrows.ts`. A leg the request's
+    corridor passes is in a `route` part at that corridor, every other leg in a `narrows` part at
+    the harbour corridor; each part is proved at its own corridor (step 5), and the panel names
+    the narrow legs. No search at the request's corridor follows: every square and leg it passes
+    the harbour corridor passes too. Narrows are off with a risk cost (`riskWeight` > 0: the
+    balanced and safest alternatives ask for room), when the request's corridor is no wider than
+    the harbour's, and with `narrows: false`.
+    - Decided: on by default. A corridor of the request's xte is a choice of comfort the
+      archipelago's fairways do not leave room for; the legs it does not hold to are named, and
+      the route check still decides each leg at the corridor it is planned at.
+    - Cost: proving no way at the harbour corridor asks about about three times the squares the
+      request's corridor does (a tide-gated bar: 0.80 M work against 0.16 M), so the plan's
+      budget runs out sooner where no strict route exists.
+    - Pricing is by square: a 10 m square counts as narrow when any of its corridor reaches the
+      request's limit, so a leg round an island keeps up to a square further off than the
+      request's corridor alone would (5187 m against 5175 m on the staggered-islands test).
+
+15. **Fairway stage.** A swept fairway can be narrower than any square the work budget lets the
+    search free, though a leg along its navigation line passes: Sattmarkssundet's boat route is
+    swept 10–14 m either side of its line, and a 10 m square checked at the harbour corridor is
+    about 21 m wide. So the main search also follows the charted lines as a graph
+    (`src/plan/fairway.ts`). Its way is a candidate like the search's: it is offered only when
+    every leg of it passed its check within the work, and the route check decides (invariant 1).
+    It replaces the search's route only when the search found no strict route, only a fallback,
+    or one over `FAIRWAY_GAIN` (10 %) longer (`src/plan/narrows.ts`). With signalk-underkeel's
+    `pilotage` it runs in a session of its own asked with pilotage, so a leg in water swept to its
+    marks is held to the boat's measured position buffer (`PILOTAGE`), and its narrows parts are
+    proved with pilotage; the search's squares are not, as checking every square twice spent the
+    budget. A verdict's flags that only describe the water (`SWEPT`, `DREDGED`, `PILOTAGE`, …) no
+    longer keep an accepted `unverified` leg out (`search/passes.ts`). Fallböle to
+    Sattmarkssundet: 1.5 nm, 8 legs along the line, each `PILOTAGE`, where no route passed.
 
 ### 4.2 R2: planning beyond the chart box
 

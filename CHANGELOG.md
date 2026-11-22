@@ -23,6 +23,23 @@ All notable changes to signalk-route-planner are documented here.
 - Harbour stage: an end in a harbour narrower than the corridor is planned out to open water at
   a 10 m corridor, each part proved at its own corridor; a point alongside a quay leaves by a
   berth leg, marked in the reply and the panel.
+- Narrows: the main search runs at the harbour corridor, and water narrower than the request's
+  corridor costs twice as much per metre unless it lies on a charted fairway line, so a route
+  takes a sound or a fairway where the way round costs more and keeps the request's corridor
+  elsewhere. Legs the request's corridor does not pass are `narrows` parts proved at the harbour
+  corridor and named in the panel (`narrows: false` and a panel check box turn it off). Nauvo to
+  Kaldö through Killingholms sund at xte 30 m: 3.1 nm, where the plan was refused at the work
+  limit; Turku to Nauvo through the Seili fairway, 17.8 nm.
+- Fairway stage: the narrow search also follows the charted navigation lines, as a graph checked
+  leg by leg, through a swept fairway narrower than its squares, with signalk-underkeel's
+  pilotage where the provider offers it. Fallböle to Sattmarkssundet: 1.5 nm along the fairway,
+  where no route passed. Flags that describe the water (`DREDGED`, `PILOTAGE`, …) no longer keep
+  an accepted `unverified` leg out.
+- A piloted leg carries signalk-underkeel's `pilotage: { buffer, room }`, and the panel names its
+  room: "swept fairway, keep within ±3.3 m". Pilotage is planned at the boat's planned position
+  accuracy, never the fix of the moment.
+- A plan whose planning box signalk-underkeel released before its session ran is prepared and
+  planned again, once, rather than answering 503.
 - Less work per plan (field trials: Turku 18.4 M → 4.8 M work units, Miami Beach Marina 39 M →
   1.5 M): ends and harbour handovers join the nearest squares best first, A\* classifies a square
   only when it reaches it and weights its heuristic by 1.25, the strict search crosses marginal

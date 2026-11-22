@@ -15,6 +15,12 @@ import { at, legStatus, syntheticApi, xy } from "../helpers/synthetic-oracle";
 const NEVER = new AbortController().signal;
 const NOW = Date.parse("2026-11-18T07:00:00Z");
 
+/**
+ * The harbour stage alone: narrows (`narrows.ts`) would plan an inlet the harbour corridor joins
+ * without one; `narrows.test.ts` covers that.
+ */
+const HARBOUR = { ...DEFAULT_PLAN, narrows: false };
+
 /** A closed inlet 50 m wide, from x = -40 to x = 600 along y = 0, open to the sea east of it. */
 function inlet(): Circle[] {
   const walls: Circle[] = [];
@@ -37,7 +43,7 @@ interface Body {
   reason?: string;
 }
 
-async function planFrom(from: LonLat, opts = DEFAULT_PLAN, closed: Chart["closed"] = []) {
+async function planFrom(from: LonLat, opts = HARBOUR, closed: Chart["closed"] = []) {
   const chart: Chart = { obstacles: inlet(), closed };
   const api = syntheticApi(chart);
   const r = await plan(
@@ -97,26 +103,26 @@ describe("harbour stage", () => {
   test("a berth leg is never taken into an entry-prohibited area, quay or not", async () => {
     // The same berth, but the quayside it lies at is closed to entry.
     const closed = [{ x: 300, y: 18, r: 4, flag: "ENTRY_PROHIBITED" }];
-    const { r, body } = await planFrom(at(300, 18), DEFAULT_PLAN, closed);
+    const { r, body } = await planFrom(at(300, 18), HARBOUR, closed);
     expect(r.status).toBe(422);
     expect(body.berths).toBeUndefined();
   });
 
   test("without berth legs the same point is refused, naming the harbour stage", async () => {
-    const { r, body } = await planFrom(at(300, 18), { ...DEFAULT_PLAN, berthMetres: 0 });
+    const { r, body } = await planFrom(at(300, 18), { ...HARBOUR, berthMetres: 0 });
     expect(r.status).toBe(422);
     expect(body.reason).toMatch(/harbour stage found no way out from the start at xte 0 m/);
   });
 
   test("without a harbour stage the inlet end is refused as before", async () => {
-    const { r, body, api } = await planFrom(at(20, 0), { ...DEFAULT_PLAN, harbourMetres: 0 });
+    const { r, body, api } = await planFrom(at(20, 0), { ...HARBOUR, harbourMetres: 0 });
     expect(r.status).toBe(422);
     expect(body.reason).toMatch(/within 500 m of the start/);
     expect(api.sessions).toHaveLength(1);
   });
 
   test("an end with no free water within harbourMetres (open sea is 95 m off) is refused", async () => {
-    const { r } = await planFrom(at(20, 0), { ...DEFAULT_PLAN, harbourMetres: 50 });
+    const { r } = await planFrom(at(20, 0), { ...HARBOUR, harbourMetres: 50 });
     expect(r.status).toBe(422);
   });
 
@@ -127,7 +133,7 @@ describe("harbour stage", () => {
     // With the budget at 60 % of what the three sessions used together, a later stage
     // reaches the limit and the plan is refused, not offered past it.
     expect(full.api.sessions).toHaveLength(3);
-    const tight = await planFrom(at(20, 0), { ...DEFAULT_PLAN, maxWork: Math.floor(used * 0.6) });
+    const tight = await planFrom(at(20, 0), { ...HARBOUR, maxWork: Math.floor(used * 0.6) });
     expect(tight.r.status).toBe(422);
     expect(tight.body.reason).toMatch(/work limit/);
   });
@@ -146,7 +152,8 @@ describe("harbour stage", () => {
       api,
       { from: at(3000, 0), to: at(20, 0), departure: NOW, speed: 3, xteLimit: 30 },
       NEVER,
-      NOW
+      NOW,
+      HARBOUR
     );
     expect(r.status).toBe(200);
     const body = r.body as Body;
@@ -190,7 +197,7 @@ describe("harbour stage", () => {
   });
 
   test("the search for handovers stops at the search's share of the work", async () => {
-    const { r, body, api } = await planFrom(at(20, 0), { ...DEFAULT_PLAN, maxWork: 3000 });
+    const { r, body, api } = await planFrom(at(20, 0), { ...HARBOUR, maxWork: 3000 });
     expect(r.status).toBe(422);
     expect(body.reason).toMatch(/work limit/);
     expect(api.sessions).toHaveLength(1);
