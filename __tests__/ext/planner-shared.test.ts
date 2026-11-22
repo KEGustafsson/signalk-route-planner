@@ -124,6 +124,19 @@ describe("panel model", () => {
     expect(P.legLabel({ status: "fail", part: "harbour", berth: true })).toBe("fail (berth)");
     expect(P.legLabel({ status: "ok", part: "harbour" })).toBe("ok (harbour)");
     expect(P.legLabel({ status: "ok", part: "route" })).toBe("ok");
+    expect(P.legLabel({ status: "ok", part: "narrows", xteLimit: 0 })).toBe("ok (narrow, xte 0 m)");
+    expect(P.legLabel({ status: "unverified", part: "narrows", flags: ["PILOTAGE"] })).toBe(
+      "unverified (swept fairway, pilotage)"
+    );
+    const narrow = P.summary(200, {
+      status: "ok",
+      length: 3704,
+      check: { legs: [{ part: "route" }, { part: "narrows" }, { part: "narrows" }] }
+    }).text;
+    expect(narrow).toMatch(/2 legs pass water narrower than your corridor/);
+    expect(P.summary(200, { status: "ok", length: 1852, check: { legs: [{}] } }).text).not.toMatch(
+      /narrower/
+    );
     expect(P.summary(422, { reason: "land, shoals or obstacles close every way" })).toEqual({
       kind: "fail",
       text: "No route: land, shoals or obstacles close every way"

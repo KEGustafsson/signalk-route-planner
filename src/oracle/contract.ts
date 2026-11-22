@@ -35,6 +35,12 @@ export interface SessionParams {
    * water fail (`AIR_DRAFT`).
    */
   airHeight?: number;
+  /**
+   * With feature "pilotage": boxes and legs whose corridor at the boat's pilotage buffer lies in
+   * swept or dredged water all through are checked at it, flagged PILOTAGE; the rest at the
+   * planning buffer. `halfWidth` stays the planning buffer's.
+   */
+  pilotage?: boolean;
 }
 
 /**

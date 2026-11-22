@@ -40,7 +40,35 @@
   /** A leg's status for the leg table, with its part when it is not the open route. */
   function legLabel(leg) {
     const l = leg || {};
-    return l.berth ? l.status + " (berth)" : l.part === "harbour" ? l.status + " (harbour)" : l.status;
+    if (l.berth) {
+      return l.status + " (berth)";
+    }
+    if (l.part === "harbour") {
+      return l.status + " (harbour)";
+    }
+    if (l.part !== "narrows") {
+      return l.status;
+    }
+    // Checked at the boat's own position accuracy, in water swept to its marks.
+    const piloted = Array.isArray(l.flags) && l.flags.includes("PILOTAGE");
+    return l.status + (piloted ? " (swept fairway, pilotage)" : " (narrow, xte " + (l.xteLimit || 0) + " m)");
+  }
+
+  /** The sentence for legs through narrows, or "" when there are none. */
+  function narrowsText(legs) {
+    const n = legs.filter((l) => l && l.part === "narrows").length;
+    if (n === 0) {
+      return "";
+    }
+    return (
+      ". " +
+      n +
+      (n === 1 ? " leg passes" : " legs pass") +
+      " water narrower than your corridor, checked at the harbour corridor: keep to the fairway there" +
+      (legs.some((l) => l && Array.isArray(l.flags) && l.flags.includes("PILOTAGE"))
+        ? "; in a swept fairway at your GNSS accuracy: keep between its marks"
+        : "")
+    );
   }
 
   /** Metres as nautical miles with one decimal. */
@@ -142,6 +170,7 @@
           ": " +
           b.status +
           (b.status === "ok" ? "" : " (see the legs below)") +
+          narrowsText(legs) +
           (b.berths && b.berths.length
             ? ". Underway " +
               b.underway +

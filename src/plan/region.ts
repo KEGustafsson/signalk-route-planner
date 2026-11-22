@@ -4,9 +4,11 @@ import type { Bbox, Session, Verdict } from "../oracle/contract";
 import type { RiskCost } from "../search/fallback";
 import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
+import type { Narrow } from "../search/narrow";
+import { narrowIn, narrowShare, splitsNarrow } from "../search/narrow";
 import type { Preferred } from "../search/prefer";
-import { offShare, splitsForLines } from "../search/prefer";
-import type { TreeShape } from "../search/quadtree";
+import { offLine, offShare, splitsForLines } from "../search/prefer";
+import type { QuadNode, TreeShape } from "../search/quadtree";
 import { MAX_BOX_KM2, QuadTree } from "../search/quadtree";
 import { linesIn, weighs } from "./modes";
 import type { PlanOptions } from "./options";
@@ -100,19 +102,25 @@ export function keepsDirect(
     cost?: RiskCost;
     tree?: QuadTree;
     pref?: Preferred;
+    narrow?: Narrow;
   },
   [from, to]: [LonLat, LonLat]
 ): boolean {
   if (!passes(direct, c.rule) || weighs(c.opts, c.cost, direct.risk)) {
     return false;
   }
-  return !(c.pref && c.tree && offShare(c.pref, c.tree.units(from), c.tree.units(to)) > 0);
+  if (c.pref && c.tree && offShare(c.pref, c.tree.units(from), c.tree.units(to)) > 0) {
+    return false;
+  }
+  // A direct line through narrow water is searched around, as the search would price it.
+  return !(c.narrow && c.tree && narrowShare(c.narrow, c.tree, from, to) > 0);
 }
 
 /**
- * The region's quadtree and the preference lines in it, or why there is no region. A free
- * square is split where its risk weighs in the cost, down to `riskCell`, and where only part of
- * it lies near a line.
+ * The region's quadtree, the preference lines in it and its narrow water, or why there is no
+ * region. A free square is split where its risk weighs in the cost, down to `riskCell`, where
+ * only part of it lies near a line, and where it is narrow water larger than the margin that
+ * makes it so (`search/narrow.ts`).
  */
 export function treeFor(
   session: Session,
@@ -120,20 +128,34 @@ export function treeFor(
   opts: PlanOptions,
   rule: PassRule,
   cost: RiskCost | undefined
-): { tree?: QuadTree; pref?: Preferred; shapeError?: string } {
+): { tree?: QuadTree; pref?: Preferred; narrow?: Narrow; shapeError?: string } {
   const shape = shapeFor(ends[0], ends[1], session.halfWidth, opts, session.within);
   if (typeof shape === "string") {
     return { shapeError: shape };
   }
-  const lines: { pref?: Preferred } = {};
+  const held: { pref?: Preferred; narrow?: Narrow } = {};
   const tree = new QuadTree(
     shape,
     session,
     rule,
     (n, risk) =>
       (n.size * shape.unit > opts.riskCell && weighs(opts, cost, risk)) ||
-      (lines.pref !== undefined && splitsForLines(lines.pref, n))
+      (held.pref !== undefined && splitsForLines(held.pref, n)) ||
+      (held.narrow !== undefined && splitsNarrow(held.narrow, n, shape.unit))
   );
-  lines.pref = linesIn(tree, session, ends, opts);
-  return { tree, ...(lines.pref && { pref: lines.pref }) };
+  held.pref = linesIn(tree, session, ends, opts);
+  if (opts.wideMargin > 0) {
+    // The charted lines, whether or not the route keeps to them: narrow water on one is free.
+    const lines = held.pref ?? linesIn(tree, session, ends, { ...opts, preferLines: true });
+    held.narrow = narrowIn(tree, session, rule, {
+      margin: opts.wideMargin,
+      weight: opts.narrowWeight,
+      ...(lines && { fairway: (n: QuadNode) => offLine(lines, n) === 0 })
+    });
+  }
+  return {
+    tree,
+    ...(held.pref && { pref: held.pref }),
+    ...(held.narrow && { narrow: held.narrow })
+  };
 }

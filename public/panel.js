@@ -126,6 +126,7 @@ function requestFor(ends, alternatives = $("alternatives").checked) {
     ...($("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
     ...($("fallback").checked && { fallback: true }),
     ...($("lines").checked && { preferLines: true }),
+    ...(!$("narrows").checked && { narrows: false }),
     // Alternatives are planned at one departure: the panel's wait for the tide is left out.
     ...(alternatives
       ? { alternatives: true }

@@ -1,3 +1,4 @@
+import type { PlanRequest } from "./api/plan-request";
 import { parsePlanRequest } from "./api/plan-request";
 import type { ApiProvider } from "./api/routes";
 import { publicReason } from "./foundation/public-text";
@@ -6,6 +7,7 @@ import { planningApi } from "./oracle/contract";
 import { haversine } from "./foundation/geo";
 import type { PlanOptions } from "./plan/options";
 import { DEFAULT_PLAN, limitsFor } from "./plan/options";
+import type { PlanInput } from "./plan/plan";
 import { plan } from "./plan/plan";
 import { longTrip, Preparer, tripLimits } from "./plan/prepare";
 import { WorkRate } from "./plan/work-rate";
@@ -60,6 +62,39 @@ export function workStatus(opts: PlanOptions, rate: WorkRate): WorkStatus {
   };
 }
 
+/** Underkeel's refusal of a session on a planning box it has released since preparing it. */
+const RELEASED = "the planning box was released; prepare it again";
+
+/** Whether `reply` is underkeel's refusal of a released planning box. */
+export function boxReleased(reply: Reply): boolean {
+  const errors = (reply.body as { errors?: unknown } | null)?.errors;
+  return reply.status === 503 && Array.isArray(errors) && errors.includes(RELEASED);
+}
+
+/** The plan's input from a request, leaving at `started` unless it names a departure. */
+function inputOf(req: PlanRequest, started: number, speed: number): PlanInput {
+  return {
+    from: req.from,
+    to: req.to,
+    departure: req.departure ?? started,
+    speed: req.speed ?? speed,
+    xteLimit: req.xteLimit,
+    probability: req.probability,
+    draft: req.draft,
+    airHeight: req.airHeight,
+    accept: req.accept,
+    fallback: req.fallback,
+    latestDeparture: req.latestDeparture,
+    waitEnRoute: req.waitEnRoute,
+    waitPoints: req.waitPoints,
+    riskWeight: req.riskWeight,
+    riskBudget: req.riskBudget,
+    alternatives: req.alternatives,
+    preferLines: req.preferLines,
+    narrows: req.narrows
+  };
+}
+
 export function apiFor(
   clock: Clock,
   running: () => AbortSignal | undefined,
@@ -68,6 +103,40 @@ export function apiFor(
 ): ApiProvider {
   const base = hooks.limits ?? (() => DEFAULT_PLAN);
   const rate = hooks.rate ?? new WorkRate();
+  /** The trip's index prepared, then the plan on it. */
+  const planOnce = async (
+    found: PlanningApiV1,
+    req: PlanRequest,
+    stop: AbortSignal,
+    client: AbortSignal
+  ): Promise<Reply> => {
+    // A trip plan() refuses (too long, or no distance at all) builds no index.
+    const dist = haversine(req.from, req.to);
+    // Past maxDistance a trip is planned only where underkeel can survey: in a corridor, or in a
+    // planning box where the machine builds its region.
+    const opts = base();
+    const reach = limitsFor(opts, dist, longTrip(found, dist, opts)).maxDistance;
+    const near = dist >= 1 && dist <= reach;
+    // The corridor, if one is needed, is found for the request's draft.
+    const api = near ? await preparer.forTrip(found, req.from, req.to, stop, req.draft) : found;
+    if (!("version" in api)) {
+      return api;
+    }
+    const limits = tripLimits(found, api, dist, opts);
+    const d = api.defaults();
+    // Timed for the rate alone: the budget is in work units, so the plan is the same anywhere.
+    const started = clock.now();
+    const reply = await plan(
+      api,
+      inputOf(req, started, d.speed),
+      AbortSignal.any([client, stop]),
+      started,
+      limits
+    );
+    rate.record((reply.body as { work?: unknown } | null)?.work, clock.now() - started);
+    hooks.planned?.();
+    return reply;
+  };
   return {
     status: () => {
       const api = ready();
@@ -89,49 +158,12 @@ export function apiFor(
         return { status: 503, body: { errors: [found] } };
       }
       const req = parsed.value;
-      // A trip plan() refuses (too long, or no distance at all) builds no index.
-      const dist = haversine(req.from, req.to);
-      // Past maxDistance a trip is planned only where underkeel can survey: in a corridor, or in a
-      // planning box where the machine builds its region.
-      const opts = base();
-      const reach = limitsFor(opts, dist, longTrip(found, dist, opts)).maxDistance;
-      const near = dist >= 1 && dist <= reach;
-      // The corridor, if one is needed, is found for the request's draft.
-      const api = near ? await preparer.forTrip(found, req.from, req.to, stop, req.draft) : found;
-      if (!("version" in api)) {
-        return api;
+      // A planning box underkeel releases between preparing it and a session on it (a build for
+      // another trip, or the box around the vessel, replaced it) is prepared again, once.
+      let reply = await planOnce(found, req, stop, client);
+      if (boxReleased(reply)) {
+        reply = await planOnce(found, req, stop, client);
       }
-      const limits = tripLimits(found, api, dist, opts);
-      const d = api.defaults();
-      // Timed for the rate alone: the budget is in work units, so the plan is the same anywhere.
-      const started = clock.now();
-      const reply = await plan(
-        api,
-        {
-          from: req.from,
-          to: req.to,
-          departure: req.departure ?? started,
-          speed: req.speed ?? d.speed,
-          xteLimit: req.xteLimit,
-          probability: req.probability,
-          draft: req.draft,
-          airHeight: req.airHeight,
-          accept: req.accept,
-          fallback: req.fallback,
-          latestDeparture: req.latestDeparture,
-          waitEnRoute: req.waitEnRoute,
-          waitPoints: req.waitPoints,
-          riskWeight: req.riskWeight,
-          riskBudget: req.riskBudget,
-          alternatives: req.alternatives,
-          preferLines: req.preferLines
-        },
-        AbortSignal.any([client, stop]),
-        started,
-        limits
-      );
-      rate.record((reply.body as { work?: unknown } | null)?.work, clock.now() - started);
-      hooks.planned?.();
       return reply;
     }
   };

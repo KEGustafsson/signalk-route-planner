@@ -32,6 +32,8 @@ export interface PlanRequest {
   alternatives?: boolean;
   /** Keep to leading lines, fairway lines and the boat's own tracks. */
   preferLines?: boolean;
+  /** Plan passages narrower than the corridor at the harbour corridor (`plan/narrows.ts`). */
+  narrows?: boolean;
 }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: string[] };
@@ -228,6 +230,10 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
   if (b.preferLines !== undefined && preferLines === undefined) {
     errors.push("preferLines must be true or false");
   }
+  const narrows = typeof b.narrows === "boolean" ? b.narrows : undefined;
+  if (b.narrows !== undefined && narrows === undefined) {
+    errors.push("narrows must be true or false");
+  }
   if (errors.length > 0 || !from || !to) {
     return { ok: false, errors };
   }
@@ -250,7 +256,8 @@ export function parsePlanRequest(body: unknown, now: number): Parsed<PlanRequest
         riskWeight,
         riskBudget,
         alternatives,
-        preferLines
+        preferLines,
+        narrows
       }).filter(([, v]) => v !== undefined)
     )
   );

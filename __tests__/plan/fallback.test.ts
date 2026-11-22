@@ -29,7 +29,8 @@ function wall(gap?: "shallows" | "land"): Chart {
 async function run(chart: Chart, fallback?: boolean) {
   return plan(
     syntheticApi(chart),
-    { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3, fallback },
+    // The fallback at the request's corridor alone: `narrows.test.ts` covers it with narrows.
+    { from: at(0, 0), to: at(5000, 0), departure: NOW, speed: 3, fallback, narrows: false },
     NEVER,
     NOW
   );

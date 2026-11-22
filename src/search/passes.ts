@@ -18,15 +18,32 @@ export const ACCEPTABLE_FLAGS = ["NOT_FOR_NAVIGATION"] as const;
 
 export const OK_ONLY: PassRule = { accept: [], probability: 0 };
 
+/**
+ * Flags that describe the water and never leave a verdict unverified: an `ok` verdict carries
+ * them too. An `unverified` one passes on its other flags alone (signalk-underkeel's swept or
+ * dredged fairway in a cell not for navigation reads `DREDGED`, `NOT_FOR_NAVIGATION`).
+ */
+const DESCRIBES = new Set([
+  "SWEPT",
+  "DREDGED",
+  "LIVECHART_ADJUSTED",
+  "PILOTAGE",
+  "TRAFFIC_LANE",
+  "CLEARANCE_RISE_ASSUMED",
+  "ENTRY_RESTRICTED",
+  "AREA_TO_BE_AVOIDED"
+]);
+
 export function passes(v: Verdict, rule: PassRule): boolean {
   if (v.status === "ok") {
     return true;
   }
+  const causes = v.flags.filter((f) => !DESCRIBES.has(f));
   return (
     v.status === "unverified" &&
     rule.accept.length > 0 &&
-    v.flags.length > 0 &&
-    v.flags.every((f) => rule.accept.includes(f)) &&
+    causes.length > 0 &&
+    causes.every((f) => rule.accept.includes(f)) &&
     v.risk < rule.probability
   );
 }

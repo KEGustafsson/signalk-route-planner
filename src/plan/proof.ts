@@ -27,7 +27,7 @@ export interface CheckedLeg {
   risk: number;
   flags: string[];
   /** The part the leg belongs to, and the corridor it was checked at. */
-  part: "harbour" | "route";
+  part: "harbour" | "route" | "narrows";
   xteLimit?: number;
   /** True for a berth leg: alongside a quay or pier, inside even the harbour corridor. */
   berth?: true;
@@ -36,7 +36,7 @@ export interface CheckedLeg {
 export interface Proof {
   legs: CheckedLeg[];
   parts: {
-    part: "harbour" | "route";
+    part: "harbour" | "route" | "narrows";
     end?: "start" | "end";
     xteLimit?: number;
     legs: [number, number];
@@ -72,6 +72,7 @@ function checkBody(input: ProofInput, part: Part, departure: number): unknown {
     departure: new Date(departure).toISOString(),
     speed: input.speed,
     ...(part.xteLimit !== undefined && { xteLimit: part.xteLimit }),
+    ...(part.pilotage && { pilotage: true }),
     ...(input.probability !== undefined && { probability: input.probability }),
     ...((input.draft !== undefined || input.airHeight !== undefined) && {
       vessel: {

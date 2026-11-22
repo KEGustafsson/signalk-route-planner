@@ -9,7 +9,7 @@ import {
   tripLimits,
   tripRegion
 } from "../../src/plan/prepare";
-import { apiFor } from "../../src/plugin-api";
+import { boxReleased, apiFor } from "../../src/plugin-api";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
@@ -396,5 +396,64 @@ describe("tripLimits", () => {
     expect(box.maxWork).toBe(40 * DEFAULT_PLAN.workPerKm);
     const corridor = onPrepared(p.api, p.prepared, [[21, 59, 23, 61]]);
     expect(tripLimits(p.api, corridor, 40_000).maxWork).toBeGreaterThan(DEFAULT_PLAN.maxWork);
+  });
+});
+
+describe("/plan on a planning box released under it", () => {
+  afterEach(() => {
+    delete g[PLANNING_API];
+  });
+
+  /** A provider whose first `fail` sessions find the planning box released. */
+  function releasing(fail: number) {
+    const inner = syntheticApi({ obstacles: [{ x: 2500, y: 0, r: 600 }] });
+    let sessions = 0;
+    const api: PlanningApiV1 = {
+      ...inner,
+      session: (params, signal, job) =>
+        ++sessions <= fail
+          ? Promise.resolve({
+              ok: false as const,
+              status: 503,
+              error: "the planning box was released; prepare it again"
+            })
+          : inner.session(params, signal, job)
+    };
+    return { api, count: () => sessions };
+  }
+
+  test("is prepared and planned again, once", async () => {
+    const p = releasing(1);
+    g[PLANNING_API] = p.api;
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+    const r = await api.plan({ from: at(0, 0), to: at(5000, 0) }, new AbortController().signal);
+    expect(r.status).toBe(200);
+    expect(boxReleased(r)).toBe(false);
+  });
+
+  test("released again, the refusal is the answer: never a route", async () => {
+    const p = releasing(1000);
+    g[PLANNING_API] = p.api;
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+    const r = await api.plan({ from: at(0, 0), to: at(5000, 0) }, new AbortController().signal);
+    expect(r.status).toBe(503);
+    expect(boxReleased(r)).toBe(true);
+    expect(p.count()).toBe(2);
+  });
+});
+
+describe("a prepared index's session features", () => {
+  test("objects and pilotage are served over it; prepare, survey and corridor are not", () => {
+    const api = {
+      ...syntheticApi({ obstacles: [] }),
+      features: ["prepare", "survey", "corridor", "objects", "pilotage"]
+    };
+    const prepared: Prepared = {
+      coverage: [21, 59, 23, 61],
+      session: api.session.bind(api),
+      routeCheck: api.routeCheck.bind(api),
+      release: () => undefined
+    };
+    expect(onPrepared(api, prepared).features).toEqual(["objects", "pilotage"]);
   });
 });

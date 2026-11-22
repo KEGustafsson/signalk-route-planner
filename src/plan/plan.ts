@@ -54,6 +54,11 @@ export interface PlanInput {
   waitPoints?: LonLat[];
   /** Keep to leading lines, fairway lines and own tracks (`search/prefer.ts`). */
   preferLines?: boolean;
+  /**
+   * Plan passages narrower than the corridor at the harbour corridor (`narrows.ts`); absent,
+   * the plugin's (on).
+   */
+  narrows?: boolean;
   /** The risk cost's weight (`PlanOptions.riskWeight`); absent, the plugin's. */
   riskWeight?: number;
   /** The route is offered only while its risk, 1 − Π(1 − P) over its legs, is at most this. */

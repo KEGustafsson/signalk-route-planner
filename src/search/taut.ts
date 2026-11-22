@@ -5,6 +5,8 @@ import type { RiskCost } from "./fallback";
 import { verdictWeight } from "./fallback";
 import type { PassRule } from "./passes";
 import { passes } from "./passes";
+import type { Narrow } from "./narrow";
+import { narrowShare } from "./narrow";
 import type { Preferred } from "./prefer";
 import { offShare } from "./prefer";
 import type { PullLimits } from "./pull";
@@ -254,13 +256,19 @@ const STATUS_RANK: Record<string, number> = { ok: 0, marginal: 1, unverified: 2,
 export function tautRule(
   tree: QuadTree,
   rule: PassRule,
-  how: { fallback: boolean; cost: RiskCost | undefined; pref: Preferred | undefined }
+  how: {
+    fallback: boolean;
+    cost: RiskCost | undefined;
+    pref: Preferred | undefined;
+    narrow?: Narrow | undefined;
+  }
 ): TautRule {
-  const { pref } = how;
+  const { pref, narrow } = how;
   return {
     cost: (v, a, b) =>
       verdictWeight(v, rule, { fallback: how.fallback, ...(how.cost && { cost: how.cost }) }) +
-      (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0),
+      (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0) +
+      (narrow ? narrow.weight * narrowShare(narrow, tree, a, b) : 0),
     rank: (v) => (passes(v, rule) ? 0 : (STATUS_RANK[v.status] ?? 3))
   };
 }
