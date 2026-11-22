@@ -49,9 +49,17 @@
     if (l.part !== "narrows") {
       return l.status;
     }
-    // Checked at the boat's own position accuracy, in water swept to its marks.
+    // Checked at the planned position accuracy, in water swept to its marks; its room is how far
+    // off the line the swept water reaches, which the live fix is held to underway.
     const piloted = Array.isArray(l.flags) && l.flags.includes("PILOTAGE");
-    return l.status + (piloted ? " (swept fairway, pilotage)" : " (narrow, xte " + (l.xteLimit || 0) + " m)");
+    if (!piloted) {
+      return l.status + " (narrow, xte " + (l.xteLimit || 0) + " m)";
+    }
+    const room = l.pilotage && Number.isFinite(l.pilotage.room) ? l.pilotage.room : undefined;
+    return (
+      l.status +
+      (room === undefined ? " (swept fairway, pilotage)" : " (swept fairway, keep within ±" + room.toFixed(1) + " m)")
+    );
   }
 
   /** The sentence for legs through narrows, or "" when there are none. */
@@ -61,7 +69,7 @@
     if (n === 0) {
       return "";
     }
-    // The route check flags each leg it held to the boat's position accuracy, not each part.
+    // The route check flags each leg it held to the planned position accuracy, not each part.
     const p = narrows.filter((l) => Array.isArray(l.flags) && l.flags.includes("PILOTAGE")).length;
     const which = p === n ? (n === 1 ? "it is" : "all are") : p + " of them " + (p === 1 ? "is" : "are");
     return (
@@ -69,7 +77,7 @@
       n +
       (n === 1 ? " leg passes" : " legs pass") +
       " water narrower than your corridor, checked at the harbour corridor" +
-      (p > 0 ? "; " + which + " in a swept fairway checked at your GNSS accuracy: keep between its marks" : "")
+      (p > 0 ? "; " + which + " in a swept fairway: keep between its marks, within the ± the leg names" : "")
     );
   }
 

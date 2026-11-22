@@ -128,6 +128,14 @@ describe("panel model", () => {
     expect(P.legLabel({ status: "unverified", part: "narrows", flags: ["PILOTAGE"] })).toBe(
       "unverified (swept fairway, pilotage)"
     );
+    expect(
+      P.legLabel({
+        status: "ok",
+        part: "narrows",
+        flags: ["PILOTAGE"],
+        pilotage: { buffer: 3, room: 3.3 }
+      })
+    ).toBe("ok (swept fairway, keep within ±3.3 m)");
     const narrow = P.summary(200, {
       status: "ok",
       length: 3704,
@@ -142,7 +150,7 @@ describe("panel model", () => {
         length: 3704,
         check: { legs: flags.map((f) => ({ part: "narrows", flags: f })) }
       }).text;
-    const marks = "in a swept fairway checked at your GNSS accuracy: keep between its marks";
+    const marks = "in a swept fairway: keep between its marks, within the ± the leg names";
     expect(swept([["PILOTAGE"], [], ["PILOTAGE"]])).toMatch(`; 2 of them are ${marks}`);
     expect(swept([[], ["PILOTAGE"]])).toMatch(`; 1 of them is ${marks}`);
     expect(swept([["PILOTAGE"], ["PILOTAGE"]])).toMatch(`; all are ${marks}`);

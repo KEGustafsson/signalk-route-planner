@@ -35,6 +35,9 @@ All notable changes to signalk-route-planner are documented here.
   pilotage where the provider offers it. Fallböle to Sattmarkssundet: 1.5 nm along the fairway,
   where no route passed. Flags that describe the water (`DREDGED`, `PILOTAGE`, …) no longer keep
   an accepted `unverified` leg out.
+- A piloted leg carries signalk-underkeel's `pilotage: { buffer, room }`, and the panel names its
+  room: "swept fairway, keep within ±3.3 m". Pilotage is planned at the boat's planned position
+  accuracy, never the fix of the moment, so the same request gives the same route.
 - A plan whose planning box signalk-underkeel released before its session ran is prepared and
   planned again, once, rather than answering 503.
 - Less work per plan (field trials: Turku 18.4 M → 4.8 M work units, Miami Beach Marina 39 M →
