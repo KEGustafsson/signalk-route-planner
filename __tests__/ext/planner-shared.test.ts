@@ -136,6 +136,27 @@ describe("panel model", () => {
     expect(narrow).toMatch(
       /2 legs pass water narrower than your corridor, checked at the harbour corridor$/
     );
+    const swept = (flags: string[][]) =>
+      P.summary(200, {
+        status: "ok",
+        length: 3704,
+        check: { legs: flags.map((f) => ({ part: "narrows", flags: f })) }
+      }).text;
+    const marks = "in a swept fairway checked at your GNSS accuracy: keep between its marks";
+    expect(swept([["PILOTAGE"], [], ["PILOTAGE"]])).toMatch(`; 2 of them are ${marks}`);
+    expect(swept([[], ["PILOTAGE"]])).toMatch(`; 1 of them is ${marks}`);
+    expect(swept([["PILOTAGE"], ["PILOTAGE"]])).toMatch(`; all are ${marks}`);
+    expect(swept([["PILOTAGE"]])).toMatch(
+      `1 leg passes water narrower than your corridor, checked at the harbour corridor; it is ${marks}`
+    );
+    // A leg outside the narrows flagged PILOTAGE says nothing of the narrows.
+    expect(
+      P.summary(200, {
+        status: "ok",
+        length: 3704,
+        check: { legs: [{ part: "route", flags: ["PILOTAGE"] }, { part: "narrows" }] }
+      }).text
+    ).not.toMatch(/swept/);
     expect(P.summary(200, { status: "ok", length: 1852, check: { legs: [{}] } }).text).not.toMatch(
       /narrower/
     );

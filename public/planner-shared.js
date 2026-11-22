@@ -56,18 +56,20 @@
 
   /** The sentence for legs through narrows, or "" when there are none. */
   function narrowsText(legs) {
-    const n = legs.filter((l) => l && l.part === "narrows").length;
+    const narrows = legs.filter((l) => l && l.part === "narrows");
+    const n = narrows.length;
     if (n === 0) {
       return "";
     }
+    // The route check flags each leg it held to the boat's position accuracy, not each part.
+    const p = narrows.filter((l) => Array.isArray(l.flags) && l.flags.includes("PILOTAGE")).length;
+    const which = p === n ? (n === 1 ? "it is" : "all are") : p + " of them " + (p === 1 ? "is" : "are");
     return (
       ". " +
       n +
       (n === 1 ? " leg passes" : " legs pass") +
       " water narrower than your corridor, checked at the harbour corridor" +
-      (legs.some((l) => l && Array.isArray(l.flags) && l.flags.includes("PILOTAGE"))
-        ? "; in a swept fairway at your GNSS accuracy: keep between its marks"
-        : "")
+      (p > 0 ? "; " + which + " in a swept fairway checked at your GNSS accuracy: keep between its marks" : "")
     );
   }
 

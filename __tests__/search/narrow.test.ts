@@ -55,6 +55,20 @@ describe("a leg's share in narrow water", () => {
     expect(narrowShare(nar, tree, [0, 10], [20, 10])).toBeCloseTo(0.5);
   });
 
+  test("no square is priced once the work is spent", () => {
+    // Each wide-water query is one unit of work, and the limit is one.
+    let queries = 0;
+    const counted: Narrow = {
+      ...nar,
+      wide: (n) => {
+        queries++;
+        return nar.wide(n);
+      }
+    };
+    narrowShare(counted, tree, [0, 10], [20, 10], () => queries >= 1);
+    expect(queries).toBe(1);
+  });
+
   test("a leg across the squares, and one of no length, as before", () => {
     expect(narrowShare(nar, tree, [0, 5], [20, 5])).toBeCloseTo(0.5);
     expect(narrowShare(nar, tree, [0, 5], [10, 15])).toBeCloseTo(1);

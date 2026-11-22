@@ -125,7 +125,8 @@ function covered(spans: [number, number][]): number {
 
 /**
  * The share of leg a–b, 0 to 1, in squares the request's corridor does not pass: narrow water,
- * or a square not free. The squares along it are classified as needed, until `stop` holds.
+ * or a square not free. The squares along it are classified and priced as needed, until `stop`
+ * holds.
  */
 export function narrowShare(
   nar: Narrow,
@@ -142,7 +143,7 @@ export function narrowShare(
   }
   const spans = tree
     .leaves((q) => inside(q, ua, ub) > 0, true, stop)
-    .filter((n) => narrowCost(nar, n) > 0)
+    .filter((n) => !stop() && narrowCost(nar, n) > 0)
     .map((n) => span(n, ua, ub))
     .filter((s) => s !== undefined);
   return Math.min(1, covered(spans));
