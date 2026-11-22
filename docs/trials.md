@@ -159,3 +159,47 @@ panel, and the planner planned through signalk-underkeel's planning API.
   Freeboard's modify mode moved no point. The panel trial covers the re-plan.
 - Plugins start in no set order: the planner's status waits for signalk-underkeel and turns to
   ready once its planning API appears.
+
+## The panel in Freeboard again (W4)
+
+On 2026-11-21 the same setup ran again with the planner from `main` after the work budget setting,
+the measured work rate and the data attributions: Freeboard-SK 3.4.1, Signal K server 2.37.0,
+signalk-underkeel 0.8.0 and signalk-charts-provider-simple 2.22.0, with the three Miami NOAA cells
+and, for the Finnish leg, signalk-underkeel's live Traficom WFS cell with the FTIA's navigation
+lines. The plugins were set as a user would set them: the planner's **Work budget per plan** at
+8 000 000 and signalk-underkeel's route check cross-track limit at 10 m, as in the field trials.
+Each step was scripted in Chromium against Freeboard's own page; the screenshots are in
+`docs/trials/`.
+
+| Step                                                                                 | Result                                                                                                                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `miami-fisher-island-basin`, from sea to the Fisher Island basin, which R5 could not | planned: 1.0 nm in 4 legs, `ok`, 1 973 007 work units (`/plan`), and with alternatives 6 178 794                                                                                                                                                                                                                 |
+| The status line and `GET /status`                                                    | `Ready (signalk-underkeel 0.8.0) · 8.0 M work units`; after the plans, `work: { budget: 8000000, plans: 7, unitsPerSecond: 538611, budgetSeconds: 14.9 }` on this machine                                                                                                                                        |
+| Alternatives that differ                                                             | shortest 1.0 nm, risk 3.01 %, `ok` (written); balanced 1.0 nm, 2.57 %, `ok`; safest 1.0 nm, 3.23 %, `marginal`, "no safer than shortest" ([w4-1](trials/w4-1-alternatives.jpg))                                                                                                                                  |
+| **Use** on the balanced route                                                        | "Wrote the balanced route": Freeboard's route takes its 8 points as an unsaved change, the legs table shows its 7 legs ([w4-2](trials/w4-2-use-balanced.jpg))                                                                                                                                                    |
+| A waypoint dragged in Freeboard's route editor, then saved                           | the panel planned the legs beside it again and spliced them in: "they are marginal", 10 legs, the rest of the route not checked again ([w4-3](trials/w4-3-drag-replanned.jpg))                                                                                                                                   |
+| Turku port fairway, 1.5 nm along an FTIA navigation line, keeping to lines           | 5 legs, `unverified` (Traficom's depths are not for navigation); the panel credits both: "Source: Finnish Transport Infrastructure Agency (Väylävirasto), open data, CC BY 4.0 · Contains data from the Finnish Transport and Communications Agency Traficom, CC BY 4.0" ([w4-4](trials/w4-4-turku-credits.jpg)) |
+| The same route without keeping to lines (`/plan`)                                    | only Traficom credited                                                                                                                                                                                                                                                                                           |
+| A waypoint dragged on the Turku route                                                | its two legs planned again, `unverified`; the credits stay the route's and the new legs' together ([w4-5](trials/w4-5-turku-drag-credits.jpg))                                                                                                                                                                   |
+
+- The drag needed a fix: Freeboard hands a written route's points back through its map
+  projection, which leaves each point off by rounding noise, and the panel compared positions
+  exactly, so every point looked moved and a drag was never re-planned. Points that differ only
+  by such noise now count as the same (`samePosition` in `public/planner-shared.js`), and the
+  dragged point alone is planned again. R5's scripted drag moved no point at all, so it never
+  got this far.
+- R5 had it refused at the default 1 200 000. Here it was refused at 2 500 000 too while
+  signalk-underkeel's cross-track limit was its 30 m default: the search stops at 80 % of the
+  budget (`searchShare`), and the wider limit takes more work in that basin. With the
+  10 m limit it plans at 2 500 000 without alternatives; the three alternatives take about three
+  times the work, so this trial set 8 000 000, which the status said takes about 14 s here.
+- The Miami plans credit no one: NOAA's cells need no attribution, and the panel shows none.
+- Each Miami plan reports "No route passes the check: this is the lowest risk-weighted route"
+  above legs that are all `ok`: the strict search stopped at water the check cannot verify, and
+  the fallback's route, once string-pulled, passes every leg. The wording is the strict search's
+  reason; the route itself passes.
+- The Turku leg ran on the Traficom WFS directly (`viaChartsProvider: false`): Charts Provider
+  2.22.0 has no WFS proxy yet.
+- Drags were scripted on the vertex's computed pixel; one attempt in three removed the point
+  instead (Freeboard's press-and-hold) and one moved it onto the channel's edge, where its legs
+  were `fail`. Both are Freeboard's editor doing what it was told, not the planner.

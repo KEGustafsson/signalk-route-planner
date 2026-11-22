@@ -167,6 +167,22 @@ describe("panel model", () => {
     expect(P.movedPoint(pts, undefined)).toBe(-1);
   });
 
+  test("points a host hands back through its map projection are the same points", () => {
+    // Freeboard returns a written route's points a few 1e-14 degrees off.
+    const pts = [
+      { position: [-80.125431, 25.760871] },
+      { position: [-80.133, 25.7635] },
+      { position: [-80.14331, 25.76565] }
+    ];
+    const back = [
+      { position: [-80.125431, 25.76087100000001] },
+      { position: [-80.13321906174217, 25.763889083919935] },
+      { position: [-80.14331, 25.765650000000008] }
+    ];
+    expect(P.samePoints(pts, [pts[0], pts[1], back[2]])).toBe(true);
+    expect(P.movedPoint(pts, back)).toBe(1);
+  });
+
   test("the legs beside a dragged waypoint are spliced in, every other point kept", () => {
     const pts = [
       { position: [22, 60], name: "Home" },

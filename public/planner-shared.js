@@ -81,6 +81,16 @@
     return leave + duration(gate.waitMinutes || 0) + " for the tide" + then + ". ";
   }
 
+  /**
+   * A host may hand back a written point through its map projection, a few 1e-14 degrees off:
+   * positions closer than this (about a millimetre) are the same point.
+   */
+  const SAME_DEGREES = 1e-8;
+
+  function samePosition(x, y) {
+    return Math.abs(x[0] - y[0]) < SAME_DEGREES && Math.abs(x[1] - y[1]) < SAME_DEGREES;
+  }
+
   /** Whether two lists of host route points have the same positions, in order. */
   function samePoints(a, b) {
     const pa = a || [];
@@ -91,7 +101,7 @@
         const q = pb[i];
         const x = p && p.position;
         const y = q && q.position;
-        return !!x && !!y && x[0] === y[0] && x[1] === y[1];
+        return !!x && !!y && samePosition(x, y);
       })
     );
   }
@@ -172,7 +182,7 @@
       if (!x || !y) {
         return -1;
       }
-      if (x[0] !== y[0] || x[1] !== y[1]) {
+      if (!samePosition(x, y)) {
         if (moved !== -1) {
           return -1;
         }

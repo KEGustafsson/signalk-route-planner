@@ -61,7 +61,8 @@ All notable changes to signalk-route-planner are documented here.
   kept to where that costs little more distance, to starboard of a two-way line (COLREG rule 9).
 - Panel: start from the boat's position; the shortest, balanced and safest routes drawn on the
   map and listed, any of them written with **Use**; each leg's flags in words; a dragged waypoint's
-  legs planned again; keeping to fairway lines and own tracks as a check box. The manifest offers
+  legs planned again, also in Freeboard, which hands a route's points back a few 1e-14 degrees off
+  through its map projection; keeping to fairway lines and own tracks as a check box. The manifest offers
   `routePlan` in the `navigationSafety` services, and `npm run trial:panel` runs the panel in
   Chromium on the field trials' charts.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
