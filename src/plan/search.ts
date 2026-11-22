@@ -419,9 +419,7 @@ export async function searchRoute(
   const direct = checkLeg(session, from, to);
   const cost = riskCostOf(opts, rule);
   const { tree, pref, narrow, shapeError } = treeFor(session, [from, to], opts, rule, cost);
-  if (keepsDirect(direct, { rule, opts, cost, tree, pref, narrow }, [from, to])) {
-    return { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
-  }
+  const spent = (): boolean => session.work() >= opts.maxWork;
   const refuse = (reason: string, stuck?: Stuck): SearchOutcome => ({
     ok: false,
     reason,
@@ -431,6 +429,12 @@ export async function searchRoute(
     work: session.work(),
     ...(stuck && { stuck })
   });
+  if (keepsDirect(direct, { rule, opts, cost, tree, pref, narrow, stop: spent }, [from, to])) {
+    // Classifying its narrow water may have spent the work, and stopped before it was done.
+    return spent()
+      ? refuse(WORK_LIMIT)
+      : { ok: true, coordinates: [from, to], direct, squares: 0, work: session.work() };
+  }
   if (!tree) {
     return refuse(shapeError as string);
   }
@@ -438,8 +442,8 @@ export async function searchRoute(
     rule,
     fallback,
     berth,
-    ...(pref && { pref }),
-    ...(narrow && { narrow })
+    pref,
+    narrow
   });
   if ("reason" in found) {
     return refuse(found.reason, found.stuck);

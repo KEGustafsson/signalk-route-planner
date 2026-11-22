@@ -105,9 +105,10 @@ which no state of the water level clears, and refuses naming that leg: the gate 
 wait for a leg the tide cannot open.
 
 `turku-guest-harbours-b-lines` plans Turku to Nauvo with `preferLines` on the WFS cell with the
-FTIA's navigation lines (474 of them in the area): 19.9 nm in 33 legs, keeping to the lines,
-against 19.8 nm in 32 without them, for 10.8 M work units against 9.8 M. A search with lines is
-not steered: the guide would drown their discount.
+FTIA's navigation lines (474 of them in the area): in the same run as the table above
+(2026-11-22), 20.0 nm in 51 legs, keeping to the lines, against 19.9 nm in 31 legs without them
+(`turku-guest-harbours-b`), for 14.5 M work units against 13.8 M. A search with lines is not
+steered: the guide would drown their discount.
 
 Drawing routes tight (plan §4.1 steps 3 and 4) took the Turku cases from 37 and 40 legs to 32
 and 30, 20.2 nm to 19.8 nm and 21.3 nm to 19.7 nm, and the harbour stages' failing legs from 10

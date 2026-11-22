@@ -250,8 +250,10 @@ describe("narrows", () => {
   test("narrows is true or false in a request", () => {
     const base = { from: [22, 60], to: [22.1, 60.1] };
     expect(parsePlanRequest({ ...base, narrows: "yes" }, NOW).ok).toBe(false);
-    const off = parsePlanRequest({ ...base, narrows: false }, NOW);
-    expect(off.ok && off.value.narrows).toBe(false);
+    expect(parsePlanRequest({ ...base, narrows: false }, NOW)).toMatchObject({
+      ok: true,
+      value: { narrows: false }
+    });
   });
 });
 

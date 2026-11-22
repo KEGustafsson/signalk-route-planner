@@ -133,7 +133,9 @@ describe("panel model", () => {
       length: 3704,
       check: { legs: [{ part: "route" }, { part: "narrows" }, { part: "narrows" }] }
     }).text;
-    expect(narrow).toMatch(/2 legs pass water narrower than your corridor/);
+    expect(narrow).toMatch(
+      /2 legs pass water narrower than your corridor, checked at the harbour corridor$/
+    );
     expect(P.summary(200, { status: "ok", length: 1852, check: { legs: [{}] } }).text).not.toMatch(
       /narrower/
     );

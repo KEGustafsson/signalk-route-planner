@@ -92,7 +92,8 @@ export function regionShape(
 
 /**
  * True when the direct line is the route: it passes, and with a risk cost or lines it is not
- * near the margin or off the lines, which are searched around like any other.
+ * near the margin or off the lines, which are searched around like any other. Its squares in
+ * narrow water are classified until `stop` holds.
  */
 export function keepsDirect(
   direct: Verdict,
@@ -103,6 +104,7 @@ export function keepsDirect(
     tree?: QuadTree;
     pref?: Preferred;
     narrow?: Narrow;
+    stop?: () => boolean;
   },
   [from, to]: [LonLat, LonLat]
 ): boolean {
@@ -113,7 +115,7 @@ export function keepsDirect(
     return false;
   }
   // A direct line through narrow water is searched around, as the search would price it.
-  return !(c.narrow && c.tree && narrowShare(c.narrow, c.tree, from, to) > 0);
+  return !(c.narrow && c.tree && narrowShare(c.narrow, c.tree, from, to, c.stop) > 0);
 }
 
 /**

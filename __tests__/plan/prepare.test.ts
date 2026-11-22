@@ -422,13 +422,46 @@ describe("/plan on a planning box released under it", () => {
     return { api, count: () => sessions };
   }
 
-  test("is prepared and planned again, once", async () => {
-    const p = releasing(1);
-    g[PLANNING_API] = p.api;
-    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
-    const r = await api.plan({ from: at(0, 0), to: at(5000, 0) }, new AbortController().signal);
+  test("is prepared and planned again, once, on the index prepared the second time", async () => {
+    const inner = syntheticApi({ obstacles: [{ x: 2500, y: 0, r: 600 }] });
+    // Each preparation gives a handle of its own; the first is released before its session.
+    const handles: { sessions: number; checks: number }[] = [];
+    const api: PlanningApiV1 = {
+      ...inner,
+      features: ["prepare"],
+      prepare: () => {
+        const h = { sessions: 0, checks: 0 };
+        handles.push(h);
+        const released = handles.length === 1;
+        const prepared: Prepared = {
+          coverage: [21, 59, 23, 61],
+          session: (params, signal, job) => {
+            h.sessions++;
+            return released
+              ? Promise.resolve({
+                  ok: false as const,
+                  status: 503,
+                  error: "the planning box was released; prepare it again"
+                })
+              : inner.session(params, signal, job);
+          },
+          routeCheck: (body, signal) => {
+            h.checks++;
+            return inner.routeCheck(body, signal);
+          },
+          release: () => undefined
+        };
+        return Promise.resolve({ ok: true as const, value: prepared });
+      }
+    };
+    g[PLANNING_API] = api;
+    const plugin = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(5));
+    const r = await plugin.plan({ from: at(0, 0), to: at(5000, 0) }, new AbortController().signal);
     expect(r.status).toBe(200);
-    expect(boxReleased(r)).toBe(false);
+    expect(handles).toHaveLength(2);
+    expect(handles[0]).toEqual({ sessions: 1, checks: 0 });
+    expect(handles[1]?.sessions).toBeGreaterThan(0);
+    expect(handles[1]?.checks).toBeGreaterThan(0);
   });
 
   test("released again, the refusal is the answer: never a route", async () => {

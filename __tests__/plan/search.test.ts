@@ -3,7 +3,7 @@ import { EARTH_RADIUS, frameAt, grownBoxKm2, haversine } from "../../src/foundat
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { SearchOutcome } from "../../src/plan/search";
 import { shapeFor } from "../../src/plan/region";
-import { searchRoute } from "../../src/plan/search";
+import { searchRoute, WORK_LIMIT } from "../../src/plan/search";
 import type { Bbox, Session } from "../../src/oracle/contract";
 import { QuadTree } from "../../src/search/quadtree";
 import type { Chart } from "../helpers/synthetic-oracle";
@@ -310,5 +310,21 @@ describe("long legs", () => {
     });
     expect(Math.max(...longest)).toBeLessThanOrEqual(24e6 / 800 - 800);
     expect(r.ok && r.value.ok).toBe(true);
+  });
+});
+
+describe("the direct line with narrow water priced", () => {
+  const narrowing = { ...DEFAULT_PLAN, wideMargin: 30 };
+
+  test("is the route in wide water within the budget", async () => {
+    const { outcome } = await search({ obstacles: [] }, at(0, 0), at(5000, 0), narrowing);
+    expect(outcome.ok && outcome.coordinates).toEqual([at(0, 0), at(5000, 0)]);
+  });
+
+  test("is refused at the work limit when classifying its squares spends the work", async () => {
+    // The direct line's check takes 100 units of the 150, each square along it 100 more.
+    const opts = { ...narrowing, maxWork: 150 };
+    const { outcome } = await search({ obstacles: [] }, at(0, 0), at(5000, 0), opts);
+    expect(outcome.ok ? "a route" : outcome.reason).toBe(WORK_LIMIT);
   });
 });

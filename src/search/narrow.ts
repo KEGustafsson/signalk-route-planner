@@ -69,8 +69,8 @@ export const narrowCost = (nar: Narrow, n: QuadNode): number =>
 
 type XY = [number, number];
 
-/** Length of segment a–b inside square `n` (Liang–Barsky), units; 0 when it misses. */
-export function inside(n: Pick<QuadNode, "x" | "y" | "size">, a: XY, b: XY): number {
+/** The stretch of segment a–b inside square `n` (Liang–Barsky), as [t0, t1] along it; none when it misses. */
+function span(n: Pick<QuadNode, "x" | "y" | "size">, a: XY, b: XY): [number, number] | undefined {
   const d: XY = [b[0] - a[0], b[1] - a[1]];
   let t0 = 0;
   let t1 = 1;
@@ -83,7 +83,7 @@ export function inside(n: Pick<QuadNode, "x" | "y" | "size">, a: XY, b: XY): num
   for (const [p, q] of edges) {
     if (p === 0) {
       if (q < 0) {
-        return 0;
+        return undefined;
       }
       continue;
     }
@@ -94,10 +94,33 @@ export function inside(n: Pick<QuadNode, "x" | "y" | "size">, a: XY, b: XY): num
       t1 = Math.min(t1, r);
     }
     if (t0 > t1) {
-      return 0;
+      return undefined;
     }
   }
-  return (t1 - t0) * Math.hypot(d[0], d[1]);
+  return [t0, t1];
+}
+
+/** Length of segment a–b inside square `n`, units; 0 when it misses. */
+export function inside(n: Pick<QuadNode, "x" | "y" | "size">, a: XY, b: XY): number {
+  const s = span(n, a, b);
+  return s ? (s[1] - s[0]) * Math.hypot(b[0] - a[0], b[1] - a[1]) : 0;
+}
+
+/**
+ * The total length of `spans` along a leg, each stretch once: a leg along the edge two squares
+ * share lies in both.
+ */
+function covered(spans: [number, number][]): number {
+  let total = 0;
+  let reached = 0;
+  for (const [t0, t1] of [...spans].sort((p, q) => p[0] - q[0])) {
+    const from = Math.max(t0, reached);
+    if (t1 > from) {
+      total += t1 - from;
+      reached = t1;
+    }
+  }
+  return total;
 }
 
 /**
@@ -117,11 +140,10 @@ export function narrowShare(
   if (len === 0) {
     return 0;
   }
-  let narrow = 0;
-  for (const n of tree.leaves((q) => inside(q, ua, ub) > 0, true, stop)) {
-    if (narrowCost(nar, n) > 0) {
-      narrow += inside(n, ua, ub);
-    }
-  }
-  return Math.min(1, narrow / len);
+  const spans = tree
+    .leaves((q) => inside(q, ua, ub) > 0, true, stop)
+    .filter((n) => narrowCost(nar, n) > 0)
+    .map((n) => span(n, ua, ub))
+    .filter((s) => s !== undefined);
+  return Math.min(1, covered(spans));
 }

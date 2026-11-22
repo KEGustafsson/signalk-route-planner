@@ -64,7 +64,7 @@
       ". " +
       n +
       (n === 1 ? " leg passes" : " legs pass") +
-      " water narrower than your corridor, checked at the harbour corridor: keep to the fairway there" +
+      " water narrower than your corridor, checked at the harbour corridor" +
       (legs.some((l) => l && Array.isArray(l.flags) && l.flags.includes("PILOTAGE"))
         ? "; in a swept fairway at your GNSS accuracy: keep between its marks"
         : "")

@@ -238,7 +238,8 @@ export function fairwayRoute(
 
 /**
  * Dijkstra's way between `ends`, its legs checked (`passes`) once each; a leg that does not pass
- * is closed and the way found again, ROUNDS times at most, or until the work is spent.
+ * is closed and the way found again, ROUNDS times at most. Once the work is spent with a leg of
+ * the way unchecked, or by its last check, there is none.
  */
 function passingWay(
   g: Graph,
@@ -248,25 +249,35 @@ function passingWay(
 ): LonLat[] | undefined {
   const checked = new Map<string, boolean>();
   const closed = new Set<string>();
-  for (let round = 0; round < ROUNDS && !exhausted(); round++) {
+  /** Whether leg p–q passes, closed when it does not; undefined when the work is spent first. */
+  const legPasses = (p: number, q: number): boolean | undefined => {
+    const key = p < q ? `${p}-${q}` : `${q}-${p}`;
+    let ok = checked.get(key);
+    if (ok === undefined) {
+      if (exhausted()) {
+        return undefined;
+      }
+      ok = passes(g.points[p] as LonLat, g.points[q] as LonLat);
+      checked.set(key, ok);
+    }
+    if (!ok) {
+      closed.add(key);
+    }
+    return ok;
+  };
+  for (let round = 0; round < ROUNDS; round++) {
     const path = shortest(g, from, to, closed);
     if (!path) {
       return undefined;
     }
-    const failed = path.slice(1).findIndex((q, i) => {
-      const p = path[i] as number;
-      const key = p < q ? `${p}-${q}` : `${q}-${p}`;
-      let ok = checked.get(key);
-      if (ok === undefined) {
-        ok = passes(g.points[p] as LonLat, g.points[q] as LonLat);
-        checked.set(key, ok);
-      }
-      if (!ok) {
-        closed.add(key);
-      }
-      return !ok;
-    });
-    if (failed < 0) {
+    let ok: boolean | undefined = true;
+    for (let i = 1; i < path.length && ok === true; i++) {
+      ok = legPasses(path[i - 1] as number, path[i] as number);
+    }
+    if (ok === undefined || (ok && exhausted())) {
+      return undefined;
+    }
+    if (ok) {
       return path.map((n) => g.points[n] as LonLat);
     }
   }
