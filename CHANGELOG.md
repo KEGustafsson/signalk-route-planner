@@ -81,8 +81,8 @@ All notable changes to signalk-route-planner are documented here.
 - Steering: between joined ends, a coarse pass over the same region's larger squares, sharing
   their box verdicts, finds the way that likely leads through, and the search reaches the
   squares along it first. It changes only the order of the search, never a square's verdict or
-  the route check. Field trials: Turku to Nauvo 7.0 M → 5.4 M work units, the Bayside fallback
-  25.7 M → 19.7 M, kept to water the coarse pass found free. Not used with preference lines, a
+  the route check. Field trials: Turku to Nauvo 7.0 M → 5.4 M work units for one pass, the Bayside
+  fallback 25.7 M → 19.7 M, kept to water the coarse pass found free. Not used with preference lines, a
   risk cost or in a corridor.
 - A depth survey underkeel refuses as too large is asked for in up to eight overlapping pieces
   along the trip and joined, so a long diagonal trip still gets its corridor.
@@ -90,6 +90,12 @@ All notable changes to signalk-route-planner are documented here.
   and a longer trip in the chart box is given more in proportion to its distance, as a
   corridor's is. The plugin times the plans it runs and says in its status and `GET /status`
   what the budget takes on this machine; that only reports, and no plan depends on it.
+- Taut routes: a planned route is drawn tight round what stops it, turning at the corners of
+  islands and shoals rather than at the search's square centres, and A\* runs again at a finer
+  greed to find a shorter channel its first pass took for a longer one: steered, without the
+  guide that may have led it there, on at most half the work left. Turku to Utö on the
+  Traficom WFS: 53.19 nm in 79 legs before, 52.53 nm in 50 after, now shorter than the route kept
+  to the FTIA lines. A change never makes a leg riskier or draws in more failing water.
 - Attributions: an offered route lists the open data it leaned on (`attributions`), the FTIA's
   navigation lines it kept to and Traficom's WFS depths it crossed, and the panel shows the
   credit under the plan.

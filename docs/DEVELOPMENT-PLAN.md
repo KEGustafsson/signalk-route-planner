@@ -136,6 +136,10 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
 3. **A\*** over free leaves that share an edge, through the midpoint of the shared edge, with the
    straight-line distance as the heuristic, weighted 1.25 (`greed`): the path costs at most 1.25
    times the cheapest before string pulling, for far fewer squares classified among islands.
+   That slack can take a longer channel round an island, so a finer pass looks for a cheaper
+   path (`src/search/anytime.ts`): without the guide when the search is steered (§6), and within
+   part of the work left. Its path replaces the first only when it is clearly cheaper and crosses
+   no more water that is not free; out of work, the first path stands.
    A neighbour is queued unclassified at the cost it would have in free water and classified
    only when it comes off the queue, so squares A\* never reaches are never asked about.
 4. **String pulling.** From each kept waypoint, later path points are tried farthest first, then
@@ -143,6 +147,13 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    becomes the next waypoint. This bounded heuristic costs O(log n) checks a waypoint and can
    miss a longer shortcut that passes after a shorter one failed. Every leg of the result has
    passed the corridor check over the trip window.
+   The pulled route still turns at the search's square centres and edge midpoints, so it is then
+   drawn tight (`src/search/taut.ts`): its turns move to the corners of what stops it. A change
+   is kept only when its legs are checked, cost less at the search's own price, carry no higher
+   risk than the worst leg they replace, and at no status worse than passing add legs or length.
+   It draws on part of the work left, so the stages after it keep the rest, and stops with the
+   last checked route when that is spent; a plan whose work then reaches its limit is refused
+   with the work limit.
 5. **Proof.** `routeCheck` checks the route at its departure, leg by leg at each leg's own arrival.
    Its statuses are the answer. A plan without `fallback` is offered only when every leg but a
    berth leg (step 13) is `ok`, `marginal` or an accepted `unverified`; otherwise the reply is
@@ -626,8 +637,11 @@ pass found free and leaves the rest of the region alone.
   their small preferences. A search in a corridor is not steered: the corridor is its coarse
   path already.
 
-Steered, the 20 nm archipelago passage took 5.4 M work against 7.0 M, and the Bayside fallback
-19.7 M against 25.7 M (`docs/trials.md`).
+Steered, the first pass of the 20 nm archipelago passage took 5.4 M work against 7.0 M, and the
+Bayside fallback 19.7 M against 25.7 M (`docs/trials.md`). The finer pass after it searches again
+without the guide (§4.1 step 3), which may have led the first the long way: with the work to
+spare, a steered plan comes out as short as an unsteered one at about the same work. Steering's
+gain is a first route early, which stands when the work runs short.
 
 Still open: the 20 nm passage is still three to four times the budget, most of it the shores
 the coarse path runs along, and preference lines get nothing from steering. The trials cap each

@@ -18,10 +18,12 @@ import type { Preferred, PreferredLine } from "../search/prefer";
 import { offLine, offShare, preferredIn, splitsForLines } from "../search/prefer";
 import type { Priced, Shortcut } from "../search/pull";
 import { pull } from "../search/pull";
+import { tautRule, tautWithin } from "../search/taut";
 import type { QuadNode } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
 import type { Guide } from "../search/guide";
 import { memoBoxes } from "../search/guide";
+import { between } from "./between";
 import { stuckEnds } from "./handover";
 import type { Mode } from "./modes";
 import { fallbackMode, preferring, riskCostOf, strictMode } from "./modes";
@@ -102,9 +104,6 @@ interface Access {
   /** Where the berth leg from `joined` ends, when only a berth leg reaches it. */
   berth?: LonLat;
 }
-
-/** A*'s heuristic weight where a weight carries a preference (`Mode.fine`). */
-const FINE_GREED = 1.05;
 
 export const WORK_LIMIT =
   "the search reached its work limit; plan a shorter passage or add a waypoint between";
@@ -267,31 +266,6 @@ function pathOf(
       ...(goal.berth && { end: goal.berth })
     }
   };
-}
-
-/** A* between the joined ends: ordered by the guide, through the ends' squares, when there is one. */
-async function between(
-  tree: QuadTree,
-  session: Session,
-  [start, goal]: [Access, Access],
-  opts: PlanOptions,
-  how: { mode: Mode; exhausted: () => boolean; guide?: () => Promise<Guide | undefined> }
-): ReturnType<typeof aStar> {
-  if (start.leaf === goal.leaf) {
-    return { found: true, points: [start.at, goal.at], expanded: 0 };
-  }
-  // A preference (a risk cost or lines) is finer than the guide's estimate, which would drown it.
-  const g = how.mode.fine ? undefined : (await how.guide?.())?.through(start.at, goal.at);
-  return aStar(tree, start.leaf, start.at, goal.leaf, goal.at, {
-    exhausted: how.exhausted,
-    pause: () => session.pause(),
-    every: 64,
-    weight: how.mode.weight,
-    // A risk cost or a line is a preference smaller than weighted A*'s slack: a slack of
-    // FINE_GREED keeps every one worth more than it.
-    greed: how.mode.fine ? Math.min(opts.greed, FINE_GREED) : opts.greed,
-    ...(g && { heuristic: (p: [number, number]) => g.to(p) })
-  });
 }
 
 /**
@@ -475,9 +449,19 @@ export async function searchRoute(
   if (coordinates === "work" || session.work() >= opts.maxWork) {
     return refuse(WORK_LIMIT);
   }
+  const tight = await tautWithin(
+    coordinates,
+    (a, b) => checkLeg(session, a, b),
+    { session, maxWork: opts.maxWork },
+    tautRule(tree, rule, { fallback: found.fallback !== undefined, cost, pref })
+  );
+  // Refinement's last checked leg may have taken the work past the limit.
+  if (session.work() >= opts.maxWork) {
+    return refuse(WORK_LIMIT);
+  }
   return {
     ok: true,
-    coordinates,
+    coordinates: tight,
     direct,
     squares: tree.classified,
     work: session.work(),

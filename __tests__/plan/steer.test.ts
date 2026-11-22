@@ -67,10 +67,13 @@ describe("steered search", () => {
   const to = at(8000, 0);
 
   test("through a field of islands, with a fraction of the work of the search that floods it", async () => {
+    // One pass: the finer, unguided pass after it spends on a shorter channel what steering saved,
+    // when the budget has it (`between.ts`).
+    const onePass = { ...DEFAULT_PLAN, greed: 1.05 };
     for (const seed of [1, 2, 3]) {
       const chart = islands(seed);
-      const steered = await search(chart, from, at(12000, 0));
-      const flooding = await search(chart, from, at(12000, 0), { ...DEFAULT_PLAN, steerShare: 0 });
+      const steered = await search(chart, from, at(12000, 0), onePass);
+      const flooding = await search(chart, from, at(12000, 0), { ...onePass, steerShare: 0 });
       expect(steered.ok && flooding.ok).toBe(true);
       expect(passes(chart, steered)).toBe(true);
       expect(steered.work).toBeLessThan(flooding.work / 2);
