@@ -114,8 +114,8 @@ machine is 413 with underkeel's reason.
 A fairway narrower than the search can resolve is followed along its charted navigation line;
 with signalk-underkeel's pilotage, a leg between the marks of a swept fairway is checked at the
 boat's planned position accuracy rather than the least position buffer, flagged `PILOTAGE`: the
-configured σ, or the boat's own fix over the last week when that has been worse, never the fix
-of the moment, so the same request gives the same route. Such a leg carries
+configured σ, or the boat's own fix over the last week when that has been worse; pilotage does
+not use the current fix directly. Such a leg carries
 `pilotage: { buffer, room }`, the room being how far off the line its swept water reaches; the
 panel shows it as "keep within ±room m", and underway signalk-underkeel warns when the live fix
 is wider than the room of the leg the boat is on.

@@ -70,14 +70,18 @@
       return "";
     }
     // The route check flags each leg it held to the planned position accuracy, not each part.
-    const p = narrows.filter((l) => Array.isArray(l.flags) && l.flags.includes("PILOTAGE")).length;
+    const piloted = narrows.filter((l) => Array.isArray(l.flags) && l.flags.includes("PILOTAGE"));
+    const p = piloted.length;
+    const roomed = piloted.some((l) => l.pilotage && Number.isFinite(l.pilotage.room));
     const which = p === n ? (n === 1 ? "it is" : "all are") : p + " of them " + (p === 1 ? "is" : "are");
     return (
       ". " +
       n +
       (n === 1 ? " leg passes" : " legs pass") +
       " water narrower than your corridor, checked at the harbour corridor" +
-      (p > 0 ? "; " + which + " in a swept fairway: keep between its marks, within the ± the leg names" : "")
+      (p > 0
+        ? "; " + which + " in a swept fairway: keep between its marks" + (roomed ? ", within the ± the leg names" : "")
+        : "")
     );
   }
 

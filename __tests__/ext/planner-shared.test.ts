@@ -150,13 +150,30 @@ describe("panel model", () => {
         length: 3704,
         check: { legs: flags.map((f) => ({ part: "narrows", flags: f })) }
       }).text;
-    const marks = "in a swept fairway: keep between its marks, within the ± the leg names";
-    expect(swept([["PILOTAGE"], [], ["PILOTAGE"]])).toMatch(`; 2 of them are ${marks}`);
-    expect(swept([[], ["PILOTAGE"]])).toMatch(`; 1 of them is ${marks}`);
-    expect(swept([["PILOTAGE"], ["PILOTAGE"]])).toMatch(`; all are ${marks}`);
+    const marks = "in a swept fairway: keep between its marks";
+    const ends = (text: string) => new RegExp(`${text}$`);
+    expect(swept([["PILOTAGE"], [], ["PILOTAGE"]])).toMatch(ends(`; 2 of them are ${marks}`));
+    expect(swept([[], ["PILOTAGE"]])).toMatch(ends(`; 1 of them is ${marks}`));
+    expect(swept([["PILOTAGE"], ["PILOTAGE"]])).toMatch(ends(`; all are ${marks}`));
     expect(swept([["PILOTAGE"]])).toMatch(
-      `1 leg passes water narrower than your corridor, checked at the harbour corridor; it is ${marks}`
+      ends(
+        `1 leg passes water narrower than your corridor, checked at the harbour corridor; it is ${marks}`
+      )
     );
+    // The ± is named only when a piloted leg carries a finite room.
+    const roomed = (room: number) =>
+      P.summary(200, {
+        status: "ok",
+        length: 3704,
+        check: {
+          legs: [
+            { part: "narrows", flags: ["PILOTAGE"] },
+            { part: "narrows", flags: ["PILOTAGE"], pilotage: { buffer: 3, room } }
+          ]
+        }
+      }).text;
+    expect(roomed(3.3)).toMatch(ends(`; all are ${marks}, within the ± the leg names`));
+    expect(roomed(Number.NaN)).toMatch(ends(`; all are ${marks}`));
     // A leg outside the narrows flagged PILOTAGE says nothing of the narrows.
     expect(
       P.summary(200, {
