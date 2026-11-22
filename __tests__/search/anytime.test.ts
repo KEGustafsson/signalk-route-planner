@@ -26,11 +26,6 @@ const short: XY[] = [
   [0, 0],
   [100, 0]
 ];
-const shortRisky: XY[] = [
-  [0, 0],
-  [50, 6],
-  [100, 6.1]
-];
 
 describe("a finer second search", () => {
   test("a clearly cheaper path through free water replaces the first", async () => {
@@ -39,10 +34,19 @@ describe("a finer second search", () => {
   });
 
   test("a path that crosses more water that is not free does not, however short", async () => {
-    expect(pathCost(tree, shortRisky).risky).toBeGreaterThan(pathCost(tree, long).risky);
+    // Marginal water across the straight line, which the detour passes north of.
+    const shoal = {
+      leafAt: (x: number, y: number) =>
+        ({ state: x > 40 && x < 60 && Math.abs(y) < 2 ? "marginal" : "free" }) as QuadNode
+    } as unknown as QuadTree;
+    const a = pathCost(shoal, long);
+    const b = pathCost(shoal, short);
+    // Cheaper by more than the thousandth that would keep it anyway, so only its risk refuses it.
+    expect(b.cost).toBeLessThan(a.cost * (1 - 1e-3));
+    expect(b.risky).toBeGreaterThan(a.risky);
     const r = await cheapest(
-      tree,
-      (g) => Promise.resolve(found(g === 1.25 ? long : shortRisky)),
+      shoal,
+      (g) => Promise.resolve(found(g === 1.25 ? long : short)),
       greed
     );
     expect(r).toEqual(found(long));

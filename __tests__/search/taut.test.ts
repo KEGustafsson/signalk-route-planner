@@ -78,10 +78,16 @@ describe("taut-string refinement", () => {
             s + (check(p[k] as LonLat, b).status === "fail" ? haversine(p[k] as LonLat, b) : 0),
           0
         );
-    const tight = await taut(zigzag, check, open, fallback);
-    expect(failing(zigzag)).toBe(0);
-    expect(failing(tight)).toBe(0);
-    expect(length(tight)).toBeLessThan(length(zigzag));
+    // A route that grazes the shallow, with legs that fail there; the straight line crosses it.
+    const grazing: LonLat[] = [at(0, 0), at(1500, 700), at(2500, 520), at(3500, 700), at(5000, 0)];
+    const straight: LonLat[] = [at(0, 0), at(5000, 0)];
+    expect(failing(grazing)).toBeGreaterThan(0);
+    expect(failing(straight)).toBeGreaterThan(failing(grazing));
+    const tight = await taut(grazing, check, open, fallback);
+    expect(failing(tight)).toBeLessThanOrEqual(failing(grazing));
+    expect(length(tight)).toBeLessThan(length(grazing));
+    // The shortcut across the whole shallow, shorter as it is, is not taken.
+    expect(tight.length).toBeGreaterThan(2);
   });
 
   test("with its work spent part way, it keeps a route of checked legs, asking nothing more", async () => {

@@ -455,6 +455,10 @@ export async function searchRoute(
     { session, maxWork: opts.maxWork },
     tautRule(tree, rule, { fallback: found.fallback !== undefined, cost, pref })
   );
+  // Refinement's last checked leg may have taken the work past the limit.
+  if (session.work() >= opts.maxWork) {
+    return refuse(WORK_LIMIT);
+  }
   return {
     ok: true,
     coordinates: tight,
