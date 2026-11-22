@@ -81,6 +81,42 @@ describe("the fairway stage", () => {
   });
 });
 
+describe("lines meeting at a T", () => {
+  test("a line that begins on another's leg joins it there", async () => {
+    // A runs north–south past the start; B begins on A's leg, at no point of A, and runs east
+    // through the sound to the destination.
+    const chart: Chart = {
+      ...sound(false),
+      lines: [
+        {
+          class: "NAVLINE",
+          points: [
+            [0, -3000],
+            [0, 3000]
+          ],
+          designDraft: 2.1
+        },
+        {
+          class: "NAVLINE",
+          points: [
+            [0, 0],
+            [6000, 0]
+          ],
+          designDraft: 2.1
+        }
+      ]
+    };
+    const r = await plan(
+      syntheticApi(chart),
+      { from: at(-300, 1000), to: at(6000, 0), departure: NOW, speed: 3, xteLimit: 30 },
+      NEVER,
+      NOW,
+      { ...DEFAULT_PLAN, maxWork: 5_000_000 }
+    );
+    expect(r.status).toBe(200);
+  });
+});
+
 describe("flags that describe the water", () => {
   test("do not keep an otherwise accepted unverified leg out", () => {
     const rule = { accept: ["NOT_FOR_NAVIGATION"], probability: 0.01 };

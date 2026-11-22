@@ -236,7 +236,9 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     search free, though a leg along its navigation line passes: Sattmarkssundet's boat route is
     swept 10–14 m either side of its line, and a 10 m square checked at the harbour corridor is
     about 21 m wide. So the main search also follows the charted lines (`src/plan/fairway.ts`):
-    their points a graph, each line's legs its edges, the start and destination joined to the
+    their points a graph, each line's legs its edges, a line's point within 5 m of another's leg
+    joined to it there (a branch ending on a line between its points: without it the graph fell
+    apart and Turku to Nauvo went round the west), the start and destination joined to the
     nearest points on them within `accessMetres`; Dijkstra's way is checked leg by leg, a leg that
     does not pass is closed and the way found again. With signalk-underkeel's `pilotage` it runs
     in a session of its own asked with pilotage, so a leg in water swept to its marks is held to

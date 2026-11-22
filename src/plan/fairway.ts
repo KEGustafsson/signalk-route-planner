@@ -102,6 +102,46 @@ function legsIn(
   return legs;
 }
 
+/** A line's point within this of another line's leg meets it there, metres. */
+const SNAP = 5;
+
+/**
+ * Where the lines meet: a line's point within SNAP of another line's leg, by leg. Lines meet at
+ * shared points, but a branch often ends on another line's leg between its points (a T), and
+ * without that point on the leg the graph falls apart into the lines that happen to share one.
+ */
+function junctions(legs: [LonLat, LonLat][]): Map<number, LonLat[]> {
+  const cuts = new Map<number, LonLat[]>();
+  const pad = SNAP / 111_320;
+  const boxes = legs.map(([a, b]) => {
+    const k = pad / Math.max(Math.cos((a[1] * Math.PI) / 180), 1e-6);
+    return [
+      Math.min(a[0], b[0]) - k,
+      Math.min(a[1], b[1]) - pad,
+      Math.max(a[0], b[0]) + k,
+      Math.max(a[1], b[1]) + pad
+    ];
+  });
+  const same = (p: LonLat, q: LonLat): boolean => p[0] === q[0] && p[1] === q[1];
+  legs.forEach((leg, i) => {
+    for (const p of leg) {
+      legs.forEach(([a, b], j) => {
+        const [w, s, e, n] = boxes[j] as number[];
+        if (j === i || same(p, a) || same(p, b) || p[0] < (w as number) || p[0] > (e as number)) {
+          return;
+        }
+        if (p[1] < (s as number) || p[1] > (n as number)) {
+          return;
+        }
+        if (haversine(p, nearestOn(p, a, b)) <= SNAP) {
+          cuts.set(j, [...(cuts.get(j) ?? []), p]);
+        }
+      });
+    }
+  });
+  return cuts;
+}
+
 /** The graph of `legs`, with `ends` joined to the nearest points on them within `reach` metres. */
 function graphOf(legs: [LonLat, LonLat][], ends: [LonLat, LonLat], reach: number): Graph {
   const g = new Graph();
@@ -113,8 +153,8 @@ function graphOf(legs: [LonLat, LonLat][], ends: [LonLat, LonLat], reach: number
       .sort((x, y) => x.d - y.d)
       .slice(0, JOINS)
   );
-  // Each leg with the points an end joins it at, in order along it.
-  const cuts = new Map<number, LonLat[]>();
+  // Each leg with the points an end joins it at, and the lines meeting it, in order along it.
+  const cuts = junctions(legs);
   for (const list of near) {
     for (const j of list) {
       cuts.set(j.i, [...(cuts.get(j.i) ?? []), j.at]);
