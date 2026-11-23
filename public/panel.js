@@ -1,6 +1,6 @@
 // Route planner panel: plans between the ends of a visible route, or from the boat, and writes
-// the plan back into it as an unsaved change; offers alternatives drawn on the map, and plans
-// again the legs beside a waypoint dragged on the planned route (plan §4.5).
+// the plan back into it as an unsaved change; offers the lowest-risk route after a refusal, and
+// plans again the legs beside a waypoint dragged on the planned route (plan §4.5).
 import { connectExtension } from "./vendor/plotterext-bus/extension.js";
 
 const P = globalThis.PLANNER;
@@ -14,8 +14,8 @@ const select = $("route");
 const button = $("plan");
 const result = $("result");
 const table = $("legs");
-const choices = $("choices");
 const creditsLine = $("credits");
+const lowest = $("lowest");
 const has = (c) => client.hasCapability(c);
 
 /** The boat's last position from Signal K, when the host streams it. */
@@ -23,7 +23,7 @@ let boat;
 /** The points the panel last wrote into a route: a drag of one of them is planned again. */
 let written;
 /**
- * The planning in progress: a plan, a choice of alternative or a drag's re-plan. Each takes the
+ * The planning in progress: a plan or a drag's re-plan. Each takes the
  * next number and, once its replies are in, changes the route and the panel only while it is
  * still the latest, so a slow one never undoes what a later one did.
  */
@@ -89,19 +89,6 @@ function showLegs(legs) {
   table.hidden = legs.length === 0;
 }
 
-/** The alternatives drawn on the map; none clears them. A host without data overlays shows none. */
-async function drawAlternatives(alternatives, chosen) {
-  if (!has("overlays.data")) {
-    return;
-  }
-  try {
-    const data = P.alternativesGeoJSON(alternatives, chosen);
-    await client.call("overlay.setData", { overlayId: "alternatives", source: "routes", data });
-  } catch (err) {
-    console.warn("route planner alternatives overlay", err);
-  }
-}
-
 /**
  * The departure and the latest departure, `hours` after it, as request fields, both from one
  * reading of the clock so the wait never exceeds the server's limit, and `waitEnRoute` when
@@ -119,18 +106,18 @@ function latest(hours, enRoute) {
   };
 }
 
-/** The options the panel's controls set, for a plan between `ends`, with alternatives if asked. */
-function requestFor(ends, alternatives = $("alternatives").checked) {
+/**
+ * The options the panel's controls set, for a plan between `ends`: the route asked for, the
+ * route parameters `params` (`paramsNow`, as validated before the plan's first wait), and the
+ * wait for the tide with waiting on the way; `fallback` for the lowest-risk route.
+ */
+function requestFor(ends, params, fallback = false) {
   return {
     ...ends,
-    ...($("accept").checked && { accept: ["NOT_FOR_NAVIGATION"] }),
-    ...($("fallback").checked && { fallback: true }),
+    ...(fallback && { fallback: true }),
     ...($("lines").checked && { preferLines: true }),
-    ...(!$("narrows").checked && { narrows: false }),
-    // Alternatives are planned at one departure: the panel's wait for the tide is left out.
-    ...(alternatives
-      ? { alternatives: true }
-      : latest(Number($("wait").value), $("waitEnRoute").checked))
+    ...params.fields,
+    ...latest(Number($("wait").value), true)
   };
 }
 
@@ -180,60 +167,27 @@ async function write(routeId, route, coordinates, op) {
   return routeWrites.done(ticket);
 }
 
-/** The alternatives and their overlay withdrawn: the route they were planned for has changed. */
-function dropChoices() {
-  choices.replaceChildren();
-  void drawAlternatives([], undefined);
-}
-
-/**
- * The offered alternatives, each with a button that writes it into the route instead. `route`
- * is the route as this set of alternatives last wrote it: one changed since is not overwritten.
- */
-function showChoices(routeId, route, body) {
-  const offered = (body.alternatives || []).map((a) => {
-    const row = document.createElement("div");
-    const text = document.createElement("span");
-    text.textContent = P.alternativeText(a) + (a.name === body.chosen ? " (written)" : "");
-    row.append(text);
-    if (a.route && !a.sameAs && a.name !== body.chosen) {
-      const use = document.createElement("button");
-      use.type = "button";
-      use.textContent = "Use";
-      use.addEventListener("click", async () => {
-        const op = ++latestOp;
-        if (await write(routeId, route, a.route.coordinates, op)) {
-          body.chosen = a.name;
-          showLegs(a.legs || []);
-          showCredits(P.credits(a.attributions));
-          showChoices(routeId, { points: written.points }, body);
-          void drawAlternatives(body.alternatives, a.name);
-          show(a.status, "Wrote the " + a.name + " route: " + P.alternativeText(a));
-        }
-      });
-      row.append(use);
-    }
-    return row;
-  });
-  choices.replaceChildren(...offered);
-}
-
-async function planSelected() {
+async function planSelected(fallback = false) {
   const routeId = select.value;
   if (!routeId) {
     return;
   }
+  const params = paramsNow();
+  if (params.errors.length > 0) {
+    show("fail", "Not planned: " + params.errors.join("; ") + ".");
+    return;
+  }
   const op = ++latestOp;
   button.disabled = true;
+  lowest.hidden = true;
   table.hidden = true;
-  dropChoices();
   // The credits stay with the route on the chart until a plan replaces it.
   show("muted", "Planning…");
   try {
     if ($("boat").checked && !P.hasPosition(boat)) {
       show(
         "fail",
-        "Not planned: no boat position has come from Signal K. Untick Start from the boat to plan from the route's first point."
+        "Not planned: no boat position has come from Signal K. Pick Start: Route's first point to plan from it."
       );
       return;
     }
@@ -243,23 +197,21 @@ async function planSelected() {
       show("fail", "The route needs a start and a destination point.");
       return;
     }
-    const { status, body } = await planRequest(requestFor(ends));
+    const request = requestFor(ends, params, fallback);
+    const { status, body } = await planRequest(request);
     if (op !== latestOp) {
       return;
     }
+    lowest.hidden = !P.offersFallback(status, request);
     if (P.preparingWait(status, body, null) !== null) {
       show("unverified", "Not planned: the chart index for this trip's region is still being built; plan again later.");
       return;
     }
     const s = P.summary(status, body);
     show(s.kind, s.text);
-    await drawAlternatives(body.alternatives, body.chosen);
     if (status === 200 && (await write(routeId, route, body.route.coordinates, op))) {
       showLegs(body.check.legs);
       showCredits(P.credits(body.attributions));
-      if (body.alternatives) {
-        showChoices(routeId, { points: written.points }, body);
-      }
     }
   } catch (err) {
     if (op === latestOp) {
@@ -278,7 +230,7 @@ async function planSelected() {
  * passed: it asks for a plan of the whole route.
  */
 async function replanDrag(routeId) {
-  if (!$("replan").checked || !written || written.routeId !== routeId) {
+  if (!written || written.routeId !== routeId) {
     return;
   }
   const now = await client.call("route.get", { routeId });
@@ -290,14 +242,14 @@ async function replanDrag(routeId) {
   const pts = now.points;
   // What was shown was for the route before the drag.
   table.hidden = true;
-  dropChoices();
+  lowest.hidden = true;
   // Each leg is checked at the time the boat sails it, without waiting for the tide: a drag
   // that would need a wait is refused, never written with the wait left unsaid. The leg after
   // the waypoint is checked from when the boat reaches it.
   const leg = async (a, b, departure) => {
     const ends = { from: pts[a].position, to: pts[b].position };
     const request = {
-      ...requestFor(ends, false),
+      ...requestFor(ends, params),
       departure,
       latestDeparture: undefined,
       waitEnRoute: undefined
@@ -315,6 +267,17 @@ async function replanDrag(routeId) {
     };
   };
   const none = { coordinates: [], status: "ok", legs: [], attributions: [] };
+  const unplanned = (reason) => {
+    written = { routeId, points: pts };
+    show("unverified", "The moved waypoint stays as you left it, the legs beside it unchecked: " + reason);
+  };
+  // A parameter out of range plans nothing, as for the whole route. Both legs are asked with
+  // these parameters, as validated here, whatever the controls change to while they plan.
+  const params = paramsNow();
+  if (params.errors.length > 0) {
+    unplanned(params.errors.join("; ") + ".");
+    return;
+  }
   show("muted", "Planning the legs beside the moved waypoint…");
   const left = i > 0 ? await leg(i - 1, i) : none;
   const right =
@@ -328,8 +291,7 @@ async function replanDrag(routeId) {
   }
   const failed = [left, right].find((l) => typeof l === "string");
   if (failed) {
-    written = { routeId, points: pts };
-    show("unverified", "The moved waypoint stays as you left it, the legs beside it unchecked: " + failed);
+    unplanned(failed);
     return;
   }
   const points = P.spliceLegs(pts, i, left.coordinates, right.coordinates);
@@ -356,11 +318,135 @@ async function replanDrag(routeId) {
   );
 }
 
+/** The route check's settings (`GET /status`): the parameters a plan takes unless changed here. */
+let defaults;
+const RISK = { low: "riskLow", normal: "riskNormal", high: "riskHigh" };
+
+/** The route parameters as the panel's fields set them now (`routeParams`). */
+function paramsNow() {
+  const risk = Object.keys(RISK).find((k) => $(RISK[k]).checked) ?? "normal";
+  return P.routeParams(defaults, {
+    draft: $("draft").value,
+    xte: $("xte").value,
+    knots: $("knots").value,
+    risk
+  });
+}
+
+/** The closed row's line, the fields' hints and the risk levels' meaning, from the fields now. */
+function showParams() {
+  const p = paramsNow();
+  $("paramsText").textContent = p.errors.length > 0 ? p.errors.join("; ") : P.paramsText(p);
+  $("paramsText").className = p.errors.length > 0 ? "fail" : "";
+  if (defaults) {
+    $("draft").placeholder = defaults.draft === undefined ? "" : String(defaults.draft);
+    $("xte").placeholder = String(defaults.xteLimit);
+    $("knots").placeholder = (defaults.speed / P.KNOT).toFixed(1);
+    const l = P.riskLevels(defaults.probability);
+    $("riskNote").textContent =
+      "A leg passes under the level, is marginal from it and fails from five times it. Low: " +
+      P.percent(l.low) +
+      ", normal (the route check's): " +
+      P.percent(l.normal) +
+      ", high: " +
+      P.percent(l.high) +
+      "; blank fields take signalk-underkeel's settings, the draft Signal K's design.draft unless set there. A draft typed here holds until the panel is closed.";
+  }
+}
+
+/** The wait's note, shown while a wait is picked. */
+function showTide() {
+  $("waitNote").hidden = Number($("wait").value) === 0;
+}
+
+/**
+ * The controls whose choice the panel keeps in this browser, so it opens as the last plan was
+ * asked for. A browser that keeps nothing opens on the defaults.
+ */
+const KEPT = ["boat", "first", "shortest", "lines", "wait", "xte", "knots", ...Object.values(RISK)];
+const STORE = "signalk-route-planner.panel.v2";
+
+function restoreChoices() {
+  let kept;
+  try {
+    kept = JSON.parse(localStorage.getItem(STORE) || "{}") || {};
+  } catch {
+    return;
+  }
+  for (const id of KEPT) {
+    const el = $(id);
+    const v = kept[id];
+    if (el.type === "radio" || el.type === "checkbox") {
+      if (typeof v === "boolean") {
+        el.checked = v;
+      }
+    } else if (typeof v === "string" && (el.tagName !== "SELECT" || [...el.options].some((o) => o.value === v))) {
+      el.value = v;
+    }
+  }
+  // A choice kept from an earlier panel that no longer offers it: the shortest route.
+  if (!$("shortest").checked && !$("lines").checked) {
+    $("shortest").checked = true;
+  }
+}
+
+function keepChoices() {
+  const kept = {};
+  for (const id of KEPT) {
+    const el = $(id);
+    kept[id] = el.type === "radio" || el.type === "checkbox" ? el.checked : el.value;
+  }
+  try {
+    localStorage.setItem(STORE, JSON.stringify(kept));
+  } catch {
+    // Nothing kept: the panel opens on its defaults next time.
+  }
+}
+
+async function loadDefaults() {
+  try {
+    const res = await fetch(`${P.API}/status`, { credentials: "same-origin" });
+    const body = await res.json();
+    defaults = body && body.defaults;
+  } catch (err) {
+    console.warn("route planner status", err);
+  }
+  showParams();
+}
+
 button.addEventListener("click", () => void planSelected());
-$("alternatives").addEventListener("change", (e) => {
-  $("wait").disabled = e.target.checked;
-  $("waitEnRoute").disabled = e.target.checked;
+lowest.addEventListener("click", () => void planSelected(true));
+$("paramsToggle").addEventListener("click", () => {
+  const open = $("paramsBody").hidden;
+  $("paramsBody").hidden = !open;
+  $("paramsToggle").textContent = open ? "Done" : "Change";
+  $("paramsToggle").setAttribute("aria-expanded", String(open));
 });
+$("paramsReset").addEventListener("click", () => {
+  $("draft").value = "";
+  $("xte").value = "";
+  $("knots").value = "";
+  $("riskNormal").checked = true;
+  showParams();
+  keepChoices();
+});
+restoreChoices();
+showTide();
+showParams();
+// The draft is not kept: a draft typed for one trip must not plan the next one unseen.
+for (const id of [...KEPT, "draft"]) {
+  $(id).addEventListener("input", () => {
+    showTide();
+    showParams();
+    keepChoices();
+  });
+  $(id).addEventListener("change", () => {
+    showTide();
+    showParams();
+    keepChoices();
+  });
+}
+void loadDefaults();
 await client.subscribe(["route.visible", "route.hidden"], () => void listRoutes());
 if (has("routes")) {
   await client.subscribe(["route.**"], (name, params) => {

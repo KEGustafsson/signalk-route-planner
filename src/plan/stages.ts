@@ -27,8 +27,6 @@ export interface Part {
   coordinates: LonLat[];
   /** The cross-track limit the part was searched at and is proved at; absent: the default. */
   xteLimit?: number;
-  /** Proved with pilotage in swept water (`narrows.ts`), as it was searched. */
-  pilotage?: true;
   /** Set when no route passed and this part is the lowest risk-weighted route: why none passed. */
   fallback?: string;
   /** The inner point of the part's berth leg, from or to the end point. */

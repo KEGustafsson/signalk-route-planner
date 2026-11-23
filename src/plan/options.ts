@@ -10,6 +10,11 @@ export interface PlanOptions {
    * more: a longer trip meets more shore, and an archipelago passage most of all.
    */
   workPerKm: number;
+  /**
+   * Set by a stage, never by a request: a route the search must be shorter than is in hand, and
+   * no path this many metres long or more is wanted (`search/astar.ts`, `SearchLimits.bound`).
+   */
+  lengthBound?: number;
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
   /**

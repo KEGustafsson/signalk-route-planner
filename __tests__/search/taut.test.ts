@@ -6,7 +6,7 @@ import { OK_ONLY, passes } from "../../src/search/passes";
 import type { TautRule } from "../../src/search/taut";
 import { taut } from "../../src/search/taut";
 import type { Chart } from "../helpers/synthetic-oracle";
-import { at, legVerdict, syntheticApi } from "../helpers/synthetic-oracle";
+import { at, legVerdict, segDist, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
 /**
  * Taut-string refinement (plan §4.1 step 4): a route is drawn tight round what stops it, so a
@@ -46,6 +46,64 @@ const zigzag: LonLat[] = [
 ];
 
 describe("taut-string refinement", () => {
+  test("an L of long legs in a narrow channel, open water at its corner, has its corner cut", async () => {
+    // Two 3 km legs meeting at a right angle, as a chain of fairway lines turns: a channel 5 m
+    // wider than the corridor along each, opening into a bay 400 m round the corner. Turning
+    // either long leg sweeps it into the channel's side; only a chord near the corner passes.
+    const ell: LonLat[] = [at(0, 0), at(3000, 0), at(3000, -3000)];
+    const path = ell.map(xy);
+    const water = (x: number, y: number): boolean =>
+      Math.hypot(x - 3000, y) <= 400 ||
+      path.slice(1).some((q, k) => segDist(x, y, path[k] as [number, number], q) <= 5);
+    const check = (a: LonLat, b: LonLat): Verdict => {
+      const [ax, ay] = xy(a);
+      const [bx, by] = xy(b);
+      const n = Math.ceil(Math.hypot(bx - ax, by - ay) / 5);
+      for (let i = 0; i <= n; i++) {
+        if (!water(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n)) {
+          return { status: "fail", risk: 1, flags: ["LAND"] };
+        }
+      }
+      return { status: "ok", risk: 0, flags: [] };
+    };
+    const tight = await taut(ell, check, open, { ...strict, cutCorners: true });
+    expect(tight.slice(1).every((b, k) => check(tight[k] as LonLat, b).status === "ok")).toBe(true);
+    // A chord 400 m back and on saves 2 × 400 − 566 m: about 230 m.
+    expect(length(tight)).toBeLessThan(length(ell) - 150);
+    expect(tight[0]).toEqual(ell[0]);
+    expect(tight[tight.length - 1]).toEqual(ell[2]);
+    // Without corner cutting, as a search's route is drawn, the L stays.
+    expect(length(await taut(ell, check, open, strict))).toBeCloseTo(length(ell), 0);
+  });
+
+  test("a corner whose open water lies along the leg in is cut from there straight on", async () => {
+    // Narrow channels along both legs; open water only in the triangle between the last 1000 m
+    // of the leg in and the next point, as where a channel opens toward the next turn. The best
+    // cut leaves the leg in 1000 m back and runs straight to the next point.
+    const ell: LonLat[] = [at(0, 0), at(3000, 0), at(3000, -1500)];
+    const path = ell.map(xy);
+    const inTriangle = (x: number, y: number): boolean =>
+      x <= 3000 && y <= 0 && y >= -1.5 * (x - 2000) - 1e-6;
+    const water = (x: number, y: number): boolean =>
+      inTriangle(x, y) ||
+      path.slice(1).some((q, k) => segDist(x, y, path[k] as [number, number], q) <= 5);
+    const check = (a: LonLat, b: LonLat): Verdict => {
+      const [ax, ay] = xy(a);
+      const [bx, by] = xy(b);
+      const n = Math.ceil(Math.hypot(bx - ax, by - ay) / 5);
+      for (let i = 0; i <= n; i++) {
+        if (!water(ax + ((bx - ax) * i) / n, ay + ((by - ay) * i) / n)) {
+          return { status: "fail", risk: 1, flags: ["LAND"] };
+        }
+      }
+      return { status: "ok", risk: 0, flags: [] };
+    };
+    const tight = await taut(ell, check, open, { ...strict, cutCorners: true });
+    expect(tight.slice(1).every((b, k) => check(tight[k] as LonLat, b).status === "ok")).toBe(true);
+    // 2000 m on and the 1803 m diagonal: 3803 m. The same way back and on gives at best 3914 m.
+    expect(length(tight)).toBeLessThan(3850);
+  });
+
   test("a zig-zag round an island is drawn tight to it, with fewer legs", async () => {
     const check = (a: LonLat, b: LonLat): Verdict => legVerdict(ISLAND, a, b, R);
     expect(zigzag.slice(1).every((b, k) => check(zigzag[k] as LonLat, b).status === "ok")).toBe(

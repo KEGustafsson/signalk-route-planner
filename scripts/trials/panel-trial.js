@@ -3,8 +3,8 @@
 
 // Panel trial (docs/trials.md): the planner panel in Chromium, hosted by a chart host built on
 // the Plotter Extensions bus host (panel-host.html), planning on real chart data through
-// signalk-underkeel's planning API, as the field trials do. It plans a route with alternatives,
-// writes one, drags a waypoint and waits for the legs beside it to be planned again.
+// signalk-underkeel's planning API, as the field trials do. It plans the shortest route, writes
+// it, drags a waypoint and waits for the legs beside it to be planned again.
 //
 //   node scripts/trials/panel-trial.js [case]
 //
@@ -124,50 +124,34 @@ async function main() {
     await page.goto(`${base}/host.html?points=${encodeURIComponent(JSON.stringify(points))}`);
     const panel = page.frameLocator("#panel");
     await panel.locator("#route option").first().waitFor({ state: "attached", timeout: 30_000 });
-    await panel.locator("#fallback").check();
-    await panel.locator("#alternatives").check();
+    await panel.locator("#first").check();
+    await panel.locator("#shortest").check();
     await panel.locator("#plan").click();
     const result = panel.locator("#result");
-    await result
-      .filter({ hasText: /^(Planned|No route|Not planned)/ })
-      .waitFor({ timeout: 300_000 });
+    const answered = () =>
+      result.filter({ hasText: /^(Planned|No route|Not planned)/ }).waitFor({ timeout: 300_000 });
+    await answered();
+    // A refusal offers the lowest-risk route, its risky legs marked: the trial takes it.
+    const lowest = panel.locator("#lowest");
+    if (await lowest.isVisible()) {
+      await lowest.click();
+      await result
+        .filter({ hasText: /^Planning/ })
+        .waitFor({ timeout: 30_000 })
+        .catch(() => undefined);
+      await answered();
+    }
     const text = await result.textContent();
-    check(/^Planned/.test(text), `planned with alternatives: ${text}`);
-    const trial = () =>
-      page.evaluate(() => ({
-        routes: globalThis.trial.routes(),
-        overlays: globalThis.trial.overlays()
-      }));
+    check(/^Planned/.test(text), `planned: ${text}`);
+    const trial = () => page.evaluate(() => ({ routes: globalThis.trial.routes() }));
     let state = await trial();
     const written = state.routes[0].points;
     check(written.length > 2, `the plan was written into the route: ${written.length} points`);
-    const drawn = state.overlays.alternatives?.data.features ?? [];
-    check(
-      drawn.length >= 1,
-      `the alternatives were drawn: ${drawn.map((f) => f.properties.name).join(", ")}`
-    );
-    check(
-      (await panel.locator("#choices div").count()) === 3,
-      "the panel lists the three alternatives"
-    );
     check(
       (await panel.locator("#legs tbody tr").count()) === written.length - 1,
       "the panel lists every leg"
     );
     await page.screenshot({ path: path.join(DATA, "panel-planned.png") });
-
-    const use = panel.locator("#choices button").first();
-    const usable = (await use.count()) > 0 && (await use.isEnabled());
-    check(usable, "an alternative not written is offered with Use");
-    if (usable) {
-      await use.click();
-      await result.filter({ hasText: /^Wrote the / }).waitFor({ timeout: 30_000 });
-      state = await trial();
-      check(
-        JSON.stringify(state.routes[0].points) !== JSON.stringify(written),
-        `another alternative was written: ${await result.textContent()}`
-      );
-    }
 
     // Drag the first waypoint the plan added a few metres north, as a user would on the chart.
     state = await trial();

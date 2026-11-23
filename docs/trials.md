@@ -48,6 +48,13 @@ quality, so each case assumes a CATZOC.
   harbour corridor is fine and asks about smaller squares: B took 13.8 M work against 9.8 M, A1
   10.8 M against 9.5 M, and B with lines 14.5 M against 10.8 M.
 - The work in brackets is from 2026-11-21, before narrows; it has not been re-run unsteered since.
+- Hull corridor, corner cutting and the bounded search (2026-11-22, later): a corridor is the
+  xte limit and half the beam, no position buffer, so the stretch that needed a `narrows` part
+  passes at the 10 m xte limit itself. B: 19.8 nm in 28 legs, harbour stage, route, harbour stage,
+  12.4 M work; A1: 19.0 nm in 34 legs, 9.7 M; B with lines 19.9 nm, 12.9 M.
+- Band refinement (plan §4.1 step 16, 2026-11-23; its grids are in `src/search/band.ts`): B:
+  19.77 nm in 54 legs, 14.8 M work; A1: 18.97 nm in 49 legs, 12.3 M. Each case's work cap is its
+  `workAtMost` in `scripts/trials/trials.json`.
 
 - Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
   search was steered along a coarse path (`src/plan/steer.ts`).
@@ -87,6 +94,10 @@ start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 | `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     |           23.4 M (26.0 M, 25.8 M) |
 | `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |              2.7 M (2.9 M, 2.9 M) |
 
+- Hull corridor (2026-11-22, later): Fisher Island basin, 1.02 nm in 4 legs, all at the xte
+  limit with the hull's half-beam, no `narrows` part, 0.44 M work; Bayside 3.63 nm, 22.5 M.
+  Beach Marina is refused for the same reason in 5.5 M: with the narrower corridor more of the
+  water near the marina is free, and proving no way through it asks about more squares.
 - With narrows the main search names the free water near an end it cannot join, so an end in a
   marina goes to its harbour stage without a second search at the request's corridor: Bayside and
   Beach Marina take less work than before.
@@ -161,9 +172,9 @@ reported. The script's header says what it keeps between runs.
 `npm run trial:panel` runs the panel in Chromium, hosted by signalk-plotterext-bus's own host
 implementation (`scripts/trials/panel-host.html`), on one route in Miami, and answers `/plan`
 with the planner on the field trials' NOAA cells through signalk-underkeel's planning API. It
-plans with alternatives, checks the overlay data the panel hands the host (the host draws no
-map) and the panel's lists, writes another alternative, and drags a planned waypoint to see the
-legs beside it planned again. The steps and what each checks are in
+plans the shortest route, checks it was written and the panel lists its legs, and drags a
+planned waypoint to see the legs beside it planned again. Until 2026-11-23 it planned with
+alternatives too, which the panel no longer offers (plan §4.5). The steps and what each checks are in
 `scripts/trials/panel-trial.js`; it saves screenshots in `data/trials/`.
 
 ## The panel in Freeboard (R5's exit)
@@ -186,8 +197,8 @@ panel, and the planner planned through signalk-underkeel's planning API.
   `miami-fisher-island-basin` on the live server: that case takes 1.9 M work units, the budget
   1.2 M. The field trials raise the limit; a live server does not, so this trial plans the
   shorter passage, which takes 1.4 M for its three alternatives.
-- With the alternatives all the same route, no **Use** button is offered, so writing another
-  alternative is covered by the panel trial above, not here.
+- With the alternatives all the same route, no **Use** button was offered, so writing another
+  alternative was not shown here.
 - Dragging a waypoint in Freeboard's route editor was not shown here: a scripted drag in
   Freeboard's modify mode moved no point. The panel trial covers the re-plan.
 - Plugins start in no set order: the planner's status waits for signalk-underkeel and turns to

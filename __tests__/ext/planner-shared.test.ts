@@ -1,3 +1,4 @@
+import fc from "fast-check";
 import P = require("../../public/planner-shared.js");
 
 /** What the panel computes from a host route and a /plan reply. */
@@ -125,17 +126,9 @@ describe("panel model", () => {
     expect(P.legLabel({ status: "ok", part: "harbour" })).toBe("ok (harbour)");
     expect(P.legLabel({ status: "ok", part: "route" })).toBe("ok");
     expect(P.legLabel({ status: "ok", part: "narrows", xteLimit: 0 })).toBe("ok (narrow, xte 0 m)");
-    expect(P.legLabel({ status: "unverified", part: "narrows", flags: ["PILOTAGE"] })).toBe(
-      "unverified (swept fairway, pilotage)"
+    expect(P.legLabel({ status: "ok", part: "narrows", flags: ["FAIRWAY_GAP"] })).toBe(
+      "ok (under a bridge, on the fairway line)"
     );
-    expect(
-      P.legLabel({
-        status: "ok",
-        part: "narrows",
-        flags: ["PILOTAGE"],
-        pilotage: { buffer: 3, room: 3.3 }
-      })
-    ).toBe("ok (swept fairway, keep within ±3.3 m)");
     const narrow = P.summary(200, {
       status: "ok",
       length: 3704,
@@ -150,38 +143,24 @@ describe("panel model", () => {
         length: 3704,
         check: { legs: flags.map((f) => ({ part: "narrows", flags: f })) }
       }).text;
-    const marks = "in a swept fairway: keep between its marks";
+    const line = "under a bridge on the fairway's line: keep to the line";
     const ends = (text: string) => new RegExp(`${text}$`);
-    expect(swept([["PILOTAGE"], [], ["PILOTAGE"]])).toMatch(ends(`; 2 of them are ${marks}`));
-    expect(swept([[], ["PILOTAGE"]])).toMatch(ends(`; 1 of them is ${marks}`));
-    expect(swept([["PILOTAGE"], ["PILOTAGE"]])).toMatch(ends(`; all are ${marks}`));
-    expect(swept([["PILOTAGE"]])).toMatch(
+    expect(swept([["FAIRWAY_GAP"], [], ["FAIRWAY_GAP"]])).toMatch(ends(`; 2 of them pass ${line}`));
+    expect(swept([[], ["FAIRWAY_GAP"]])).toMatch(ends(`; 1 of them passes ${line}`));
+    expect(swept([["FAIRWAY_GAP"], ["FAIRWAY_GAP"]])).toMatch(ends(`; all pass ${line}`));
+    expect(swept([["FAIRWAY_GAP"]])).toMatch(
       ends(
-        `1 leg passes water narrower than your corridor, checked at the harbour corridor; it is ${marks}`
+        `1 leg passes water narrower than your corridor, checked at the harbour corridor; it passes ${line}`
       )
     );
-    // The ± is named only when a piloted leg carries a finite room.
-    const roomed = (room: number) =>
-      P.summary(200, {
-        status: "ok",
-        length: 3704,
-        check: {
-          legs: [
-            { part: "narrows", flags: ["PILOTAGE"] },
-            { part: "narrows", flags: ["PILOTAGE"], pilotage: { buffer: 3, room } }
-          ]
-        }
-      }).text;
-    expect(roomed(3.3)).toMatch(ends(`; all are ${marks}, within the ± the leg names`));
-    expect(roomed(Number.NaN)).toMatch(ends(`; all are ${marks}`));
-    // A leg outside the narrows flagged PILOTAGE says nothing of the narrows.
+    // A leg outside the narrows flagged FAIRWAY_GAP says nothing of the narrows.
     expect(
       P.summary(200, {
         status: "ok",
         length: 3704,
-        check: { legs: [{ part: "route", flags: ["PILOTAGE"] }, { part: "narrows" }] }
+        check: { legs: [{ part: "route", flags: ["FAIRWAY_GAP"] }, { part: "narrows" }] }
       }).text
-    ).not.toMatch(/swept/);
+    ).not.toMatch(/bridge/);
     expect(P.summary(200, { status: "ok", length: 1852, check: { legs: [{}] } }).text).not.toMatch(
       /narrower/
     );
@@ -284,41 +263,12 @@ describe("panel model", () => {
     ).toEqual([pts[0], { position: [22.05, 60.02] }, pts[1], pts[2], pts[3]]);
   });
 
-  test("a leg's flags in words, alternatives in one line each, and the map's lines", () => {
+  test("a leg's flags in words", () => {
     expect(P.legNote({ flags: ["AIR_DRAFT", "SWEPT"] })).toBe(
       "a bridge or overhead cable too low for the mast; swept"
     );
     expect(P.legNote({ flags: ["SOMETHING_NEW"] })).toBe("SOMETHING_NEW");
     expect(P.legNote({})).toBe("");
-    const shortest = {
-      name: "shortest",
-      length: 1852,
-      risk: 0.0123,
-      status: "ok",
-      route: {
-        type: "LineString",
-        coordinates: [
-          [22, 60],
-          [22.1, 60]
-        ]
-      }
-    };
-    const safest = { ...shortest, name: "safest", dominatedBy: "shortest" };
-    const balanced = { ...shortest, name: "balanced", sameAs: "shortest" };
-    expect(P.alternativeText(shortest)).toBe("shortest: 1.0 nm, risk 1.23 %, ok");
-    expect(P.alternativeText(safest)).toMatch(/no safer than shortest$/);
-    expect(P.alternativeText({ name: "safest", reason: "over the budget" })).toBe(
-      "safest: not offered, over the budget"
-    );
-    const map = P.alternativesGeoJSON([shortest, balanced, safest], "shortest");
-    const props = map.features.map((f: { properties: { name: string; chosen: boolean } }) => [
-      f.properties.name,
-      f.properties.chosen
-    ]);
-    expect(props).toEqual([
-      ["shortest", true],
-      ["safest", false]
-    ]);
   });
 
   test("the start is the boat's position when it is known", () => {
@@ -376,5 +326,91 @@ describe("panel model", () => {
     const first = w.take();
     w.take(); // its route.replace fails, so it never reports done
     expect(w.done(first)).toBe(true);
+  });
+  test("the three risk levels sit around the route check's own, the high one at most 50 %", () => {
+    expect(P.riskLevels(0.01)).toEqual({ low: 0.001, normal: 0.01, high: 0.05 });
+    expect(P.riskLevels(0.2).high).toBe(0.5);
+    fc.assert(
+      fc.property(fc.double({ min: 1e-6, max: 0.5, noNaN: true }), (p) => {
+        const l = P.riskLevels(p);
+        return l.low < l.normal && l.normal <= l.high && l.high <= 0.5 && l.normal === p;
+      })
+    );
+    expect([P.percent(0.01), P.percent(0.001), P.percent(0.05)]).toEqual([
+      "1\u00a0%",
+      "0.1\u00a0%",
+      "5\u00a0%"
+    ]);
+  });
+
+  test("route parameters send every typed value, blank fields the route check's own", () => {
+    const d = { speed: 2.5, xteLimit: 30, probability: 0.01, draft: 0.9 };
+    const same = P.routeParams(d, { xte: null, knots: null, draft: "", risk: "normal" });
+    expect(same).toMatchObject({
+      draft: 0.9,
+      xte: 30,
+      speed: 2.5,
+      level: "normal",
+      fields: {},
+      errors: []
+    });
+    expect(P.paramsText(same)).toBe(
+      "Draft 0.9 m · XTE 30 m · 4.9 kn · normal risk, under 1\u00a0%"
+    );
+    // A value typed as the route check's setting is sent, so it holds if that setting changes.
+    const typed = P.routeParams(d, { xte: "30", knots: (2.5 / P.KNOT).toString(), draft: "0.9" });
+    expect(typed.fields).toEqual({ xteLimit: 30, speed: 2.5, draft: 0.9 });
+    expect(typed.changed).toBe(false);
+    expect(P.paramsText(typed)).toBe(P.paramsText(same));
+    const own = P.routeParams(d, { xte: "10", knots: "6", draft: "1.2", risk: "low" });
+    expect(own.fields).toEqual({ xteLimit: 10, speed: 6 * P.KNOT, draft: 1.2, probability: 0.001 });
+    expect(own.errors).toEqual([]);
+    expect(P.paramsText(own)).toBe(
+      "Draft 1.2 m · XTE 10 m · 6.0 kn · low risk, under 0.1\u00a0% (changed)"
+    );
+    const bad = P.routeParams(d, { xte: "-1", knots: "0", draft: "0", risk: "high" });
+    expect(bad.errors).toHaveLength(3);
+    // Without a draft from signalk-underkeel, none is shown and none is sent.
+    const unknown = P.routeParams({ speed: 2.5, xteLimit: 30, probability: 0.01 }, {});
+    expect(unknown.fields).toEqual({});
+    expect(P.paramsText(unknown)).toBe("XTE 30 m · 4.9 kn · normal risk, under 1\u00a0%");
+    expect(bad.fields).toEqual({ probability: 0.05 });
+    // An unknown level is the route check's own.
+    expect(P.routeParams(d, { risk: "reckless" }).fields).toEqual({});
+  });
+
+  test("a number typed with a decimal comma or point is read, anything else refused", () => {
+    expect([P.decimal("7,5"), P.decimal(" 7.5 "), P.decimal("30"), P.decimal(",5")]).toEqual([
+      7.5, 7.5, 30, 0.5
+    ]);
+    for (const bad of ["7,5,1", "7.5kn", "1e3", "abc", "7..5"]) {
+      expect(P.decimal(bad)).toBeNaN();
+    }
+    const d = { speed: 2.5, xteLimit: 30, probability: 0.01, draft: 0.9 };
+    expect(P.routeParams(d, { knots: "7,5", draft: "1,2" }).fields).toEqual({
+      speed: 7.5 * P.KNOT,
+      draft: 1.2
+    });
+    expect(P.routeParams(d, { knots: "7.5kn" }).errors).toEqual(["the speed must be 0.2 to 58 kn"]);
+  });
+
+  test("a low or high risk level without the route check's probability plans nothing", () => {
+    const unloaded =
+      "the route check's settings have not loaded, so the chosen risk level cannot be applied";
+    for (const defaults of [undefined, { speed: 2.5, xteLimit: 30 }]) {
+      for (const risk of ["low", "high"]) {
+        const p = P.routeParams(defaults, { risk });
+        expect(p.errors).toEqual([unloaded]);
+        expect(p.fields).toEqual({});
+      }
+      expect(P.routeParams(defaults, { risk: "normal" }).errors).toEqual([]);
+    }
+  });
+
+  test("a refusal offers the lowest-risk route once, never for a request that had it", () => {
+    expect(P.offersFallback(422, { from: [0, 0] })).toBe(true);
+    expect(P.offersFallback(422, { fallback: true })).toBe(false);
+    expect(P.offersFallback(200, {})).toBe(false);
+    expect(P.offersFallback(503, {})).toBe(false);
   });
 });

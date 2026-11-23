@@ -27,7 +27,7 @@ No product found routes on survey quality, bounds the probability of grounding, 
 for the tide, or explains why each leg is safe. This plan does all four:
 
 1. **Chance-constrained cost.** A leg is accepted only when its P(UKC < 0), from
-   `signalk-underkeel`'s CATZOC/QUAPOS uncertainty, water level σ, squat and wave allowance, is
+   `signalk-underkeel`'s CATZOC/QUAPOS uncertainty, water level σ and wave allowance, is
    below the threshold; the route also has a total risk budget.
 2. **Time-dependent search with tide gates.** The search state is (position, time). Where the
    forecast says the water will rise, the plan may wait at a permitted waiting place and go on.
@@ -80,7 +80,8 @@ The types are in `src/oracle/contract.ts`, a copy of underkeel's `src/planning-a
 the planner relies on:
 
 - `unavailable()` says why planning cannot run now; `defaults()` gives the route check's speed,
-  cross-track limit, probability and planning buffer.
+  cross-track limit, probability and planning buffer (since signalk-underkeel 0.8.0 half the
+  vessel's beam, the corridor's reach past the cross-track limit).
 - `session(params, signal, job)` runs `job` in underkeel's request queue with a `Session` over a
   time window: `box(sw, ne)` checks every point of the box with the corridor half-width around
   it, `segment(a, b)` checks a leg as `/route-check` does, both at the window's lowest water
@@ -153,7 +154,14 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
    risk than the worst leg they replace, and at no status worse than passing add legs or length.
    It draws on part of the work left, so the stages after it keep the rest, and stops with the
    last checked route when that is spent; a plan whose work then reaches its limit is refused
-   with the work limit.
+   with the work limit. A route of long legs, the fairway stage's chain of lines (step 15) and a
+   route's straightened parts, has its corners cut as well (`TautRule.cutCorners`): a turn
+   between legs kilometres long is replaced by the longest chord that passes, from a point back
+   along the leg into it to one as far along the leg out, binary searched; a shortcut to either
+   neighbour, or the turn moved toward their line, would cross what lies inside the corner. Only
+   the chord is checked, the kept parts lying inside legs already checked; a cut is kept only
+   when it saves at least 20 m, a gain known before the chord is checked. Pargas to Nagu: 13.25
+   nm, where the lines' L of 2.2 km south and 4.2 km west had held it to 13.96.
 5. **Proof.** `routeCheck` checks the route at its departure, leg by leg at each leg's own arrival.
    Its statuses are the answer. A plan without `fallback` is offered only when every leg but a
    berth leg (step 13) is `ok`, `marginal` or an accepted `unverified`; otherwise the reply is
@@ -235,14 +243,57 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     about 21 m wide. So the main search also follows the charted lines as a graph
     (`src/plan/fairway.ts`). Its way is a candidate like the search's: it is offered only when
     every leg of it passed its check within the work, and the route check decides (invariant 1).
-    It replaces the search's route only when the search found no strict route, only a fallback,
-    or one over `FAIRWAY_GAIN` (10 %) longer (`src/plan/narrows.ts`). With signalk-underkeel's
-    `pilotage` it runs in a session of its own asked with pilotage, so a leg in water swept to its
-    marks is held to the boat's measured position buffer (`PILOTAGE`), and its narrows parts are
-    proved with pilotage; the search's squares are not, as checking every square twice spent the
-    budget. A verdict's flags that only describe the water (`SWEPT`, `DREDGED`, `PILOTAGE`, …) no
-    longer keep an accepted `unverified` leg out (`search/passes.ts`). Fallböle to
-    Sattmarkssundet: 1.5 nm, 8 legs along the line, each `PILOTAGE`, where no route passed.
+    It runs first, in the search's session at the harbour corridor, pulled and its corners cut
+    (step 4), and the search then looks only for a way that could stand against it: A* queues
+    no square whose length along its cheapest way in and straight line on to the goal reach the
+    lines' way's length (`SearchLimits.bound`; the order stays by cost). The shorter stands; with
+    preference lines the search's route stands within `FAIRWAY_GAIN` (10 %), kept to starboard of
+    a two-way line, and the bound grows by as much. The lines' way replaces a search that found no
+    strict route or only a fallback. An end is joined to the lines' points within 2 km
+    (`LINE_REACH`), each joining leg checked. Work, Pargas to Nagu: 1.5 M where the unbounded
+    search spent 10 M proving nothing shorter; Turku to Nauvo 4.3 M against 11.9 M. A verdict's flags that only describe the water (`SWEPT`,
+    `DREDGED`, `FAIRWAY_GAP`, …) no longer keep an accepted `unverified` leg out
+    (`search/passes.ts`); `FAIRWAY_GAP` marks a leg held to a fairway's line through the gap its
+    swept areas leave under a bridge. Fallböle to Sattmarkssundet: 1.5 nm, 8 legs along the line,
+    where no route passed.
+
+    Decided, with signalk-underkeel 0.8.0: a plan reads no GNSS. Its corridor is underkeel's, the
+    cross-track limit and half the boat's beam, the hull on any track within the limit; the
+    planner asks no session or route check for pilotage, the buffer underkeel once took from the
+    boat's fix. Where the chart places its depths is the chart's own σ, which underkeel's corridor
+    queries count past the corridor. A plan is sailed later and elsewhere than it is made: one HDOP
+    reading turned Pargas–Nagu from 13.96 into 19.96 nm. Position error is underkeel's look-ahead's,
+    underway, which also warns when the live fix is wider than the swept water left past the hull
+    on the active route's leg. Invariants 1–7 hold: every leg is still the route check's, at the
+    corridor underkeel checks.
+
+16. **Band refinement.** Pulling and the taut string (step 4) shorten a route only within its way
+    round each island: a route the squares led north of an islet stays north of it, however much
+    shorter the way south (Pargas to Nagu passed north of Torrgrund, 140 m longer). So each part
+    of a strict shortest route (step 14) is searched again on a grid in a band along it
+    (`src/search/band.ts`), at the part's own corridor: a `route` part at the request's, a
+    `narrows` part at the harbour corridor, so the refinement never draws a route into narrow
+    water the narrows' price kept it out of. The grid is 100 m (`BAND_STEP`), 1 km either side of
+    the route (`BAND_WIDTH`), and the route's own points every 100 m are nodes as well, joined to
+    each other unchecked as parts of a leg that passed, so a harbour mouth or a fairway's gap
+    narrower than the grid stays open. Lazy Theta\* runs on it: a point is given its neighbour's
+    parent, and the leg from that parent is checked only when the point is taken from the heap,
+    so a point taken costs one check. It runs 8 km of route at a time (`BAND_WINDOW`), then again
+    with the cuts moved half a window, so each search explores only round its own piece. Its way
+    is pulled and drawn tight, and replaces the part only when it is shorter and every leg passes;
+    on half the work left, with the part as it was where that runs out. Not for a fallback, a risk
+    cost or preference lines, whose price is not length. Pargas to Nagu: 12.87 nm south of
+    Torrgrund, where it was 13.09 north of it, 2.5 M work more; Turku to Nauvo 17.36 against 17.38.
+    A second pass searches a 30 m grid 200 m either side, only within 500 m along the route of a
+    turn (`bandAroundTurns`, `FINE_BAND`): a taut route turns only where it touches land or a shoal,
+    so a shorter way through a gap narrower than the first grid starts near a turn, and its
+    straight legs need no search. Pargas to Nagu 12.85 nm for about 1.3 M work more, shorter than a
+    reference search on a 50 m grid 3 km either side (12.856 nm, 10 M work); the uniform 30 m grid
+    along the whole route reaches the same for 6 M. A part's ends stay where it meets the next,
+    so a route split into narrows parts gains less (Turku to Nauvo 17.354 nm, against 17.318 on a
+    30 m grid over the whole route at the harbour corridor).
+    Invariants: every leg it offers is still the route check's (1); it only changes which passing
+    legs make the route, never a verdict (2–6).
 
 ### 4.2 R2: planning beyond the chart box
 
@@ -482,11 +533,37 @@ or a wait the request asks for.
 ### 4.5 R5: Freeboard UX and upstream
 
 - Extension panel: start at the vessel (`navigation.position` from the host's Signal K stream)
-  or at the first point of a selected route, destination at its last point; alternatives drawn
-  as a data overlay (`alternatives`, the written one marked), each listed with its length, risk
-  and status and a button that writes it instead; the chosen one written with `route.replace` as
-  an unsaved draft; the timed plan and each leg's flags in words in the panel. Alternatives plan
-  at one departure, so the panel leaves its wait for the tide out while they are asked for.
+  or at the first point of a selected route, destination at its last point; the plan written
+  with `route.replace` as an unsaved draft; the timed plan and each leg's flags in words in the
+  panel.
+- Panel choices (decision, 2026-11-23): the panel asks only what changes from trip to trip. The
+  start (the boat or the route's first point); the route (shortest, or using fairways, which is
+  `preferLines`); and the wait for
+  the tide, which always allows waiting on the way (`waitEnRoute`; it waits there only when no
+  single departure passes). A row of route parameters shows the route check's settings
+  (`GET /status` `defaults`) and changes them for the plan: the cross-track limit, the speed in
+  knots, and the accepted risk at three levels around the route check's own _p_: _p_/10, _p_ and
+  min(5 · _p_, 0.5). A stricter level never offers what a less strict one refused (invariant 3).
+  The row shows the draft too, as signalk-underkeel states it in `defaults()` (its configured
+  draft, else Signal K `design.draft.maximum`); a draft typed in the panel is sent for the plan
+  and not kept, so it never plans a later trip unseen. Narrows and the re-plan of a
+  dragged waypoint are always on. The lowest-risk route is no longer a check box: after a
+  refusal the panel offers it as a button, which plans again with `fallback`, so the boat's
+  crew sees why no route passes before they take one with risky legs. Depth data marked not
+  for navigation depends on the charts, not the trip: it is the plugin setting
+  `acceptNotForNavigation`, the `accept` of a request that names none. The panel keeps its
+  choices in the browser.
+- No alternatives in the panel (decision, 2026-11-23): the panel no longer offers the shortest,
+  balanced and safest routes, nor draws them as a map overlay; `alternatives` stays in the REST
+  API (§4.4). In the archipelago they were refused where the shortest route was not: the balanced
+  and safest routes are planned without narrows (§4.1 step 14), at the request's corridor, which
+  holds no way through the sounds the shortest takes (Pargas to Nagu at xte 30 m: the shortest
+  12.85 nm, both others refused). Planned through narrows at the harbour corridor, the search
+  sees a leg's risk at that corridor, less than the request's wider corridor meets in open water,
+  and Pargas to Nagu reached the work limit after 5.6 minutes. Where they were offered they kept
+  close to the shortest: its riskiest leg there is 0.05 %, a twentieth of the route check's _p_.
+  Three plans for each request cost three times the work on a Raspberry Pi. The panel's risk
+  level (low is _p_/10) asks for a safer route, and the lowest-risk route follows a refusal.
 - Interactive editing: when exactly one point of the route the panel wrote moves (`route.dirty`
   from the host), the legs from the point before it to it and from it to the point after are
   planned again, each as a plan of its own, and spliced in; the dragged point stays where it was
@@ -500,11 +577,12 @@ or a wait the request asks for.
   reply of §5); Freeboard core and signalk-underkeel's copy of the contract schema list it next.
 - **Panel trial** (`npm run trial:panel`, `scripts/trials/panel-trial.js`): the panel in
   Chromium, hosted by the bus's own host implementation over one route, planning through
-  signalk-underkeel's planning API on the field trials' charts. It plans with alternatives,
-  writes another, drags a waypoint and waits for its legs to be planned again.
+  signalk-underkeel's planning API on the field trials' charts. It plans the shortest route from
+  the route's first point, takes the lowest-risk route when the plan is refused, drags a waypoint
+  and waits for its legs to be planned again.
 - **Freeboard trial** (R5's exit, `docs/trials.md`): the panel in Freeboard-SK on a Signal K
   server with signalk-underkeel and Charts Provider, planning a Miami route from the panel, the
-  plan written into Freeboard's route and the alternatives drawn on its map.
+  plan written into Freeboard's route.
 
 ## 5. REST API
 

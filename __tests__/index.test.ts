@@ -70,7 +70,10 @@ describe("plugin lifecycle", () => {
     const plugin = routePlanner(f.app as never);
     const schema = plugin.schema as () => unknown;
     expect(schema()).toMatchObject({
-      properties: { maxWork: { type: "integer", default: 1_200_000 } }
+      properties: {
+        maxWork: { type: "integer", default: 1_200_000 },
+        acceptNotForNavigation: { type: "boolean", default: false }
+      }
     });
     plugin.start({ maxWork: 2_500_000 }, () => undefined);
     expect(f.statuses.at(-1)).toBe("Ready (synthetic) · 2.5 M work units");

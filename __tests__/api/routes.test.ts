@@ -93,7 +93,8 @@ describe("REST routes", () => {
     expect((await f.call("GET", "/v1/status")).body).toEqual({
       state: "ready",
       provider: "synthetic",
-      work: { budget: 1_200_000, plans: 0 }
+      work: { budget: 1_200_000, plans: 0 },
+      defaults: { speed: 3, xteLimit: 30, probability: 0.01 }
     });
     const r = await f.call("POST", "/v1/plan", { from: at(0, 0), to: at(5000, 0) });
     expect(r.code).toBe(200);
@@ -131,6 +132,44 @@ describe("REST routes", () => {
     expect((await f.call("GET", "/v1/status")).body).toMatchObject({
       work: { budget: 1_200_000, plans: 1, unitsPerSecond: 2_400_000, budgetSeconds: 0.5 }
     });
+  });
+
+  test("the status states the draft signalk-underkeel plans with, when it states one", async () => {
+    g[PLANNING_API] = syntheticApi(
+      { obstacles: [] },
+      {
+        defaults: () => ({
+          speed: 3,
+          xteLimit: 30,
+          probability: 0.01,
+          planningBuffer: 10,
+          draft: 0.9
+        })
+      }
+    );
+    expect((await mount().call("GET", "/v1/status")).body).toMatchObject({
+      defaults: { speed: 3, xteLimit: 30, probability: 0.01, draft: 0.9 }
+    });
+  });
+
+  test("the plugin's not-for-navigation setting is the accept of a request that names none", async () => {
+    g[PLANNING_API] = syntheticApi({ obstacles: [] });
+    const f = fakeRouter();
+    registerRoutes(
+      f.router,
+      apiFor({ now: () => NOW }, () => new AbortController().signal, undefined, {
+        accept: () => ["NOT_FOR_NAVIGATION"]
+      }),
+      () => undefined
+    );
+    const ends = { from: at(0, 0), to: at(5000, 0) };
+    const set = await f.call("POST", "/v1/plan", ends);
+    expect(set.code).toBe(200);
+    expect(set.body).toMatchObject({ accepted: ["NOT_FOR_NAVIGATION"] });
+    // A request's own list, even an empty one, keeps its place.
+    const own = await f.call("POST", "/v1/plan", { ...ends, accept: [] });
+    expect(own.code).toBe(200);
+    expect(own.body).not.toHaveProperty("accepted");
   });
 
   test("a bad body is 400; a stopped plugin is 503", async () => {

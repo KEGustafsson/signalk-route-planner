@@ -123,23 +123,9 @@ describe("flags that describe the water", () => {
   test("do not keep an otherwise accepted unverified leg out", () => {
     const rule = { accept: ["NOT_FOR_NAVIGATION"], probability: 0.01 };
     const leg = (flags: string[]) => ({ status: "unverified" as const, risk: 0.001, flags });
-    expect(passes(leg(["DREDGED", "NOT_FOR_NAVIGATION", "PILOTAGE"]), rule)).toBe(true);
+    expect(passes(leg(["DREDGED", "NOT_FOR_NAVIGATION", "FAIRWAY_GAP"]), rule)).toBe(true);
     expect(passes(leg(["DREDGED"]), rule)).toBe(false);
     expect(passes(leg(["DREDGED", "UNASSESSED"]), rule)).toBe(false);
-  });
-
-  test("a pilotage part's legs are timed in a session of their own (`gate.ts`)", () => {
-    const legs = legsOf(
-      [
-        { kind: "narrows", coordinates: [at(0, 0), at(100, 0)], xteLimit: 0, pilotage: true },
-        { kind: "harbour", end: "end", coordinates: [at(100, 0), at(200, 0)], xteLimit: 0 }
-      ],
-      3
-    );
-    expect(legs.map((l) => [l.xteLimit, l.pilotage])).toEqual([
-      [0, true],
-      [0, undefined]
-    ]);
   });
 });
 
@@ -180,17 +166,13 @@ describe("the way along the lines at the work limit", () => {
   });
 });
 
-describe("pilotage", () => {
-  // The sound is 16 m wide: the harbour corridor's 10 m buffer does not fit, a pilotage buffer
-  // of 5 m in its swept water does (the land 5 m farther off). The destination lies at a quay.
-  const quay = { x: 6000, y: 15, r: 8 };
-  const chart = (buffer: number): Chart => ({
+describe("no pilotage", () => {
+  // A provider that still offers the feature "pilotage" (signalk-underkeel before it went): the
+  // planner never asks for it, so no GPS reading reaches a plan.
+  const chart: Chart = {
     obstacles: [
-      { x: 3000, y: 1508, r: 1500 - buffer },
-      { x: 3000, y: -1508, r: 1500 - buffer },
       { x: 3000, y: 9000, r: 6600 },
-      { x: 3000, y: -9000, r: 6600 },
-      quay
+      { x: 3000, y: -9000, r: 6600 }
     ],
     lines: [
       {
@@ -201,47 +183,34 @@ describe("pilotage", () => {
         ]
       }
     ]
-  });
+  };
 
-  /** A provider with feature "pilotage", its sessions' params and route checks recorded. */
-  function piloting() {
-    const plain = syntheticApi(chart(0));
-    const swept = syntheticApi(chart(5));
+  test("a plan asks no session or route check for it", async () => {
+    const plain = syntheticApi(chart);
     const sessions: SessionParams[] = [];
-    const checks: { pilotage?: boolean; route: { coordinates: LonLat[] } }[] = [];
+    const checks: Record<string, unknown>[] = [];
     const api: PlanningApiV1 = {
       ...plain,
       features: ["objects", "pilotage"],
       session: (params, signal, job) => {
         sessions.push(params);
-        return (params.pilotage ? swept : plain).session(params, signal, job);
+        return plain.session(params, signal, job);
       },
       routeCheck: (body, signal) => {
-        const b = body as (typeof checks)[number];
-        checks.push(b);
-        return (b.pilotage ? swept : plain).routeCheck(body, signal);
+        checks.push(body as Record<string, unknown>);
+        return plain.routeCheck(body, signal);
       }
     };
-    return { api, sessions, checks };
-  }
-
-  test("a sound passed in swept water is planned and proved with pilotage, the harbour without", async () => {
-    const p = piloting();
-    expect(legStatus(chart(0), at(2900, 0), at(3100, 0), 10)).toBe("fail");
     const r = await plan(
-      p.api,
+      api,
       { from: at(0, 0), to: at(6000, 0), departure: NOW, speed: 3, xteLimit: 30 },
       NEVER,
       NOW,
       { ...DEFAULT_PLAN, maxWork: 5_000_000 }
     );
     expect(r.status).toBe(200);
-    const parts = (r.body as { check: { parts: { part: string }[] } }).check.parts;
-    expect(parts.map((q) => q.part)).toContain("narrows");
-    expect(parts[parts.length - 1]?.part).toBe("harbour");
-    expect(p.sessions.some((s) => s.pilotage === true)).toBe(true);
-    expect(p.checks.some((c) => c.pilotage === true)).toBe(true);
-    // The harbour part at the quay, last, is checked as it was planned: without pilotage.
-    expect(p.checks[p.checks.length - 1]?.pilotage).toBeUndefined();
+    expect(sessions.length).toBeGreaterThan(0);
+    expect(sessions.every((s) => !("pilotage" in s))).toBe(true);
+    expect(checks.every((c) => !("pilotage" in c))).toBe(true);
   });
 });

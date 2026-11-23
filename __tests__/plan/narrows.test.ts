@@ -6,6 +6,7 @@ import { narrowParts } from "../../src/plan/narrows";
 import type { PlanInput } from "../../src/plan/plan";
 import { plan } from "../../src/plan/plan";
 import { DEFAULT_PLAN } from "../../src/plan/options";
+import * as search from "../../src/plan/search";
 import { WORK_LIMIT } from "../../src/plan/search";
 import type { Chart, Circle } from "../helpers/synthetic-oracle";
 import { at, legStatus, syntheticApi, xy } from "../helpers/synthetic-oracle";
@@ -212,6 +213,47 @@ describe("narrows", () => {
     }
   });
 
+  test("a search that reaches the work limit refuses the plan, the way along the lines in hand", async () => {
+    const line = {
+      class: "NAVLINE",
+      points: [
+        [0, 0],
+        [6000, 0]
+      ] as [number, number][]
+    };
+    const chart: Chart = { ...sound(300), lines: [line] };
+    const opts = { ...DEFAULT_PLAN, narrowWeight: 10 };
+    // The way along the line stands where the search finds no way.
+    const noWay = jest.spyOn(search, "searchRoute").mockImplementation((s, a, b) =>
+      Promise.resolve({
+        ok: false,
+        reason: search.NO_WAY,
+        direct: search.checkLeg(s, a, b),
+        squares: 0,
+        unverified: 0,
+        work: s.work()
+      })
+    );
+    try {
+      expect((await planned(chart, {}, opts)).r.status).toBe(200);
+      noWay.mockImplementation((s, a, b) =>
+        Promise.resolve({
+          ok: false,
+          reason: WORK_LIMIT,
+          direct: search.checkLeg(s, a, b),
+          squares: 0,
+          unverified: 0,
+          work: s.work()
+        })
+      );
+      const { r, body } = await planned(chart, {}, opts);
+      expect(r.status).toBe(422);
+      expect(body.reason).toContain(WORK_LIMIT);
+    } finally {
+      noWay.mockRestore();
+    }
+  });
+
   test("a sound the tide opens is timed by the gate, its legs still at the harbour corridor", async () => {
     const HOUR = 3_600_000;
     // The sound the only way through, its bar needing 1 m of water: below it for six hours.
@@ -302,5 +344,6 @@ describe("narrows properties", () => {
       }),
       { numRuns: 25 }
     );
-  });
+    // 25 charts, each planned twice: past Jest's default 5 s when the suite runs in parallel.
+  }, 60_000);
 });

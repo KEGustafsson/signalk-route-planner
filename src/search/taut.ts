@@ -16,9 +16,13 @@ import type { QuadTree } from "./quadtree";
  * Taut-string refinement (plan §4.1 step 4). String pulling keeps the search's own points,
  * square centres and edge midpoints, so a route turns near an island, not at its corner, and
  * zig-zags where samples of shortcuts failed. Here the pulled route is drawn tight: shortcuts are
- * tried outward from each point, and each turn is moved toward the straight line between its
- * neighbours as far as its two legs still pass, binary searched, until a round gains next to
- * nothing. A turn so ends where the water stops it, at the obstacle's corner.
+ * tried outward from each point, each turn's corner is cut by the longest chord that passes, from
+ * a point back along the leg into it to one as far along the leg out (binary searched), and each
+ * turn is moved toward the straight line between its neighbours as far as its two legs still
+ * pass, binary searched, until a round gains next to nothing. A turn so ends where the water stops
+ * it, at the obstacle's corner. The cut is what draws a route off a chain of long lines (the
+ * fairway stage's, `plan/fairway.ts`): a turn there joins legs kilometres long, and a shortcut to
+ * either neighbour, or a turn moved toward their line, crosses what lies inside the corner.
  *
  * A change is kept only when every new leg is checked, costs less than the legs it replaces at
  * the route's own price (`TautRule.cost`, length where the route passes), and is no worse, in
@@ -32,6 +36,18 @@ export interface TautRule {
   cost(v: Verdict, a: LonLat, b: LonLat): number;
   /** How bad a leg is: 0 where it passes, higher as it gets worse. */
   rank(v: Verdict): number;
+  /**
+   * Cut corners too (`Tightener.cut`): for a route of long legs, a chain of fairway lines or a
+   * route's straightened parts. A search's route turns at its squares, close together, and is
+   * drawn tight without it, at no cost in checks.
+   */
+  cutCorners?: boolean;
+  /**
+   * A leg the rule passes may replace legs of lower risk: a strict route's shortest, where any
+   * passing leg is as good as another, as the search's own price has it. Without it, as for a
+   * fallback's or a risk-weighted route, no new leg carries more risk than the worst it replaces.
+   */
+  passing?: boolean;
 }
 
 /** Bisection steps when moving a turn: its last step is 1/64 of the way to the line. */
@@ -42,6 +58,13 @@ const SETTLED = 1e-4;
 const ROUNDS = 8;
 /** A turn closer than this to its neighbours' line, metres, is left as it is. */
 const STRAIGHT_M = 1;
+/** A corner whose shorter leg is under this, metres, is not cut. */
+const CUT_MIN_M = 20;
+/**
+ * A cut is kept only when it shortens the route by at least this, metres: a cut adds a turn,
+ * worth it on a corner of long legs, not to nibble metres off a short zig-zag.
+ */
+const CUT_GAIN_M = 20;
 
 type Check = (a: LonLat, b: LonLat) => Verdict;
 
@@ -77,6 +100,14 @@ const toward = (p: LonLat, m: LonLat, t: number): LonLat => [
   p[0] + t * (m[0] - p[0]),
   p[1] + t * (m[1] - p[1])
 ];
+
+/** A corner's cut: the chord's ends, the legs replacing the corner's two, and what it saves, m. */
+interface Cut {
+  x: LonLat;
+  y: LonLat;
+  legs: Leg[];
+  gain: number;
+}
 
 class Tightener {
   readonly pts: LonLat[];
@@ -130,7 +161,10 @@ class Tightener {
     const risk = Math.max(...old.map((l) => l.v.risk));
     const was = old.reduce((s, l) => s + l.cost, 0);
     const now = fresh.reduce((s, l) => s + l.cost, 0);
-    if (!fresh.every((l) => Number.isFinite(l.cost) && l.v.risk <= risk) || now >= was - 1e-6) {
+    // Under `passing`, a leg the rule passes is as good as any other that does.
+    const fine = (l: Leg): boolean =>
+      l.v.risk <= risk || (this.rule.passing === true && this.rule.rank(l.v) === 0);
+    if (!fresh.every((l) => Number.isFinite(l.cost) && fine(l)) || now >= was - 1e-6) {
       return false;
     }
     const at = (legs: readonly Leg[], r: number): { n: number; m: number } => {
@@ -177,6 +211,123 @@ class Tightener {
       }
     }
     return true;
+  }
+
+  /**
+   * Each turn's corner cut: a point back along the leg into it and one along the leg out of it,
+   * joined by a chord, the cut the longest of its shape whose chord leaves the route better,
+   * binary searched, of three shapes the one saving most (`bestCut`). The legs kept on either side lie inside legs already checked, whose
+   * corridors hold theirs, so they keep those verdicts; only the chord is checked.
+   */
+  cut(): boolean {
+    for (let k = 1; k < this.pts.length - 1; k++) {
+      const found = this.bestCut(k);
+      if (found === false) {
+        return false;
+      }
+      if (found) {
+        this.splice(k, found);
+        k++;
+      }
+    }
+    return true;
+  }
+
+  /** Turn k's longest chord that leaves the route better; undefined: none; false: work spent. */
+  private bestCut(k: number): Cut | undefined | false {
+    const a = this.pts[k - 1] as LonLat;
+    const p = this.pts[k] as LonLat;
+    const b = this.pts[k + 1] as LonLat;
+    const into = this.legs[k - 1] as Leg;
+    const out = this.legs[k] as Leg;
+    const reach = Math.min(into.length, out.length);
+    if (reach < CUT_MIN_M || haversine(p, foot(a, b, p)) < STRAIGHT_M) {
+      return undefined;
+    }
+    // Where the corner's chord may start and end, for t from 1 down: the same way back and on;
+    // back along the leg in, then straight to the next point; or straight from the last point
+    // to a point along the leg out. What lies inside a corner seldom lies square in it.
+    const shapes: ((t: number) => [number, number])[] = [
+      (t) => [t * reach, t * reach],
+      (t) => [t * into.length, out.length],
+      (t) => [into.length, t * out.length]
+    ];
+    let best: Cut | undefined;
+    for (const shape of shapes) {
+      const found = this.cutOf(k, shape);
+      if (found === false) {
+        return false;
+      }
+      if (found && (!best || found.gain > best.gain)) {
+        best = found;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Turn k's longest cut of one shape (`shape(t)`: how far back along the leg in and on along
+   * the leg out the chord starts and ends) that leaves the route better, t binary searched.
+   */
+  private cutOf(k: number, shape: (t: number) => [number, number]): Cut | undefined | false {
+    const a = this.pts[k - 1] as LonLat;
+    const p = this.pts[k] as LonLat;
+    const b = this.pts[k + 1] as LonLat;
+    const into = this.legs[k - 1] as Leg;
+    const out = this.legs[k] as Leg;
+    const part = (l: Leg, length: number): Leg => ({
+      v: l.v,
+      length,
+      cost: l.cost * (length / l.length)
+    });
+    let lo = 0;
+    let hi = 1;
+    let kept: Cut | undefined;
+    for (let s = 0; s < STEPS; s++) {
+      const t = s === 0 ? 1 : (lo + hi) / 2;
+      const [dIn, dOut] = shape(t);
+      const x = toward(p, a, dIn / into.length);
+      const y = toward(p, b, dOut / out.length);
+      // The gain is known before the chord is checked, and shrinks with the cut: once too
+      // small, so is every smaller cut of the shape, and none is checked.
+      const gain = dIn + dOut - haversine(x, y);
+      if (gain < CUT_GAIN_M) {
+        break;
+      }
+      const chord = this.leg(x, y);
+      if (!chord) {
+        return false;
+      }
+      const legs = [part(into, into.length - dIn), chord, part(out, out.length - dOut)];
+      if (this.better(legs, k - 1, k + 1)) {
+        lo = t;
+        kept = { x, y, legs, gain };
+        if (t === 1) {
+          break;
+        }
+      } else {
+        hi = t;
+      }
+    }
+    return kept;
+  }
+
+  /** Turn k replaced by the cut's two points and legs, a point dropped where it meets its neighbour. */
+  private splice(k: number, c: Cut): void {
+    const [l0, chord, l2] = c.legs as [Leg, Leg, Leg];
+    const pts: LonLat[] = [];
+    const legs: Leg[] = [];
+    if (l0.length > 1e-3) {
+      pts.push(c.x);
+      legs.push(l0);
+    }
+    legs.push(chord);
+    if (l2.length > 1e-3) {
+      pts.push(c.y);
+      legs.push(l2);
+    }
+    this.pts.splice(k, 1, ...pts);
+    this.legs.splice(k - 1, 2, ...legs);
   }
 
   /** Each turn moved toward its neighbours' line as far as its legs stay better. */
@@ -238,7 +389,7 @@ export async function taut(
   }
   for (let round = 0; round < ROUNDS; round++) {
     const before = t.length();
-    const done = t.shortcuts() && t.relax();
+    const done = t.shortcuts() && (rule.cutCorners !== true || t.cut()) && t.relax();
     await limits.pause();
     if (!done || before - t.length() < SETTLED * before) {
       break;
@@ -269,7 +420,9 @@ export function tautRule(
       verdictWeight(v, rule, { fallback: how.fallback, ...(how.cost && { cost: how.cost }) }) +
       (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0) +
       (narrow ? narrow.weight * narrowShare(narrow, tree, a, b) : 0),
-    rank: (v) => (passes(v, rule) ? 0 : (STATUS_RANK[v.status] ?? 3))
+    rank: (v) => (passes(v, rule) ? 0 : (STATUS_RANK[v.status] ?? 3)),
+    // A strict route without a risk cost prices every passing leg alike, as A* did.
+    passing: !how.fallback && how.cost === undefined
   };
 }
 

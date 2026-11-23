@@ -29,10 +29,7 @@ function serve(
 describe("extension assets", () => {
   test("every page the manifest names exists in public/", () => {
     const m = buildManifest("0")[PLUGIN_ID];
-    const urls = [
-      ...(m?.panels ?? []).map((c) => c.url),
-      ...(m?.overlays ?? []).map((o) => o.style)
-    ];
+    const urls = (m?.panels ?? []).map((c) => c.url);
     expect(urls.length).toBeGreaterThan(0);
     for (const url of urls) {
       const rel = url.replace(`/plotterext/${PLUGIN_ID}/`, "");
@@ -124,17 +121,14 @@ describe("extension assets", () => {
     expect(mounts).toEqual([`/plotterext/${PLUGIN_ID}`]);
   });
 
-  test("the manifest offers routePlan at the plugin's REST base, and an overlay whose style loads", () => {
+  test("the manifest offers routePlan at the plugin's REST base, and no map overlay", () => {
     const m = buildManifest("0")[PLUGIN_ID];
     expect(m?.services.navigationSafety).toEqual({
       apiVersion: "1",
       base: "/plugins/signalk-route-planner/v1",
       provides: ["routePlan"]
     });
-    const style = JSON.parse(
-      fs.readFileSync(path.join(PUBLIC, "alternatives-style.json"), "utf8")
-    ) as { sources: Record<string, unknown>; layers: { source: string }[] };
-    expect(style.layers.every((l) => l.source in style.sources)).toBe(true);
-    expect(Object.keys(style.sources)).toEqual(["routes"]);
+    expect(m).not.toHaveProperty("overlays");
+    expect(m?.optional).not.toContain("overlays.data");
   });
 });

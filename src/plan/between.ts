@@ -48,7 +48,9 @@ export async function between(
         every: 64,
         weight: how.mode.weight,
         greed,
-        ...(g && guided && { heuristic: (p: [number, number]) => g.to(p) })
+        ...(g && guided && { heuristic: (p: [number, number]) => g.to(p) }),
+        // A route in hand the search's must be shorter than, metres, in the tree's units.
+        ...(opts.lengthBound !== undefined && { bound: opts.lengthBound / tree.shape.unit })
       });
     },
     { first, fine: FINE_GREED },

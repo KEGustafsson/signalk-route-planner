@@ -49,17 +49,10 @@
     if (l.part !== "narrows") {
       return l.status;
     }
-    // Checked at the planned position accuracy, in water swept to its marks; its room is how far
-    // off the line the swept water reaches, which the live fix is held to underway.
-    const piloted = Array.isArray(l.flags) && l.flags.includes("PILOTAGE");
-    if (!piloted) {
-      return l.status + " (narrow, xte " + (l.xteLimit || 0) + " m)";
-    }
-    const room = l.pilotage && Number.isFinite(l.pilotage.room) ? l.pilotage.room : undefined;
-    return (
-      l.status +
-      (room === undefined ? " (swept fairway, pilotage)" : " (swept fairway, keep within ±" + room.toFixed(1) + " m)")
-    );
+    // Held to a fairway's line through the gap its swept areas leave under a bridge.
+    return Array.isArray(l.flags) && l.flags.includes("FAIRWAY_GAP")
+      ? l.status + " (under a bridge, on the fairway line)"
+      : l.status + " (narrow, xte " + (l.xteLimit || 0) + " m)";
   }
 
   /** The sentence for legs through narrows, or "" when there are none. */
@@ -69,19 +62,15 @@
     if (n === 0) {
       return "";
     }
-    // The route check flags each leg it held to the planned position accuracy, not each part.
-    const piloted = narrows.filter((l) => Array.isArray(l.flags) && l.flags.includes("PILOTAGE"));
-    const p = piloted.length;
-    const roomed = piloted.some((l) => l.pilotage && Number.isFinite(l.pilotage.room));
-    const which = p === n ? (n === 1 ? "it is" : "all are") : p + " of them " + (p === 1 ? "is" : "are");
+    // The route check flags each leg it held to a fairway gap's strip, not each part.
+    const p = narrows.filter((l) => Array.isArray(l.flags) && l.flags.includes("FAIRWAY_GAP")).length;
+    const which = p === n ? (n === 1 ? "it passes" : "all pass") : p + " of them " + (p === 1 ? "passes" : "pass");
     return (
       ". " +
       n +
       (n === 1 ? " leg passes" : " legs pass") +
       " water narrower than your corridor, checked at the harbour corridor" +
-      (p > 0
-        ? "; " + which + " in a swept fairway: keep between its marks" + (roomed ? ", within the ± the leg names" : "")
-        : "")
+      (p > 0 ? "; " + which + " under a bridge on the fairway's line: keep to the line" : "")
     );
   }
 
@@ -267,6 +256,7 @@
     UNASSESSED: "unassessed survey",
     NOT_FOR_NAVIGATION: "depth data not for navigation",
     DREDGED: "dredged",
+    FAIRWAY_GAP: "under a bridge, on the fairway line",
     SWEPT: "swept",
     WATER_LEVEL_FALLBACK: "no current water level"
   };
@@ -279,40 +269,6 @@
         return FLAG_NOTES[f] || f;
       })
       .join("; ");
-  }
-
-  /** One line for an alternative of a `/plan` reply with `alternatives`. */
-  function alternativeText(a) {
-    if (!a) {
-      return "";
-    }
-    if (a.reason) {
-      return a.name + ": not offered, " + a.reason;
-    }
-    const tail = a.sameAs
-      ? ", the same as " + a.sameAs
-      : a.dominatedBy
-        ? ", no safer than " + a.dominatedBy
-        : "";
-    return a.name + ": " + nm(a.length) + ", risk " + (a.risk * 100).toFixed(2) + " %, " + a.status + tail;
-  }
-
-  /** The offered alternatives as an overlay's GeoJSON, `chosen` marked, the repeats left out. */
-  function alternativesGeoJSON(alternatives, chosen) {
-    return {
-      type: "FeatureCollection",
-      features: (alternatives || [])
-        .filter(function (a) {
-          return a && a.route && !a.sameAs;
-        })
-        .map(function (a) {
-          return {
-            type: "Feature",
-            geometry: a.route,
-            properties: { name: a.name, status: a.status, chosen: a.name === chosen }
-          };
-        })
-    };
   }
 
   /** Whether `position` is a known one: a longitude and a latitude, both finite. */
@@ -384,13 +340,135 @@
     return p && isFinite(p[0]) && isFinite(p[1]) ? { from: p, to: ends.to } : ends;
   }
 
+
+  /** Metres a second in a knot. */
+  const KNOT = 1852 / 3600;
+
+  /** The most a request's accepted probability may be (`src/api/plan-request.ts`). */
+  const MAX_PROBABILITY = 0.5;
+
+  /**
+   * The panel's three levels of the risk accepted on a leg, P(UKC < 0), around the route check's
+   * own setting `p`: a tenth of it, it, and five times it. A leg at or above the level is
+   * marginal, and fails from five times the level (at most 50 %), as the route check rates it.
+   */
+  function riskLevels(p) {
+    return {
+      low: p / 10,
+      normal: p,
+      high: Math.min(5 * p, MAX_PROBABILITY)
+    };
+  }
+
+  /** A probability as a short percentage, kept on one line: "1 %", "0.1 %", "5 %". */
+  function percent(p) {
+    return String(Number((p * 100).toPrecision(2))) + "\u00a0%";
+  }
+
+  /**
+   * A number as typed, with a decimal comma or point ("7,5" or "7.5"); NaN for anything else, so
+   * a value that is not a number is refused, never read as another.
+   */
+  function decimal(v) {
+    const t = String(v).trim().replace(",", ".");
+    return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN;
+  }
+
+  /**
+   * The plan's route parameters from the panel's choice over the route check's `defaults`
+   * (`GET /status`): `xte` in metres and `knots` as typed, each null for the default, and the
+   * `risk` level. `fields` are the request fields of every value typed and of a risk level other
+   * than normal; `changed` whether any of them differs from the defaults; `errors` the values out
+   * of the planner's range, and a low or high risk level without the route check's probability
+   * to set it from, when the plan cannot be asked for.
+   */
+  function routeParams(defaults, choice) {
+    const d = defaults || {};
+    const c = choice || {};
+    const errors = [];
+    const fields = {};
+    const blank = function (v) {
+      return v === null || v === undefined || String(v).trim() === "";
+    };
+    // A blank field is the route check's own setting, sent as nothing; a typed value is sent as
+    // typed, so it holds if the route check's setting changes while the panel is open.
+    const xte = blank(c.xte) ? d.xteLimit : decimal(c.xte);
+    if (!blank(c.xte) && !(isFinite(xte) && xte >= 0 && xte <= 1000)) {
+      errors.push("the cross-track limit must be 0 to 1000 m");
+    } else if (!blank(c.xte)) {
+      fields.xteLimit = xte;
+    }
+    const speed = blank(c.knots) ? d.speed : decimal(c.knots) * KNOT;
+    if (!blank(c.knots) && !(isFinite(speed) && speed >= 0.1 && speed <= 30)) {
+      errors.push("the speed must be 0.2 to 58 kn");
+    } else if (!blank(c.knots)) {
+      fields.speed = speed;
+    }
+    const draft = blank(c.draft) ? d.draft : decimal(c.draft);
+    if (!blank(c.draft) && !(isFinite(draft) && draft >= 0.01 && draft <= 30)) {
+      errors.push("the draft must be 0.01 to 30 m");
+    } else if (!blank(c.draft)) {
+      fields.draft = draft;
+    }
+    const level = c.risk === "low" || c.risk === "high" ? c.risk : "normal";
+    const probability = isFinite(d.probability) ? riskLevels(d.probability)[level] : undefined;
+    // Without it the server would plan at its own probability, the chosen level left unsaid.
+    if (level !== "normal" && probability === undefined) {
+      errors.push("the route check's settings have not loaded, so the chosen risk level cannot be applied");
+    } else if (level !== "normal") {
+      fields.probability = probability;
+    }
+    return {
+      draft: draft,
+      xte: xte,
+      speed: speed,
+      level: level,
+      probability: probability,
+      fields: fields,
+      changed:
+        fields.probability !== undefined ||
+        (fields.xteLimit !== undefined && fields.xteLimit !== d.xteLimit) ||
+        (fields.speed !== undefined && fields.speed !== d.speed) ||
+        (fields.draft !== undefined && fields.draft !== d.draft),
+      errors: errors
+    };
+  }
+
+  /**
+   * The closed parameter row: "Draft 0.9 m · XTE 30 m · 4.9 kn · normal risk, under 1 %", with
+   * "changed" when the plan's differ from the route check's.
+   */
+  function paramsText(params) {
+    const p = params || {};
+    const parts = [];
+    if (isFinite(p.draft)) {
+      parts.push("Draft " + Number(p.draft.toFixed(2)) + " m");
+    }
+    if (isFinite(p.xte)) {
+      parts.push("XTE " + Number(p.xte.toFixed(1)) + " m");
+    }
+    if (isFinite(p.speed)) {
+      parts.push((p.speed / KNOT).toFixed(1) + " kn");
+    }
+    parts.push(
+      (p.level || "normal") + " risk" + (isFinite(p.probability) ? ", under " + percent(p.probability) : "")
+    );
+    return parts.join(" · ") + (p.changed ? " (changed)" : "");
+  }
+
+  /**
+   * Whether a refused plan is offered again as the lowest risk-weighted route, its risky legs
+   * marked: a refusal of a request that did not ask for it already.
+   */
+  function offersFallback(status, request) {
+    return status === 422 && !(request && request.fallback === true);
+  }
+
   const api = {
     API: API,
     movedPoint: movedPoint,
     spliceLegs: spliceLegs,
     legNote: legNote,
-    alternativeText: alternativeText,
-    alternativesGeoJSON: alternativesGeoJSON,
     fromBoat: fromBoat,
     hasPosition: hasPosition,
     worstStatus: worstStatus,
@@ -403,7 +481,14 @@
     preparingWait: preparingWait,
     samePoints: samePoints,
     MAX_PREPARING: MAX_PREPARING,
-    legLabel: legLabel
+    legLabel: legLabel,
+    KNOT: KNOT,
+    riskLevels: riskLevels,
+    percent: percent,
+    routeParams: routeParams,
+    decimal: decimal,
+    paramsText: paramsText,
+    offersFallback: offersFallback
   };
   if (typeof module !== "undefined" && module.exports) {
     module.exports = api;
