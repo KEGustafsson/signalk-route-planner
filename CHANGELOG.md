@@ -51,6 +51,24 @@ All notable changes to signalk-route-planner are documented here.
   on the fairway line".
 - A plan whose planning box signalk-underkeel released before its session ran is prepared and
   planned again, once, rather than answering 503.
+- The raster field: with a signalk-underkeel serving `raster` (0.8.0), a leg or square is settled
+  on the chart's own tiles where they say whether the rule passes it, and asked of the route
+  check only where they do not; the route check still proves every leg of the route offered.
+  Parainen to Nauvo guest harbour: the same 24 338 m route for 0.81 M work units where it took
+  5.23 M, 1 072 legs asked of the chart where it asked 15 246; in the running server on a Jetson
+  Orin 3.4 to 3.8 s where it took 34.8 s.
+- A trip's index is asked for its snug region first, the ends and a quarter of the trip's length
+  around them on a grid, a third to a half of the search region: built in that share of the
+  time. A route no way leaving the region could beat stands; any other, and a refusal for want of
+  a way, is planned again in the whole search region. Before any build, an index
+  signalk-underkeel holds already that covers the trip's ends is planned on (its `held`).
+- The plugin's debug log says when a plan is planned again in a larger region, and what the
+  plan in the smaller one came to.
+- While an index builds, `/plan`'s 503 asks the panel back in 3 s, not 30: the request asked
+  again waits for the build itself, so the plan follows the build by seconds.
+- The fairway stage finds where lines meet by a grid of their legs, not every point against every
+  leg (1.4 s of a 13.9 s plan with 919 lines in the region), and band refinement's search keeps
+  its points by number.
 - Less work per plan (field trials: Turku 18.4 M → 4.8 M work units, Miami Beach Marina 39 M →
   1.5 M): ends and harbour handovers join the nearest squares best first, A\* classifies a square
   only when it reaches it and weights its heuristic by 1.25, the strict search crosses marginal

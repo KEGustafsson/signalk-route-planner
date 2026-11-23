@@ -25,8 +25,11 @@ With a signalk-underkeel that serves planning boxes (it lists `prepare` in its p
 `features`), a trip past its chart box around the vessel is planned on a planning box it builds
 for the trip's region, from the same charts, behind the chart box. The first plan of a new region
 waits for that build, which can take minutes on a Raspberry Pi: the panel says so and plans again
-by itself while the build runs. Without `prepare` the planner plans on the chart box alone, and
-legs past it come back `unverified`.
+by itself while the build runs. The region built first is the trip's ends and a quarter of its
+length around them; a route no way leaving that region could beat stands, and any other is
+planned again in the search's whole region. signalk-underkeel 0.8.0 keeps the index it built on
+disk, so a later plan in the same region, also after a restart, is made in seconds. Without
+`prepare` the planner plans on the chart box alone, and legs past it come back `unverified`.
 
 A trip too long for any planning box the machine builds is planned in a corridor, when
 signalk-underkeel 0.8.0 or later also serves `survey` and `corridor` (with its Traficom WFS depth
@@ -75,7 +78,10 @@ legs marked by the route check.
    around it, passes the check over the whole trip's time window.
 3. A\* finds the shortest path through free squares, and string pulling straightens it into as
    few legs as pass the check. A fine grid in a band along that route is then searched again, so
-   a route the squares led round the long side of an islet takes the short side.
+   a route the squares led round the long side of an islet takes the short side. With
+   signalk-underkeel 0.8.0 most of these legs and squares are settled on its raster of the
+   chart's own tiles instead of asked one by one: the same answers, for a sixth of the work on
+   the 13 nm trip measured.
 4. signalk-underkeel's route check checks the final route at its departure, each leg at its own
    arrival time. The statuses you see are that check's.
 

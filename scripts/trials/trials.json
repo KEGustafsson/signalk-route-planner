@@ -26,7 +26,7 @@
         "status": 200,
         "lengthNm": [18, 21.5],
         "parts": ["harbour:start", "route", "harbour:end"],
-        "workAtMost": 16500000
+        "workAtMost": 7500000
       }
     },
     {
@@ -44,7 +44,7 @@
         "status": 200,
         "lengthNm": [18, 22.5],
         "parts": ["harbour:start", "route", "harbour:end"],
-        "workAtMost": 15000000
+        "workAtMost": 6500000
       }
     },
     {
@@ -62,7 +62,7 @@
         "lengthNm": [18, 21.5],
         "parts": ["harbour:start", "route", "harbour:end"],
         "routeStatuses": ["unverified"],
-        "workAtMost": 13500000
+        "workAtMost": 6300000
       }
     },
     {
@@ -79,8 +79,27 @@
         "status": 200,
         "lengthNm": [2.9, 3.4],
         "parts": ["route", "narrows", "route"],
-        "workAtMost": 1200000
+        "workAtMost": 520000
       }
+    },
+    {
+      "name": "parainen-nauvo",
+      "area": "turku",
+      "catzoc": 1,
+      "from": [22.2946, 60.2806],
+      "to": [21.91184, 60.1947716],
+      "draft": 0.9,
+      "speed": 2.5,
+      "xteLimit": 30,
+      "accept": ["NOT_FOR_NAVIGATION"],
+      "expect": {
+        "status": 200,
+        "lengthNm": [12.8, 13.6],
+        "workAtMost": 850000,
+        "parts": ["narrows", "route", "narrows", "harbour:end"]
+      },
+      "cellLines": true,
+      "edge": true
     },
     {
       "name": "miami-fisher-island-alternatives",
@@ -110,7 +129,7 @@
         "lengthNm": [0.9, 1.3],
         "parts": ["route"],
         "routeStatuses": ["ok", "marginal"],
-        "workAtMost": 2500000
+        "workAtMost": 670000
       }
     },
     {
@@ -124,7 +143,7 @@
       "expect": {
         "status": 200,
         "lengthNm": [3.2, 4.4],
-        "workAtMost": 28500000
+        "workAtMost": 22000000
       }
     },
     {
@@ -145,7 +164,7 @@
     {
       "name": "miami-meloy-channel-tide",
       "area": "miami",
-      "about": "Into Meloy Channel off Miami Beach Marina with a modelled tide (0.0–0.7 m above MLLW, high water 6 h after the request) and up to 12 h to wait: the last leg touches a 0 m band at the bank, which no tide clears, and the gate says so",
+      "about": "Into Meloy Channel off Miami Beach Marina with a modelled tide (0.0\u20130.7 m above MLLW, high water 6 h after the request) and up to 12 h to wait: the last leg touches a 0 m band at the bank, which no tide clears, and the gate says so",
       "from": [-80.125431, 25.760871],
       "to": [-80.1424, 25.7705],
       "draft": 1.8,
@@ -160,7 +179,7 @@
       "expect": {
         "status": 422,
         "gate": "no departure up to",
-        "workAtMost": 6000000
+        "workAtMost": 4000000
       }
     }
   ]

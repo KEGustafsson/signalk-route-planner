@@ -50,6 +50,16 @@ function profiled(api, profile, where) {
             add(`leg ${bucket(length(a, b))}`, s.work() - before, v.status === "ok");
             return v;
           },
+          ...(s.objects && { objects: (sw, ne) => s.objects(sw, ne) }),
+          ...(s.raster && {
+            rasterZoom: s.rasterZoom,
+            raster: (x0, y0, cols, rows) => {
+              const before = s.work();
+              const r = s.raster(x0, y0, cols, rows);
+              add("raster block", s.work() - before, false);
+              return r;
+            }
+          }),
           work: () => s.work(),
           pause: () => s.pause(),
           ...(s.within && { within: s.within })

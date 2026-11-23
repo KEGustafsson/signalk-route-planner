@@ -58,13 +58,24 @@ function toSegment(p: XY, a: XY, b: XY): number {
   return Math.hypot(p[0] - a[0] - t * dx, p[1] - a[1] - t * dy);
 }
 
-/** Node ids: "r<k>" the route's k-th sample, "g<i>,<j>" a grid point. */
+/**
+ * The band's nodes by number: the route's k-th sample is node k, and after them the points of
+ * the grid's rectangle around the route, row by row; `inBand` says which of those lie in the band.
+ */
 class Band {
   readonly samples: XY[] = [];
   private readonly r: XY[];
-  private readonly near = new Map<string, boolean>();
-  private readonly bySquare = new Map<string, number[]>();
-  private readonly legs = new Map<string, boolean>();
+  /** Per grid node: 1 in the band, 0 not, -1 not yet told. */
+  private readonly near: Int8Array;
+  private readonly bySquare = new Map<number, number[]>();
+  private readonly legs = new Map<number, boolean>();
+  /** The grid rectangle: its first column and row, and its columns and rows. */
+  private readonly i0: number;
+  private readonly j0: number;
+  private readonly cols: number;
+  private readonly rows: number;
+  /** Nodes in all. */
+  readonly size: number;
 
   constructor(
     route: readonly LonLat[],
@@ -72,7 +83,7 @@ class Band {
     private readonly ok: (a: LonLat, b: LonLat) => boolean,
     private readonly shape: { step: number; width: number }
   ) {
-    const { step } = shape;
+    const { step, width } = shape;
     this.r = route.map((p) => frame.toXY(p));
     this.r.slice(1).forEach((b, i) => {
       const a = this.r[i] as XY;
@@ -82,28 +93,55 @@ class Band {
       }
     });
     this.samples.push(this.r[this.r.length - 1] as XY);
+    // Every point within the band's width of the route, and the squares round its samples.
+    const reach = Math.ceil(width / step) + 2;
+    const is = this.r.map((p) => Math.round(p[0] / step));
+    const js = this.r.map((p) => Math.round(p[1] / step));
+    this.i0 = Math.min(...is) - reach;
+    this.j0 = Math.min(...js) - reach;
+    this.cols = Math.max(...is) + reach - this.i0 + 1;
+    this.rows = Math.max(...js) + reach - this.j0 + 1;
+    this.near = new Int8Array(this.cols * this.rows).fill(-1);
+    this.size = this.samples.length + this.cols * this.rows;
     this.samples.forEach((p, k) => {
-      const key = `${Math.round(p[0] / step)},${Math.round(p[1] / step)}`;
-      this.bySquare.set(key, [...(this.bySquare.get(key) ?? []), k]);
+      const key = this.square(Math.round(p[0] / step), Math.round(p[1] / step));
+      const at = this.bySquare.get(key);
+      if (at) {
+        at.push(k);
+      } else {
+        this.bySquare.set(key, [k]);
+      }
     });
   }
 
-  pos(id: string): XY {
-    if (id.startsWith("r")) {
-      return this.samples[Number(id.slice(1))] as XY;
+  /** The grid square (i, j) as a number: its place in the rectangle, or -1 outside it. */
+  private square(i: number, j: number): number {
+    const c = i - this.i0;
+    const r = j - this.j0;
+    return c >= 0 && r >= 0 && c < this.cols && r < this.rows ? r * this.cols + c : -1;
+  }
+
+  private isRoute(id: number): boolean {
+    return id < this.samples.length;
+  }
+
+  pos(id: number): XY {
+    if (this.isRoute(id)) {
+      return this.samples[id] as XY;
     }
-    const [i, j] = id.slice(1).split(",").map(Number) as [number, number];
-    return [i * this.shape.step, j * this.shape.step];
+    const at = id - this.samples.length;
+    return [
+      ((at % this.cols) + this.i0) * this.shape.step,
+      (Math.floor(at / this.cols) + this.j0) * this.shape.step
+    ];
   }
 
   /** Whether the leg u–v passes: consecutive route samples, parts of a passing leg, unchecked. */
-  leg(u: string, v: string): boolean {
-    if (u.startsWith("r") && v.startsWith("r")) {
-      if (Math.abs(Number(u.slice(1)) - Number(v.slice(1))) === 1) {
-        return true;
-      }
+  leg(u: number, v: number): boolean {
+    if (this.isRoute(u) && this.isRoute(v) && Math.abs(u - v) === 1) {
+      return true;
     }
-    const key = u < v ? `${u}|${v}` : `${v}|${u}`;
+    const key = u < v ? u * this.size + v : v * this.size + u;
     let ok = this.legs.get(key);
     if (ok === undefined) {
       const a = this.pos(u);
@@ -114,119 +152,163 @@ class Band {
     return ok;
   }
 
-  neighbours(id: string): string[] {
+  neighbours(id: number): number[] {
     const p = this.pos(id);
     const ci = Math.round(p[0] / this.shape.step);
     const cj = Math.round(p[1] / this.shape.step);
-    if (id.startsWith("r")) {
-      const k = Number(id.slice(1));
-      const along = [`r${k - 1}`, `r${k + 1}`].filter((_, n) =>
-        n === 0 ? k > 0 : k < this.samples.length - 1
-      );
+    if (this.isRoute(id)) {
+      const along: number[] = [];
+      if (id > 0) {
+        along.push(id - 1);
+      }
+      if (id < this.samples.length - 1) {
+        along.push(id + 1);
+      }
       return [...along, ...this.grid(ci, cj, KING)];
     }
     return [...this.grid(ci, cj, DIRS), ...this.routeNear(ci, cj, p)];
   }
 
-  private grid(ci: number, cj: number, dirs: readonly [number, number][]): string[] {
-    return dirs
-      .filter(([di, dj]) => this.inBand(ci + di, cj + dj))
-      .map(([di, dj]) => `g${ci + di},${cj + dj}`);
+  private grid(ci: number, cj: number, dirs: readonly [number, number][]): number[] {
+    const out: number[] = [];
+    for (const [di, dj] of dirs) {
+      if (this.inBand(ci + di, cj + dj)) {
+        out.push(this.samples.length + this.square(ci + di, cj + dj));
+      }
+    }
+    return out;
   }
 
   /** The route samples within 1.5 steps of the grid point p. */
-  private routeNear(ci: number, cj: number, p: XY): string[] {
-    return [[0, 0] as [number, number], ...KING]
-      .flatMap(([di, dj]) => this.bySquare.get(`${ci + di},${cj + dj}`) ?? [])
-      .filter((k) => dist(this.samples[k] as XY, p) <= 1.5 * this.shape.step)
-      .map((k) => `r${k}`);
+  private routeNear(ci: number, cj: number, p: XY): number[] {
+    const out: number[] = [];
+    for (const [di, dj] of AROUND) {
+      for (const k of this.bySquare.get(this.square(ci + di, cj + dj)) ?? []) {
+        if (dist(this.samples[k] as XY, p) <= 1.5 * this.shape.step) {
+          out.push(k);
+        }
+      }
+    }
+    return out;
   }
 
   private inBand(i: number, j: number): boolean {
-    const key = `${i},${j}`;
-    let v = this.near.get(key);
-    if (v === undefined) {
-      const p: XY = [i * this.shape.step, j * this.shape.step];
-      v = this.r.slice(1).some((b, k) => toSegment(p, this.r[k] as XY, b) <= this.shape.width);
-      this.near.set(key, v);
+    const at = this.square(i, j);
+    if (at < 0) {
+      return false;
     }
-    return v;
+    let v = this.near[at] as number;
+    if (v < 0) {
+      const p: XY = [i * this.shape.step, j * this.shape.step];
+      const r = this.r;
+      v = 0;
+      for (let k = 1; k < r.length && v === 0; k++) {
+        v = toSegment(p, r[k - 1] as XY, r[k] as XY) <= this.shape.width ? 1 : 0;
+      }
+      this.near[at] = v;
+    }
+    return v === 1;
   }
 }
 
 /** The eight grid points around one. */
 const KING = DIRS.slice(0, 8);
 
+/** A grid point's own square and the eight around it. */
+const AROUND: readonly [number, number][] = [[0, 0], ...KING];
+
 /**
- * Lazy Theta*: the node ids from "r0" to `goal`; "work" when the work ran out, undefined when none
- * joins. A point reached is given its neighbour's parent, unchecked, and the leg from that parent
- * is checked only when the point is taken from the heap: where it fails, the point joins the
- * nearest-to-start point around it whose leg to it passes. A leg is checked once a point taken.
+ * Lazy Theta*: the nodes from the route's first sample to its last; "work" when the work ran
+ * out, undefined when none joins. A point reached is given its neighbour's parent, unchecked, and
+ * the leg from that parent is checked only when the point is taken from the heap: where it fails,
+ * the point joins the nearest-to-start point around it whose leg to it passes. A leg is checked
+ * once a point taken.
  */
-async function thetaStar(band: Band, limits: PullLimits): Promise<string[] | "work" | undefined> {
-  const goal = `r${band.samples.length - 1}`;
+async function thetaStar(band: Band, limits: PullLimits): Promise<number[] | "work" | undefined> {
+  const goal = band.samples.length - 1;
   const end = band.pos(goal);
-  const g = new Map<string, number>([["r0", 0]]);
-  const back = new Map<string, string>();
-  const done = new Set<string>();
-  const heap = new Heap<string>();
-  heap.push("r0", dist(band.pos("r0"), end));
-  const via = (from: string, v: string): number =>
-    (g.get(from) ?? Infinity) + dist(band.pos(from), band.pos(v));
-  // The point's parent, its leg checked: else the best taken neighbour whose leg passes.
-  const settle = (u: string): boolean => {
-    const p = back.get(u);
-    if (p === undefined || band.leg(p, u)) {
+  const { g, back, done, heap } = begun(band, end);
+  let taken = 0;
+  const via = (from: number, v: number): number =>
+    (g[from] as number) + dist(band.pos(from), band.pos(v));
+  const settle = settler(band, { g, back, done }, via);
+  const reach = (v: number, from: number, gv: number): void => {
+    g[v] = gv;
+    back[v] = from;
+    heap.push(v, gv + dist(band.pos(v), end));
+  };
+  while (heap.size > 0 && done[goal] !== 1) {
+    if (limits.exhausted()) {
+      return "work";
+    }
+    const u = heap.pop();
+    if (done[u] === 1) {
+      continue;
+    }
+    if (!settle(u)) {
+      // No leg to it passes yet: it waits for a neighbour taken later to reach it.
+      g[u] = Infinity;
+      back[u] = -1;
+      continue;
+    }
+    done[u] = 1;
+    taken++;
+    // Straight on from u's parent, to be checked when the neighbour is taken.
+    const from = (back[u] as number) < 0 ? u : (back[u] as number);
+    for (const v of band.neighbours(u)) {
+      const gv = via(from, v);
+      if (done[v] !== 1 && gv < (g[v] as number)) {
+        reach(v, from, gv);
+      }
+    }
+    if (taken % 256 === 0) {
+      await limits.pause();
+    }
+  }
+  return done[goal] === 1 ? pathTo(back, goal) : undefined;
+}
+
+/** A search's state with the route's first sample queued: costs, parents, the points taken. */
+function begun(band: Band, end: XY) {
+  const g = new Float64Array(band.size).fill(Infinity);
+  const heap = new Heap<number>();
+  g[0] = 0;
+  heap.push(0, dist(band.pos(0), end));
+  return { g, back: new Int32Array(band.size).fill(-1), done: new Uint8Array(band.size), heap };
+}
+
+/**
+ * Settles a point taken from the heap: true with its parent's leg to it checked and passing,
+ * else with the best taken neighbour whose leg passes as its parent; false when none does.
+ */
+function settler(
+  band: Band,
+  s: { g: Float64Array; back: Int32Array; done: Uint8Array },
+  via: (from: number, v: number) => number
+): (u: number) => boolean {
+  return (u) => {
+    const p = s.back[u] as number;
+    if (p < 0 || band.leg(p, u)) {
       return true;
     }
     const best = band
       .neighbours(u)
-      .filter((n) => done.has(n))
+      .filter((n) => s.done[n] === 1)
       .sort((m, n) => via(m, u) - via(n, u))
       .find((n) => band.leg(n, u));
     if (best === undefined) {
       return false;
     }
-    g.set(u, via(best, u));
-    back.set(u, best);
+    s.g[u] = via(best, u);
+    s.back[u] = best;
     return true;
   };
-  while (heap.size > 0 && !done.has(goal)) {
-    if (limits.exhausted()) {
-      return "work";
-    }
-    const u = heap.pop();
-    if (done.has(u)) {
-      continue;
-    }
-    if (!settle(u)) {
-      // No leg to it passes yet: it waits for a neighbour taken later to reach it.
-      g.delete(u);
-      back.delete(u);
-      continue;
-    }
-    done.add(u);
-    // Straight on from u's parent, to be checked when the neighbour is taken.
-    const from = back.get(u) ?? u;
-    for (const v of band.neighbours(u)) {
-      const gv = via(from, v);
-      if (!done.has(v) && gv < (g.get(v) ?? Infinity)) {
-        g.set(v, gv);
-        back.set(v, from);
-        heap.push(v, gv + dist(band.pos(v), end));
-      }
-    }
-    if (done.size % 256 === 0) {
-      await limits.pause();
-    }
-  }
-  return done.has(goal) ? pathTo(back, goal) : undefined;
 }
 
-/** The ids from the start to `goal`, by their parents. */
-function pathTo(back: Map<string, string>, goal: string): string[] {
+/** The nodes from the start to `goal`, by their parents. */
+function pathTo(back: Int32Array, goal: number): number[] {
   const path = [goal];
-  for (let id = back.get(goal); id !== undefined; id = back.get(id)) {
+  for (let id = back[goal] as number; id >= 0; id = back[id] as number) {
     path.push(id);
   }
   return path.reverse();

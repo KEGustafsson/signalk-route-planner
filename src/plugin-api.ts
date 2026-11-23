@@ -2,14 +2,15 @@ import type { PlanRequest } from "./api/plan-request";
 import { parsePlanRequest } from "./api/plan-request";
 import type { ApiProvider } from "./api/routes";
 import { publicReason } from "./foundation/public-text";
-import type { PlanningApiV1, Reply } from "./oracle/contract";
+import type { Bbox, PlanningApiV1, Reply } from "./oracle/contract";
 import { planningApi } from "./oracle/contract";
 import { haversine } from "./foundation/geo";
 import type { PlanOptions } from "./plan/options";
 import { DEFAULT_PLAN, limitsFor } from "./plan/options";
 import type { PlanInput } from "./plan/plan";
 import { plan } from "./plan/plan";
-import { longTrip, Preparer, tripLimits } from "./plan/prepare";
+import type { Reach } from "./plan/prepare";
+import { leavingAtLeast, longTrip, Preparer, searchRegion, tripLimits } from "./plan/prepare";
 import { WorkRate } from "./plan/work-rate";
 
 /** The REST handlers bound to the planning API signalk-underkeel publishes (plan §5). */
@@ -37,6 +38,8 @@ export interface PlanHooks {
   rate?: WorkRate;
   /** After a plan has been recorded. */
   planned?: () => void;
+  /** Told why a plan is planned again in a larger region: for the plugin's debug log. */
+  note?: (message: string) => void;
   /**
    * The flags a plan accepts when its request names none: the plugin's setting for depth data
    * marked not for navigation. A request's own `accept`, even an empty one, is kept.
@@ -86,6 +89,105 @@ const RELEASED = "the planning box was released; prepare it again";
 export function boxReleased(reply: Reply): boolean {
   const errors = (reply.body as { errors?: unknown } | null)?.errors;
   return reply.status === 503 && Array.isArray(errors) && errors.includes(RELEASED);
+}
+
+/** A plan's reply in a few words, for the plugin's debug log. */
+function outcome(reply: Reply): string {
+  const body = reply.body as { length?: unknown; reason?: unknown } | null;
+  return reply.status === 200
+    ? `a route of ${String(body?.length)} m`
+    : `${String(reply.status)}, ${String(body?.reason)}`;
+}
+
+const within = (o: Bbox, i: Bbox): boolean =>
+  o[0] <= i[0] && o[1] <= i[1] && o[2] >= i[2] && o[3] >= i[3];
+
+/** Whether the index `now` covers ground the index `before` does not. */
+function larger(now: Bbox | undefined, before: Bbox | undefined): boolean {
+  return before !== undefined && (now === undefined || !within(before, now));
+}
+
+/**
+ * Whether a plan made on an index covering `coverage` may be beaten in the whole search region:
+ * the index does not hold that region, and the plan is a refusal for a reason other than the
+ * work limit, or a route no shorter than the least any way leaving the covered region is
+ * (`leavingAtLeast`).
+ */
+export function beatable(reply: Reply, req: PlanRequest, coverage: Bbox | undefined): boolean {
+  const judged = judgedIn(coverage);
+  if (judged === undefined || within(judged, searchRegion(req.from, req.to))) {
+    return false;
+  }
+  const body = reply.body as { length?: unknown; reason?: unknown } | null;
+  if (reply.status === 422) {
+    // No way through: the way may lie past the region. Any other refusal holds there too.
+    return typeof body?.reason === "string" && body.reason.includes(NO_ROUTE_CONNECTS);
+  }
+  if (reply.status !== 200 || typeof body?.length !== "number") {
+    return false;
+  }
+  return body.length >= leavingAtLeast(req.from, req.to, judged);
+}
+
+/** The band inside a prepared index's box where it reads no coverage, metres, at most. */
+const EDGE_BAND_M = 2000;
+
+/**
+ * The ground an index covering `coverage` judges on the charts: its box less the band inside
+ * the edge where it reads no coverage (signalk-underkeel builds a region grown by its chart
+ * reach, under 2 km). Undefined for an index with no box, which judges everywhere it has charts.
+ */
+function judgedIn(coverage: Bbox | undefined): Bbox | undefined {
+  return coverage && shrunk(coverage, EDGE_BAND_M);
+}
+
+/** What the search's refusals for want of a way both say (`NO_WAY`, `UNVERIFIED_WAY`). */
+const NO_ROUTE_CONNECTS = "no route the check passes connects the points";
+
+/** `b` less `m` metres on every side; undefined when nothing is left. */
+function shrunk(b: Bbox, m: number): Bbox | undefined {
+  const dLat = m / 111_195;
+  const dLon =
+    dLat / Math.max(Math.cos((Math.max(Math.abs(b[1]), Math.abs(b[3])) * Math.PI) / 180), 1e-6);
+  const out: Bbox = [b[0] + dLon, b[1] + dLat, b[2] - dLon, b[3] - dLat];
+  return out[0] < out[2] && out[1] < out[3] ? out : undefined;
+}
+
+/**
+ * The plan on `api`, an index for a part of the trip's search region, and while that plan may
+ * be beaten past the part (`beatable`): a refusal there for want of a way, or a route one
+ * leaving it could be shorter than, planned again in the trip's snug region, then the whole
+ * search region, once `wider` has each prepared. An index that holds the snug region already
+ * is given again for it, at once, and the whole region is next.
+ */
+async function widened(
+  api: PlanningApiV1,
+  req: PlanRequest,
+  planOn: (on: PlanningApiV1) => Promise<Reply>,
+  wider: (reach: Reach) => Promise<PlanningApiV1 | Reply>,
+  note: (message: string) => void = () => undefined
+): Promise<Reply> {
+  let on = api;
+  let reply = await planOn(on);
+  for (const reach of ["snug", "whole"] as const) {
+    if (!beatable(reply, req, on.coverage())) {
+      break;
+    }
+    note(
+      `planned in ${JSON.stringify(on.coverage())}: ${outcome(reply)}; asking for the ${reach} region`
+    );
+    const next = await wider(reach);
+    if (!("version" in next)) {
+      // Still building (503 with Retry-After), or refused: a region too large for the
+      // machine leaves the smaller region's answer standing.
+      return next.status === 413 ? reply : next;
+    }
+    if (larger(next.coverage(), on.coverage())) {
+      on = next;
+      reply = await planOn(on);
+    }
+  }
+  return reply;
 }
 
 /** The plan's input from a request, leaving at `started` unless it names a departure. */
@@ -144,20 +246,25 @@ export function apiFor(
     if (!("version" in api)) {
       return api;
     }
-    const limits = tripLimits(found, api, dist, opts);
-    const d = api.defaults();
-    // Timed for the rate alone: the budget is in work units, so the plan is the same anywhere.
-    const started = clock.now();
-    const reply = await plan(
-      api,
-      inputOf(req, started, d.speed, hooks.accept?.()),
-      AbortSignal.any([client, stop]),
-      started,
-      limits
-    );
-    rate.record((reply.body as { work?: unknown } | null)?.work, clock.now() - started);
-    hooks.planned?.();
-    return reply;
+    const planOn = async (on: PlanningApiV1): Promise<Reply> => {
+      const limits = tripLimits(found, on, dist, opts);
+      const d = on.defaults();
+      // Timed for the rate alone: the budget is in work units, so the plan is the same anywhere.
+      const started = clock.now();
+      const reply = await plan(
+        on,
+        inputOf(req, started, d.speed, hooks.accept?.()),
+        AbortSignal.any([client, stop]),
+        started,
+        limits
+      );
+      rate.record((reply.body as { work?: unknown } | null)?.work, clock.now() - started);
+      hooks.planned?.();
+      return reply;
+    };
+    const wider = (reach: Reach): Promise<PlanningApiV1 | Reply> =>
+      preparer.forTrip(found, req.from, req.to, stop, req.draft, reach);
+    return near ? widened(api, req, planOn, wider, hooks.note) : planOn(api);
   };
   return {
     status: () => {

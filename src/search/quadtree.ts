@@ -32,6 +32,9 @@ const TOO_LARGE = { status: "unverified" as const, risk: 0, flags: ["BOX_TOO_LAR
  */
 const PAST_CORRIDOR = { status: "unverified" as const, risk: 0, flags: ["NO_COVERAGE"] };
 
+/** A square the field settles as passing: free water, with nothing more known of it. */
+const SETTLED_FREE = { status: "ok" as const, risk: 0, flags: [] as string[] };
+
 /** Covered shares this close to 1 are whole: the corridor's boxes meet edge to edge. */
 const WHOLE = 1 - 1e-9;
 
@@ -78,7 +81,14 @@ export class QuadTree {
      * route's cost (`fallback.ts`, `RiskCost`) to find the clearer water in it, or only part of
      * it lies near a preference line (`prefer.ts`).
      */
-    private readonly splitFree: (n: QuadNode, risk: number) => boolean = () => false
+    private readonly splitFree: (n: QuadNode, risk: number) => boolean = () => false,
+    /**
+     * Settles a square without asking the chart, where it can (`field.ts`): true, the box
+     * verdict passes the rule; false, it does not. Given only where no more of a square's
+     * verdict is read than that: a square it passes has no risk or flags to weigh, and one
+     * larger than a unit it fails is split unasked.
+     */
+    private readonly settle?: { box(sw: LonLat, ne: LonLat): boolean | undefined }
   ) {
     this.root = this.node(0, 0, shape.side);
   }
@@ -125,6 +135,24 @@ export class QuadTree {
     this.unverified++;
   }
 
+  /**
+   * Whether `n`, with corners sw–ne, reaches past a corridor's boxes (`Session.within`), and
+   * was classified for it: past them the chart reads no coverage, never free, so it is not
+   * asked. A square across their edge is split until its parts lie inside or outside them.
+   */
+  private pastCorridor(n: QuadNode, sw: LonLat, ne: LonLat): boolean {
+    const within = this.session.within;
+    if (!within) {
+      return false;
+    }
+    const share = coveredShare(grownBox(sw, ne, this.session.halfWidth), within);
+    if (share >= WHOLE) {
+      return false;
+    }
+    this.unasked(n, PAST_CORRIDOR, share > 0);
+    return true;
+  }
+
   /** Classifies an unknown square: free, blocked, unverified, or split. */
   resolve(n: QuadNode): void {
     if (n.state !== "unknown") {
@@ -141,22 +169,16 @@ export class QuadTree {
       this.unasked(n, TOO_LARGE);
       return;
     }
-    // Past a corridor's boxes the chart reads no coverage: never free, so not asked. A square
-    // across their edge is split until its parts lie inside or outside them.
-    const within = this.session.within;
-    if (within) {
-      const share = coveredShare(grownBox(sw, ne, this.session.halfWidth), within);
-      if (share <= 0) {
-        this.unasked(n, PAST_CORRIDOR, false);
-        return;
-      }
-      if (share < WHOLE) {
-        this.unasked(n, PAST_CORRIDOR);
-        return;
-      }
+    if (this.pastCorridor(n, sw, ne)) {
+      return;
     }
-    const v = this.session.box(sw, ne);
+    const sure = this.settle?.box(sw, ne);
     this.classified++;
+    if (sure === false && n.size > 1) {
+      this.split(n);
+      return;
+    }
+    const v = sure === true ? SETTLED_FREE : this.session.box(sw, ne);
     n.verdict = { status: v.status, flags: v.flags, risk: v.risk };
     if (passes(v, this.rule) && !(n.size > 1 && this.splitFree(n, v.risk))) {
       n.state = "free";

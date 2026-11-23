@@ -1,5 +1,5 @@
 import type { LonLat } from "../foundation/geo";
-import { EARTH_RADIUS, haversine, midpoint } from "../foundation/geo";
+import { EARTH_RADIUS, frameAt, haversine, midpoint } from "../foundation/geo";
 import type { PlanOptions } from "./options";
 import { DEFAULT_PLAN, limitsFor } from "./options";
 import type {
@@ -11,7 +11,8 @@ import type {
   Session,
   Survey
 } from "../oracle/contract";
-import { canPrepare, canSurvey } from "../oracle/contract";
+import { canPeek, canPrepare, canSurvey } from "../oracle/contract";
+import { rasterOf } from "../search/field";
 import { boxOf, corridorsFor, mosaic, SURVEY_CELL, surveyRegion, surveyTiles } from "./corridor";
 
 /**
@@ -32,8 +33,12 @@ export const PREPARE_MARGIN = 3500;
 const CORRIDOR_REACH = 200;
 /** A request waits this long for the index before it is answered 503, ms. */
 export const PREPARE_WAIT_MS = 20_000;
-/** Seconds the 503 asks the client to wait before it plans again. */
-export const RETRY_AFTER_S = 30;
+/**
+ * Seconds the 503 asks the client to wait before it plans again. Short: the request asked
+ * again waits `PREPARE_WAIT_MS` for the build itself, so the plan is answered within seconds of
+ * the index being built, where a long pause here was added to every build that outlasted one wait.
+ */
+export const RETRY_AFTER_S = 3;
 
 const DEG = Math.PI / 180;
 
@@ -59,6 +64,67 @@ const union = (a: Bbox, b: Bbox): Bbox => [
 export function tripRegion(from: LonLat, to: LonLat, margin = PREPARE_MARGIN): Bbox {
   return around([from, to], margin);
 }
+
+/** A snug region reaches past the trip's ends by this share of its length, or PREPARE_MARGIN. */
+export const SNUG_SHARE = 0.25;
+/** A snug region's edges lie on this grid, degrees of latitude and of longitude. */
+const SNAP_LAT = 0.025;
+const SNAP_LON = 0.05;
+
+/**
+ * The region a trip is first prepared in: the box of its ends grown by a quarter of its length
+ * (at least `tripRegion`'s margin), its edges moved out to a grid, and no part of it past the
+ * whole search region's box. It is a third to a half of the whole region's area, so its index
+ * is downloaded and built in that share of the time; on the grid, a trip whose ends moved a
+ * little asks for the same region, which signalk-underkeel then holds already. A route found in
+ * it stands when no route leaving it could be shorter (`leavingAtLeast`); otherwise the whole
+ * region is prepared (`Preparer.forTrip`, `wide`).
+ */
+export function snugRegion(from: LonLat, to: LonLat, opts: PlanOptions = DEFAULT_PLAN): Bbox {
+  const margin = Math.max(PREPARE_MARGIN, haversine(from, to) * SNUG_SHARE);
+  const [w, s, e, n] = around([from, to], margin);
+  const snapped: Bbox = [
+    Math.floor(w / SNAP_LON) * SNAP_LON,
+    Math.max(-85, Math.floor(s / SNAP_LAT) * SNAP_LAT),
+    Math.ceil(e / SNAP_LON) * SNAP_LON,
+    Math.min(85, Math.ceil(n / SNAP_LAT) * SNAP_LAT)
+  ];
+  // Never more than the whole region and the grid squares its edges lie in.
+  const whole = searchRegion(from, to, opts);
+  return holds(snapped, whole) ? whole : snapped;
+}
+
+/**
+ * The least length, metres, of any way from `from` to `to` that leaves `region`: it touches an
+ * edge, so it is at least the way from one end to that edge and on to the other, the shortest
+ * of which reflects an end in the edge. Infinity when an end lies outside the region.
+ */
+export function leavingAtLeast(from: LonLat, to: LonLat, region: Bbox): number {
+  const frame = frameAt(midpoint(from, to));
+  const [ax, ay] = frame.toXY(from);
+  const [bx, by] = frame.toXY(to);
+  const [x0, y0] = frame.toXY([region[0], region[1]]);
+  const [x1, y1] = frame.toXY([region[2], region[3]]);
+  // The frame's east–west scale is the midpoint's: the edges are taken a little nearer.
+  const west = x0 * EDGE_NEAR;
+  const east = x1 * EDGE_NEAR;
+  const south = y0 * EDGE_NEAR;
+  const north = y1 * EDGE_NEAR;
+  if (ax < west || ax > east || bx < west || bx > east) {
+    return Infinity;
+  }
+  if (ay < south || ay > north || by < south || by > north) {
+    return Infinity;
+  }
+  // Reflected in an edge's line; the foot may lie past the edge's ends, where the true least
+  // is longer still, so the line's is a lower bound.
+  const viaX = (x: number): number => Math.hypot(2 * x - ax - bx, ay - by);
+  const viaY = (y: number): number => Math.hypot(ax - bx, 2 * y - ay - by);
+  return Math.min(viaX(west), viaX(east), viaY(south), viaY(north));
+}
+
+/** The share of an edge's distance from the trip's middle counted, for the frame's scale. */
+const EDGE_NEAR = 0.98;
 
 /**
  * Every place the search may ask about: the square its region is cut from, half side
@@ -149,6 +215,7 @@ const withinCorridor = (s: Session, corridor: readonly Bbox[]): Session => ({
   box: (sw, ne, window) => s.box(sw, ne, window),
   segment: (a, b, window) => s.segment(a, b, window),
   ...(s.objects && { objects: s.objects.bind(s) }),
+  ...rasterOf(s),
   work: () => s.work(),
   pause: () => s.pause(),
   within: corridor
@@ -292,29 +359,56 @@ async function prepareTrip(
   return r;
 }
 
+/**
+ * The planning API over an index the provider holds already that covers `least`, the trip's own
+ * ends; undefined when it holds none, or does not say (feature "held"). What is held serves:
+ * no build is asked for a region a little to one side of it. The plan made on it is planned
+ * again in a larger region when a route leaving it could be shorter.
+ */
+async function heldFor(
+  api: Preparing,
+  least: Bbox,
+  stop: AbortSignal
+): Promise<PlanningApiV1 | undefined> {
+  if (!canPeek(api)) {
+    return undefined;
+  }
+  const held = await api.prepare(least, stop, undefined, { held: true });
+  return held.ok ? onPrepared(api, held.value) : undefined;
+}
+
+/** How much of a trip's search region an index is asked to cover (`Preparer.forTrip`). */
+export type Reach = "held" | "snug" | "whole";
+
 /** The trips' indexes being built, each carried on past the request that asked for it. */
 export class Preparer {
   private readonly builds = new Set<Build>();
 
   constructor(private readonly waitMs = PREPARE_WAIT_MS) {}
 
-  /** A build that serves the trip, else a new one for it. */
+  /**
+   * A build that serves the trip, else a new one for it: for its snug region, or with `reach`
+   * "whole" for the whole search region.
+   */
   private buildFor(
     api: Preparing,
-    from: LonLat,
-    to: LonLat,
+    [from, to]: [LonLat, LonLat],
     draft: number,
-    stop: AbortSignal
+    stop: AbortSignal,
+    reach: Reach
   ): Build {
     const least = tripRegion(from, to);
     const trip = tripKey(from, to, draft);
+    const whole = searchRegion(from, to);
+    const snug = snugRegion(from, to);
+    // A build for the region asked for: one in progress for a smaller one does not serve it.
+    const need = reach === "whole" ? whole : reach === "snug" ? snug : least;
     for (const b of this.builds) {
-      if (serves(b, least, trip)) {
+      if (serves(b, need, trip) && (reach === "held" || b.region !== undefined)) {
         return b;
       }
     }
-    const whole = searchRegion(from, to);
-    const first = holds(least, whole) ? least : whole;
+    const first = holds(least, whole) ? least : reach === "whole" ? whole : snug;
     let settle: () => void = () => undefined;
     const fresh = (): Promise<"narrowed"> =>
       new Promise((resolve) => {
@@ -348,22 +442,41 @@ export class Preparer {
    * turned past the trip to a smaller region is not, and the trip gets its own, as it does when
    * another trip's region it shared is refused as too large (413). A corridor serves its own
    * trip alone. The build runs until `stop` (the plugin stopping), not the request.
+   *
+   * By `reach`: "held", an index the provider holds already when it covers the trip's own
+   * ends, else one built for the trip's snug region (`snugRegion`), a part of the search region
+   * that takes a part of the time to build; "snug", one that covers the snug region; "whole",
+   * the whole search region. A plan asks for the next when the route it found may be beaten by
+   * one leaving the region it was planned in.
    */
   async forTrip(
     api: PlanningApiV1,
     from: LonLat,
     to: LonLat,
     stop: AbortSignal,
-    draft = COARSE_DRAFT
+    draft = COARSE_DRAFT,
+    reach: Reach = "held"
   ): Promise<PlanningApiV1 | Reply> {
     if (!canPrepare(api)) {
       return api;
     }
+    const held = reach === "held" ? await heldFor(api, tripRegion(from, to), stop) : undefined;
+    return held ?? this.built(api, [from, to], stop, draft, reach);
+  }
+
+  /** `forTrip` by a build: one that serves the trip, waited for `waitMs`. */
+  private async built(
+    api: Preparing,
+    [from, to]: [LonLat, LonLat],
+    stop: AbortSignal,
+    draft: number,
+    reach: Reach
+  ): Promise<PlanningApiV1 | Reply> {
     const least = tripRegion(from, to);
     const trip = tripKey(from, to, draft);
     const waited = sleep(this.waitMs);
     for (;;) {
-      const build = this.buildFor(api, from, to, draft, stop);
+      const build = this.buildFor(api, [from, to], draft, stop, reach);
       let r = await Promise.race([build.result, build.narrowed, waited]);
       while (r === "narrowed" && serves(build, least, trip)) {
         r = await Promise.race([build.result, build.narrowed, waited]);

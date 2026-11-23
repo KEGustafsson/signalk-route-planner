@@ -105,6 +105,9 @@ function legsIn(
 /** A line's point within this of another line's leg meets it there, metres. */
 const SNAP = 5;
 
+/** Side of the grid squares the legs are looked up by (`junctions`), degrees. */
+const GRID_DEG = 0.01;
+
 /**
  * Where the lines meet: a line's point within SNAP of another line's leg, by leg. Lines meet at
  * shared points, but a branch often ends on another line's leg between its points (a T), and
@@ -122,21 +125,42 @@ function junctions(legs: [LonLat, LonLat][]): Map<number, LonLat[]> {
       Math.max(a[1], b[1]) + pad
     ];
   });
+  // The legs by the grid squares their boxes meet: a point is held against the legs of its
+  // own square alone, not every leg of the region.
+  const grid = new Map<string, number[]>();
+  const square = (v: number): number => Math.floor(v / GRID_DEG);
+  boxes.forEach((box, j) => {
+    const [w, s, e, n] = box as [number, number, number, number];
+    for (let x = square(w); x <= square(e); x++) {
+      for (let y = square(s); y <= square(n); y++) {
+        const key = `${x},${y}`;
+        const at = grid.get(key);
+        if (at) {
+          at.push(j);
+        } else {
+          grid.set(key, [j]);
+        }
+      }
+    }
+  });
   const same = (p: LonLat, q: LonLat): boolean => p[0] === q[0] && p[1] === q[1];
   legs.forEach((leg, i) => {
     for (const p of leg) {
-      legs.forEach(([a, b], j) => {
-        const [w, s, e, n] = boxes[j] as number[];
-        if (j === i || same(p, a) || same(p, b) || p[0] < (w as number) || p[0] > (e as number)) {
-          return;
-        }
-        if (p[1] < (s as number) || p[1] > (n as number)) {
-          return;
+      for (const j of grid.get(`${square(p[0])},${square(p[1])}`) ?? []) {
+        const [a, b] = legs[j] as [LonLat, LonLat];
+        const [w, s, e, n] = boxes[j] as [number, number, number, number];
+        if (j === i || same(p, a) || same(p, b) || p[0] < w || p[0] > e || p[1] < s || p[1] > n) {
+          continue;
         }
         if (haversine(p, nearestOn(p, a, b)) <= SNAP) {
-          cuts.set(j, [...(cuts.get(j) ?? []), p]);
+          const at = cuts.get(j);
+          if (at) {
+            at.push(p);
+          } else {
+            cuts.set(j, [p]);
+          }
         }
-      });
+      }
     }
   });
   return cuts;

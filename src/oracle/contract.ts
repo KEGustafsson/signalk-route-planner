@@ -58,6 +58,42 @@ export interface ChartObject {
   cell?: string;
 }
 
+/**
+ * A session's raster of a block of chart (feature "raster"): each cell's status for the
+ * session's vessel and window, from signalk-underkeel 0.8.0. A cell is one of the index's
+ * finest tiles, at Web Mercator zoom `z`.
+ */
+export interface Raster {
+  z: number;
+  /** Tile column and row of the north-west cell. */
+  x0: number;
+  y0: number;
+  cols: number;
+  rows: number;
+  /** One byte a cell (`RASTER`), row by row from the north-west. */
+  cells: Uint8Array;
+  /** Per cell, the index in `flagSets` of its verdict's flags. */
+  flags: Uint8Array;
+  flagSets: string[][];
+  /** How far past a corridor a tile still counts in its verdict, ground metres. */
+  reach: number;
+}
+
+/** A raster cell's byte: bits 0–1 index `RASTER_STATUS`, the others as named. */
+export const RASTER = {
+  STATUS: 3,
+  /** P(UKC < 0) at or above the session's accepted probability. */
+  RISKY: 4,
+  /** No water level in the session's window betters the cell. */
+  STUCK: 8,
+  /** The cell is split finer than the raster: its status is its parts' together. */
+  MIXED: 64,
+  /** Nothing here answers for a leg: one reaching the cell is asked of `segment`. */
+  ASK: 128
+} as const;
+
+export const RASTER_STATUS: readonly Status[] = ["ok", "marginal", "fail", "unverified"];
+
 /** What the search asks of the chart: the part of a session it uses. */
 export interface Session {
   readonly halfWidth: number;
@@ -65,6 +101,13 @@ export interface Session {
   segment(a: LonLat, b: LonLat, window?: Window): Verdict;
   /** With feature "objects": the chart objects whose bounds meet the box sw–ne. */
   objects?(sw: LonLat, ne: LonLat): ChartObject[];
+  /** With feature "raster": the zoom of the raster's cells. */
+  readonly rasterZoom?: number;
+  /**
+   * With feature "raster": the raster of `cols` × `rows` cells whose north-west cell is tile
+   * (x0, y0) at `rasterZoom`. Throws RangeError for a block too large or off the tile grid.
+   */
+  raster?(x0: number, y0: number, cols: number, rows: number): Raster;
   work(): number;
   pause(): Promise<void>;
   /**
@@ -157,7 +200,16 @@ export interface PlanningApiV1 {
    * With `features` listing "prepare": an index for `region`, the chart box around the vessel
    * when it covers it, else a planning box built for it, which can take minutes.
    */
-  prepare?(region: Bbox, signal: AbortSignal, corridor?: readonly Bbox[]): Promise<PrepareResult>;
+  prepare?(
+    region: Bbox,
+    signal: AbortSignal,
+    corridor?: readonly Bbox[],
+    /**
+     * With `features` listing "held" (signalk-underkeel 0.8.0): `held` asks for no build, only
+     * an index already there that serves the region, 404 when there is none.
+     */
+    how?: { held?: boolean }
+  ): Promise<PrepareResult>;
   /**
    * With `features` listing "survey": the depth survey of `region`, cells about `cellMetres`
    * on a side or coarser, made tile by tile, so it reaches far past any planning box. With
@@ -177,6 +229,13 @@ export function canSurvey(
     api.features.includes("corridor") &&
     typeof api.survey === "function"
   );
+}
+
+/** Whether `api` says what index it holds for a region without building one (feature "held"). */
+export function canPeek(
+  api: PlanningApiV1
+): api is PlanningApiV1 & Required<Pick<PlanningApiV1, "prepare">> {
+  return canPrepare(api) && api.features?.includes("held") === true;
 }
 
 /** Whether `api` serves `prepare` (signalk-underkeel's planning boxes). */

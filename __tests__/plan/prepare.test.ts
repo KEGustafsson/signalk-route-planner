@@ -1,15 +1,19 @@
 import type { PlanningApiV1, Prepared, PrepareResult } from "../../src/oracle/contract";
 import { canPrepare, PLANNING_API } from "../../src/oracle/contract";
+import fc from "fast-check";
+import { haversine } from "../../src/foundation/geo";
 import {
   BUILDING,
+  leavingAtLeast,
   onPrepared,
   PREPARE_MARGIN,
   Preparer,
   searchRegion,
+  snugRegion,
   tripLimits,
   tripRegion
 } from "../../src/plan/prepare";
-import { boxReleased, apiFor } from "../../src/plugin-api";
+import { beatable, boxReleased, apiFor } from "../../src/plugin-api";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
@@ -83,8 +87,65 @@ describe("searchRegion", () => {
   });
 });
 
+describe("snugRegion", () => {
+  test("holds the trip's least region, lies in the whole one, its edges on the grid", () => {
+    const long = [at(0, 0), at(20_000, 4000)] as const;
+    const snug = snugRegion(...long);
+    expect(holds(snug, tripRegion(...long))).toBe(true);
+    // A quarter of the trip's length past its ends.
+    expect(holds(snug, tripRegion(...long, haversine(...long) / 4))).toBe(true);
+    const whole = searchRegion(...long);
+    const area = (b: number[]) =>
+      ((b[2] as number) - (b[0] as number)) * ((b[3] as number) - (b[1] as number));
+    expect(area(snug)).toBeLessThan(area(whole) * 0.6);
+    for (const [v, step] of [
+      [snug[0], 0.05],
+      [snug[1], 0.025],
+      [snug[2], 0.05],
+      [snug[3], 0.025]
+    ] as const) {
+      expect(Math.abs(v / step - Math.round(v / step))).toBeLessThan(1e-6);
+    }
+  });
+
+  test("the same region for a trip whose ends moved a little; the whole one for a short trip", () => {
+    expect(snugRegion(at(100, 100), at(20_100, 4050))).toEqual(
+      snugRegion(at(0, 0), at(20_000, 4000))
+    );
+    const short = [at(0, 0), at(1000, 0)] as const;
+    expect(snugRegion(...short)).toEqual(searchRegion(...short));
+  });
+});
+
+describe("leavingAtLeast", () => {
+  test("no way that leaves the region is shorter", () => {
+    const from = at(0, 0);
+    const to = at(20_000, 4000);
+    const region = snugRegion(from, to);
+    const least = leavingAtLeast(from, to, region);
+    expect(least).toBeGreaterThan(haversine(from, to));
+    const outside = fc
+      .tuple(
+        fc.double({ min: -60_000, max: 80_000, noNaN: true }),
+        fc.double({ min: -60_000, max: 60_000, noNaN: true })
+      )
+      .map(([x, y]) => at(x, y))
+      .filter((p) => p[0] < region[0] || p[0] > region[2] || p[1] < region[1] || p[1] > region[3]);
+    fc.assert(
+      fc.property(outside, (p) => haversine(from, p) + haversine(p, to) >= least),
+      { numRuns: 500 }
+    );
+  });
+
+  test("an end outside the region: nothing is known of a way inside it", () => {
+    expect(leavingAtLeast(at(0, 0), at(5000, 0), tripRegion(at(20_000, 0), at(30_000, 0)))).toBe(
+      Infinity
+    );
+  });
+});
+
 describe("Preparer", () => {
-  test("asks for the whole search region, then the least when that is too large to build", async () => {
+  test("asks for the trip's snug region, then the least when that is too large to build", async () => {
     const asked: number[][] = [];
     const inner = syntheticApi({ obstacles: [] });
     const api: PlanningApiV1 = {
@@ -102,8 +163,60 @@ describe("Preparer", () => {
     const from = at(0, 0);
     const to = at(20_000, 0);
     const r = await new Preparer(1000).forTrip(api, from, to, new AbortController().signal);
-    expect(asked).toEqual([searchRegion(from, to), tripRegion(from, to)]);
+    expect(asked).toEqual([snugRegion(from, to), tripRegion(from, to)]);
     expect(r).toEqual({ status: 503, body: { errors: ["no cells"] } });
+  });
+
+  test("asked for the whole search region, asks for that", async () => {
+    const asked: number[][] = [];
+    const api: PlanningApiV1 = {
+      ...syntheticApi({ obstacles: [] }),
+      features: ["prepare"],
+      prepare: (region) => {
+        asked.push(region);
+        return Promise.resolve({ ok: false, status: 503, error: "no cells" });
+      }
+    };
+    const stop = new AbortController().signal;
+    await new Preparer(1000).forTrip(api, at(0, 0), at(20_000, 0), stop, undefined, "whole");
+    expect(asked).toEqual([searchRegion(at(0, 0), at(20_000, 0))]);
+  });
+
+  test("an index the provider holds that covers the trip's ends is used; with none, one is built", async () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    const asked: { region: number[]; held: boolean }[] = [];
+    let holding = true;
+    const api: PlanningApiV1 = {
+      ...p.api,
+      features: ["prepare", "held"],
+      prepare: (region, _signal, _corridor, how) => {
+        asked.push({ region, held: how?.held === true });
+        if (how?.held) {
+          return Promise.resolve(
+            holding
+              ? { ok: true as const, value: p.prepared }
+              : { ok: false as const, status: 404, error: "none held" }
+          );
+        }
+        return Promise.resolve({ ok: true as const, value: p.prepared });
+      }
+    };
+    const stop = new AbortController().signal;
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    expect("version" in (await new Preparer(1000).forTrip(api, from, to, stop))).toBe(true);
+    expect(asked).toEqual([{ region: tripRegion(from, to), held: true }]);
+    holding = false;
+    asked.length = 0;
+    expect("version" in (await new Preparer(1000).forTrip(api, from, to, stop))).toBe(true);
+    expect(asked).toEqual([
+      { region: tripRegion(from, to), held: true },
+      { region: snugRegion(from, to), held: false }
+    ]);
+    // A larger region is asked for by a build: what is held was planned on already.
+    asked.length = 0;
+    await new Preparer(1000).forTrip(api, from, to, stop, undefined, "whole");
+    expect(asked).toEqual([{ region: searchRegion(from, to), held: false }]);
   });
 
   test("a provider without prepare is used as it is", async () => {
@@ -163,10 +276,13 @@ describe("Preparer", () => {
     const prep = new Preparer(1000);
     const stop = new AbortController().signal;
     const a = prep.forTrip(e.api, at(0, 0), at(20_000, 0), stop);
-    // Inside the first trip's search region, not its least region: the same build.
-    const b = prep.forTrip(e.api, at(0, 10_000), at(5000, 10_000), stop);
+    // Inside the first trip's snug region, not its least region: the same build.
+    const b = prep.forTrip(e.api, at(8000, 800), at(12_000, 800), stop);
     await flush();
-    expect(e.calls.map((c) => c.region)).toEqual([searchRegion(at(0, 0), at(20_000, 0))]);
+    expect(
+      holds(tripRegion(at(0, 0), at(20_000, 0)), tripRegion(at(8000, 800), at(12_000, 800)))
+    ).toBe(false);
+    expect(e.calls.map((c) => c.region)).toEqual([snugRegion(at(0, 0), at(20_000, 0))]);
     // Far past it: a second build, and the first is not lost.
     const c = prep.forTrip(e.api, at(0, 80_000), at(5000, 80_000), stop);
     await flush();
@@ -186,15 +302,15 @@ describe("Preparer", () => {
     const prep = new Preparer(1000);
     const stop = new AbortController().signal;
     const a = prep.forTrip(e.api, at(0, 0), at(20_000, 0), stop);
-    const b = prep.forTrip(e.api, at(0, 10_000), at(5000, 10_000), stop);
+    const b = prep.forTrip(e.api, at(8000, 800), at(12_000, 800), stop);
     await flush();
     e.calls[0]?.settle({ ok: false, status: 413, error: "too large" });
     await flush();
     // The first build turned to its own trip's least region; the second trip asks for its own.
     expect(e.calls.map((c) => c.region)).toEqual([
-      searchRegion(at(0, 0), at(20_000, 0)),
+      snugRegion(at(0, 0), at(20_000, 0)),
       tripRegion(at(0, 0), at(20_000, 0)),
-      searchRegion(at(0, 10_000), at(5000, 10_000))
+      snugRegion(at(8000, 800), at(12_000, 800))
     ]);
     // A trip inside the narrowed build's region still shares it.
     const c = prep.forTrip(e.api, at(1000, 0), at(4000, 0), stop);
@@ -277,7 +393,7 @@ describe("/plan with prepare", () => {
     const waiting = await api.plan(body, new AbortController().signal);
     expect(waiting).toMatchObject({
       status: 503,
-      headers: { "Retry-After": "30" },
+      headers: { "Retry-After": "3" },
       body: { preparing: true }
     });
     p.settle();
@@ -488,5 +604,101 @@ describe("a prepared index's session features", () => {
       release: () => undefined
     };
     expect(onPrepared(api, prepared).features).toEqual(["objects"]);
+  });
+});
+
+describe("/plan in a part of the search region", () => {
+  afterEach(() => {
+    delete g[PLANNING_API];
+  });
+
+  /** A provider that prepares an index for each region asked, covering it and 2 km past it. */
+  function regional(chart: Parameters<typeof syntheticApi>[0]) {
+    const inner = syntheticApi(chart);
+    const asked: number[][] = [];
+    const api: PlanningApiV1 = {
+      ...inner,
+      features: ["prepare"],
+      prepare: (region) => {
+        asked.push(region);
+        const [w, s, e, n] = tripRegion([region[0], region[1]], [region[2], region[3]], 2000);
+        return Promise.resolve({
+          ok: true as const,
+          value: {
+            coverage: [w, s, e, n] as [number, number, number, number],
+            session: (p, sig, job) => inner.session(p, sig, job),
+            routeCheck: (b, sig) => inner.routeCheck(b, sig),
+            release: () => undefined
+          } satisfies Prepared
+        });
+      }
+    };
+    return { api, asked, inner };
+  }
+
+  test("a route no way leaving the snug region could beat is planned there alone", async () => {
+    const p = regional({ obstacles: [{ x: 10_000, y: 0, r: 600 }] });
+    g[PLANNING_API] = p.api;
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(1000));
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    const r = await api.plan({ from, to }, new AbortController().signal);
+    expect(r.status).toBe(200);
+    expect(p.asked).toEqual([snugRegion(from, to)]);
+  });
+
+  test("a route one leaving the snug region could beat is planned again in the whole region", async () => {
+    // A wall across the trip, 9 km to each side: the way round it is longer than a way that
+    // leaves the snug region need be.
+    const wall = Array.from({ length: 37 }, (_, k) => ({
+      x: 10_000,
+      y: -9000 + k * 500,
+      r: 400
+    }));
+    const p = regional({ obstacles: wall });
+    g[PLANNING_API] = p.api;
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(1000));
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    const r = await api.plan({ from, to }, new AbortController().signal);
+    expect(r.status).toBe(200);
+    expect((r.body as { length: number }).length).toBeGreaterThan(
+      leavingAtLeast(from, to, snugRegion(from, to))
+    );
+    // The snug region is asked for again on the way up: a provider holding it gives it at once.
+    expect(p.asked).toEqual([snugRegion(from, to), snugRegion(from, to), searchRegion(from, to)]);
+    // Two plans ran: one in each region.
+    expect(p.inner.sessions.length).toBeGreaterThan(1);
+  });
+
+  test("beatable: only an index short of the search region, a refusal for want of a way or a long route", () => {
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    const req = { from, to };
+    const snug = tripRegion(
+      [snugRegion(from, to)[0], snugRegion(from, to)[1]],
+      [snugRegion(from, to)[2], snugRegion(from, to)[3]],
+      2000
+    );
+    const whole = [20, 58, 24, 62] as [number, number, number, number];
+    const route = (length: number) => ({ status: 200, body: { length } });
+    expect(beatable(route(21_000), req, snug)).toBe(false);
+    expect(beatable(route(60_000), req, snug)).toBe(true);
+    expect(beatable(route(60_000), req, whole)).toBe(false);
+    expect(beatable(route(60_000), req, undefined)).toBe(false);
+    const refused = (reason: string) => ({ status: 422, body: { reason } });
+    expect(
+      beatable(
+        refused(
+          "no route the check passes connects the points: land, shoals or obstacles close every way"
+        ),
+        req,
+        snug
+      )
+    ).toBe(true);
+    expect(
+      beatable(refused("no water the route check passes within 500 m of the start"), req, snug)
+    ).toBe(false);
+    expect(beatable({ status: 503, body: { errors: ["x"] } }, req, snug)).toBe(false);
   });
 });

@@ -3,6 +3,7 @@ import { grownBox, grownBoxKm2 } from "../foundation/geo";
 import type { Session } from "../oracle/contract";
 import type { PassRule } from "./passes";
 import { passes } from "./passes";
+import { fieldOf } from "./field";
 import type { QuadNode, QuadTree } from "./quadtree";
 import { MAX_BOX_KM2 } from "./quadtree";
 
@@ -34,10 +35,23 @@ export function narrowIn(
   c: { margin: number; weight: number; fairway?: (n: QuadNode) => boolean }
 ): Narrow {
   const seen = new Map<number, boolean>();
+  const onLine = new Map<number, boolean>();
+  const { fairway } = c;
+  const field = fieldOf(session, rule);
   return {
     weight: c.weight,
     margin: c.margin,
-    fairway: c.fairway ?? (() => false),
+    // A square's place against the lines does not change: told once.
+    fairway: fairway
+      ? (n) => {
+          let on = onLine.get(n.id);
+          if (on === undefined) {
+            on = fairway(n);
+            onLine.set(n.id, on);
+          }
+          return on;
+        }
+      : () => false,
     wide(n) {
       let w = seen.get(n.id);
       if (w === undefined) {
@@ -51,7 +65,7 @@ export function narrowIn(
         // A box the planning API would refuse is not asked: it counts as narrow.
         w =
           grownBoxKm2(sw, ne, session.halfWidth) <= MAX_BOX_KM2 &&
-          passes(session.box(sw, ne), rule);
+          (field?.box(sw, ne) ?? passes(session.box(sw, ne), rule));
         seen.set(n.id, w);
       }
       return w;

@@ -17,9 +17,10 @@ next to this one, or at `UNDERKEEL_DIR`. Each case writes its reply to
 `data/trials/<case>.json` and its legs with their statuses to `data/trials/<case>.geojson`. The
 run exits 1 when a result does not meet the expectation in `scripts/trials/trials.json`.
 
-Every case is planned for a 1.8 m draft, at 3 m/s, and by default with the water at chart datum
-(σ 0.2 m), so the results do not depend on the tide or the day; a case may model a tide instead
-(`miami-meloy-channel-tide`). The work limit is raised, so a trial tells
+Every case is planned for a 1.8 m draft, at 3 m/s, unless it sets its own, and by default with
+the water at chart datum (σ 0.2 m), so the results do not depend on the tide or the day; a case
+may model a tide instead (`miami-meloy-channel-tide`). The harness gives the planning API the
+window's highest water as well as its lowest, as the plugin does. The work limit is raised, so a trial tells
 whether the search finds a route apart from whether it does so within the Raspberry Pi budget
 (`docs/DEVELOPMENT-PLAN.md` §6).
 
@@ -56,6 +57,12 @@ quality, so each case assumes a CATZOC.
   19.77 nm in 54 legs, 14.8 M work; A1: 18.97 nm in 49 legs, 12.3 M. Each case's work cap is its
   `workAtMost` in `scripts/trials/trials.json`.
 
+- The raster field (plan §4.1 step 17, 2026-11-23): the same routes, leg for leg, as the code
+  before it gave in the same run (B 19.77 nm in 54 legs, B with lines 19.91 nm in 38, A1 18.97 nm
+  in 49), for 6.27 M, 5.46 M and 5.24 M work against 14.80 M, 12.94 M and 12.33 M. What is left
+  is the fallback's: its searches weigh each verdict's risk and flags, which the field does not
+  give, and ask the chart for every leg.
+
 - Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
   search was steered along a coarse path (`src/plan/steer.ts`).
 - Both routes are fallback routes (the Aura river, below). Since R3d the planner first searches
@@ -83,6 +90,24 @@ it at 21.926 E.
 | before narrows, 12 M budget | refused at the work limit                                  | 11.2 M |
 | before narrows, xte 10 m    | 5.4 nm round Svartholm to the north                        |  1.8 M |
 
+With the raster field (2026-11-23) the case takes 0.43 M work and comes out 3.096 nm in 8
+legs, 6 m shorter than the 3.099 nm in 6 legs the code before it gave in the same run for
+1.14 M: at that budget its band refinement ran out of work.
+
+## Parainen → Nauvo guest harbour (Finland)
+
+`parainen-nauvo` plans from the water off Parainen (22.2946 E, 60.2806 N) to Nauvo guest harbour
+for a 0.9 m draft at 2.5 m/s and the route check's default xte of 30 m, at CATZOC A1 with the
+FTIA's lines charted but not preferred: the trip the raster field was measured on, as a plan on
+the plugin's own Traficom WFS cell makes it. Its index is built as the plugin builds one (`edge`
+in `trials.json`: tiles across a swept area's edge two zooms finer); at the leaf zoom alone the
+swept fairway out of Parainen does not pass and the trip is refused.
+
+| Run (2026-11-23)        | Result                                                    |   Work | Time (Jetson Orin) |
+| ----------------------- | --------------------------------------------------------- | -----: | -----------------: |
+| before the raster field | 13.14 nm, 26 legs: narrows, route, narrows, harbour stage | 4.99 M |             13.5 s |
+| with it                 | the same reply                                            | 0.71 M |              3.4 s |
+
 ## Miami from sea (Florida)
 
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The
@@ -101,6 +126,13 @@ start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 - With narrows the main search names the free water near an end it cannot join, so an end in a
   marina goes to its harbour stage without a second search at the request's corridor: Bayside and
   Beach Marina take less work than before.
+- The raster field (2026-11-23): every Miami case answers as the code before it did in the same
+  run. Fisher Island basin 1.02 nm in 5 legs for 0.55 M work against 0.65 M (2.2 s against
+  2.4 s), Bayside 3.63 nm for 18.8 M against 22.5 M (62 s against 69 s), Beach Marina refused
+  for 5.3 M against 5.5 M (18.4 s against 17.9 s). The gain is small here: these charts carry
+  survey quality, so a verdict counts tiles out to the chart's position reach, and a leg is
+  settled on the raster only where every cell that far from it passes, or where the reach is
+  too wide to scan, only where land lies in its corridor; Bayside's work is its fallback's.
 
 - Bayside's route is the fallback's, at risk 0.99 steered or not. Most of its work is the strict
   searches R3d runs first at the boat's own timing; the steered first pass alone took 19.7 M. The short Fisher Island and

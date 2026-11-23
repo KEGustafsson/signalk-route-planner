@@ -17,7 +17,7 @@ import {
   corridorParts,
   surveyRegion
 } from "../../src/plan/corridor";
-import { BUILDING, inCorridor, Preparer, searchRegion, tripRegion } from "../../src/plan/prepare";
+import { BUILDING, inCorridor, Preparer, snugRegion, tripRegion } from "../../src/plan/prepare";
 import { syntheticApi } from "../helpers/synthetic-oracle";
 
 /** A corridor on the depth survey, for a trip too long for any planning box (plan §4.2). */
@@ -206,13 +206,13 @@ describe("Preparer with a survey", () => {
   const from = centre(g, 20, 20);
   const to = centre(g, 560, 460);
 
-  test("the whole region, the least, then a corridor of the trip on the survey", async () => {
+  test("the snug region, the least, then a corridor of the trip on the survey", async () => {
     const p = provider(g, 1000);
     expect(canSurvey(p.api)).toBe(true);
     const r = await new Preparer(1000).forTrip(p.api, from, to, new AbortController().signal, 1.8);
     expect("version" in r).toBe(true);
     expect(p.asked.map((a) => a.region)).toEqual([
-      searchRegion(from, to),
+      snugRegion(from, to),
       tripRegion(from, to),
       boxOf(p.asked[2]?.corridor ?? [])
     ]);
