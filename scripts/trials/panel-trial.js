@@ -124,13 +124,23 @@ async function main() {
     await page.goto(`${base}/host.html?points=${encodeURIComponent(JSON.stringify(points))}`);
     const panel = page.frameLocator("#panel");
     await panel.locator("#route option").first().waitFor({ state: "attached", timeout: 30_000 });
-    await panel.locator("#fallback").check();
+    await panel.locator("#first").check();
     await panel.locator("#alternatives").check();
     await panel.locator("#plan").click();
     const result = panel.locator("#result");
-    await result
-      .filter({ hasText: /^(Planned|No route|Not planned)/ })
-      .waitFor({ timeout: 300_000 });
+    const answered = () =>
+      result.filter({ hasText: /^(Planned|No route|Not planned)/ }).waitFor({ timeout: 300_000 });
+    await answered();
+    // A refusal offers the lowest-risk route, its risky legs marked: the trial takes it.
+    const lowest = panel.locator("#lowest");
+    if (await lowest.isVisible()) {
+      await lowest.click();
+      await result
+        .filter({ hasText: /^Planning/ })
+        .waitFor({ timeout: 30_000 })
+        .catch(() => undefined);
+      await answered();
+    }
     const text = await result.textContent();
     check(/^Planned/.test(text), `planned with alternatives: ${text}`);
     const trial = () =>

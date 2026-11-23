@@ -31,11 +31,6 @@ export interface CheckedLeg {
   xteLimit?: number;
   /** True for a berth leg: alongside a quay or pier, inside even the harbour corridor. */
   berth?: true;
-  /**
-   * A leg the route check piloted: the planned buffer and its room, the widest buffer it stays
-   * in swept water at, metres; signalk-underkeel holds the live fix to the room underway.
-   */
-  pilotage?: { buffer: number; room: number };
 }
 
 export interface Proof {
@@ -77,7 +72,6 @@ function checkBody(input: ProofInput, part: Part, departure: number): unknown {
     departure: new Date(departure).toISOString(),
     speed: input.speed,
     ...(part.xteLimit !== undefined && { xteLimit: part.xteLimit }),
-    ...(part.pilotage && { pilotage: true }),
     ...(input.probability !== undefined && { probability: input.probability }),
     ...((input.draft !== undefined || input.airHeight !== undefined) && {
       vessel: {

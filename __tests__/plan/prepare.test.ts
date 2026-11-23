@@ -476,7 +476,7 @@ describe("/plan on a planning box released under it", () => {
 });
 
 describe("a prepared index's session features", () => {
-  test("objects and pilotage are served over it; prepare, survey and corridor are not", () => {
+  test("objects are served over it; prepare, survey, corridor and pilotage are not", () => {
     const api = {
       ...syntheticApi({ obstacles: [] }),
       features: ["prepare", "survey", "corridor", "objects", "pilotage"]
@@ -487,6 +487,6 @@ describe("a prepared index's session features", () => {
       routeCheck: api.routeCheck.bind(api),
       release: () => undefined
     };
-    expect(onPrepared(api, prepared).features).toEqual(["objects", "pilotage"]);
+    expect(onPrepared(api, prepared).features).toEqual(["objects"]);
   });
 });

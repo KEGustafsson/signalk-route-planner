@@ -31,13 +31,24 @@ All notable changes to signalk-route-planner are documented here.
   Kaldö through Killingholms sund at xte 30 m: 3.1 nm, where the plan was refused at the work
   limit; Turku to Nauvo through the Seili fairway, 17.8 nm.
 - Fairway stage: the narrow search also follows the charted navigation lines, as a graph checked
-  leg by leg, through a swept fairway narrower than its squares, with signalk-underkeel's
-  pilotage where the provider offers it. Fallböle to Sattmarkssundet: 1.5 nm along the fairway,
-  where no route passed. Flags that describe the water (`DREDGED`, `PILOTAGE`, …) no longer keep
-  an accepted `unverified` leg out.
-- A piloted leg carries signalk-underkeel's `pilotage: { buffer, room }`, and the panel names its
-  room: "swept fairway, keep within ±3.3 m". Pilotage is planned at the boat's planned position
-  accuracy, never the fix of the moment.
+  leg by leg, through a swept fairway narrower than its squares. Fallböle to Sattmarkssundet:
+  1.5 nm along the fairway, where no route passed. Flags that describe the water (`DREDGED`,
+  `FAIRWAY_GAP`, …) no longer keep an accepted `unverified` leg out.
+- Corners of long legs are cut: the fairway stage's chain of lines and a route's straightened
+  parts no longer keep the L where two lines meet (Pargas to Nagu 13.25 nm, where it was 13.96).
+- The fairway stage runs before the search, and the search looks only for a way shorter than
+  the lines' (with preference lines, within 10 %): far less work where the lines' way is near
+  the shortest (Pargas to Nagu 1.5 M against 10 M, Turku to Nauvo 4.3 M against 11.9 M). An end
+  is joined to the lines within 2 km, so a fallback from a harbour stage keeps its lines' way.
+- Band refinement: each part of a shortest route is searched again on a 100 m grid in a band 1 km
+  either side of it, at the part's own corridor, every leg checked, so a route the search led
+  round the long side of an islet takes the short side; then a 30 m grid round each turn, where
+  the route touches land, takes gaps narrower than the first grid. Pargas to Nagu 12.85 nm, south
+  of Torrgrund, where it was 13.09 north of it.
+- No pilotage: the planner asks signalk-underkeel for none, so no GNSS reading, live or past,
+  reaches a plan; underkeel's corridor is the cross-track limit and half the beam. A leg held to a
+  fairway's line under a bridge is flagged `FAIRWAY_GAP`, and the panel names it "under a bridge,
+  on the fairway line".
 - A plan whose planning box signalk-underkeel released before its session ran is prepared and
   planned again, once, rather than answering 503.
 - Less work per plan (field trials: Turku 18.4 M → 4.8 M work units, Miami Beach Marina 39 M →
@@ -116,5 +127,15 @@ All notable changes to signalk-route-planner are documented here.
 - Attributions: an offered route lists the open data it leaned on (`attributions`), the FTIA's
   navigation lines it kept to and Traficom's WFS depths it crossed, and the panel shows the
   credit under the plan.
+- Panel: four choices, from what changes from trip to trip. Start at the boat or the route's
+  first point; the shortest route, the route using fairways, or the shortest, balanced and
+  safest; the wait for the tide, which may also wait on the way. A row shows the draft signalk-underkeel plans with
+  (Signal K's `design.draft` unless set there) and the route check's cross-track limit, speed and
+  accepted risk, and changes them for the plan (risk low, normal or
+  high: a tenth, once or five times the route check's). After a refusal a button plans the
+  lowest-risk route, its risky legs marked. Sounds narrower than the corridor and the re-plan of
+  a dragged waypoint are always on. Depth data marked not for navigation is the plugin setting
+  **Plan on depth data marked not for navigation**. `GET /status` gives the route check's
+  settings (`defaults`). The panel keeps its choices in the browser.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.

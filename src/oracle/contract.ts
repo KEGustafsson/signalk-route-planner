@@ -35,12 +35,6 @@ export interface SessionParams {
    * water fail (`AIR_DRAFT`).
    */
   airHeight?: number;
-  /**
-   * With feature "pilotage": boxes and legs whose corridor at the boat's pilotage buffer lies in
-   * swept or dredged water all through are checked at it, flagged PILOTAGE; the rest at the
-   * planning buffer. `halfWidth` stays the planning buffer's.
-   */
-  pilotage?: boolean;
 }
 
 /**
@@ -142,7 +136,17 @@ export interface PlanningApiV1 {
   readonly features?: readonly string[];
   unavailable(): string | undefined;
   coverage(): [number, number, number, number] | undefined;
-  defaults(): { speed: number; xteLimit: number; probability: number; planningBuffer: number };
+  /**
+   * The route check's settings, and the vessel's `draft` a session without one takes, from
+   * signalk-underkeel 0.8.0 while it knows one.
+   */
+  defaults(): {
+    speed: number;
+    xteLimit: number;
+    probability: number;
+    planningBuffer: number;
+    draft?: number;
+  };
   session<T>(
     params: SessionParams,
     signal: AbortSignal,

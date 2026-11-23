@@ -37,6 +37,23 @@ export interface PlanHooks {
   rate?: WorkRate;
   /** After a plan has been recorded. */
   planned?: () => void;
+  /**
+   * The flags a plan accepts when its request names none: the plugin's setting for depth data
+   * marked not for navigation. A request's own `accept`, even an empty one, is kept.
+   */
+  accept?: () => string[];
+}
+
+/** `GET /status`'s `defaults`: the route-check settings a plan takes unless its request sets them. */
+export interface PlanDefaults {
+  /** m/s */
+  speed: number;
+  /** m */
+  xteLimit: number;
+  /** The accepted P(UKC < 0) of a leg. */
+  probability: number;
+  /** m: the vessel's draft, as signalk-underkeel takes it, while it states one. */
+  draft?: number;
 }
 
 /** `GET /status`'s `work`: the budget a plan gets at least, and the plans that measured the rate. */
@@ -72,7 +89,12 @@ export function boxReleased(reply: Reply): boolean {
 }
 
 /** The plan's input from a request, leaving at `started` unless it names a departure. */
-function inputOf(req: PlanRequest, started: number, speed: number): PlanInput {
+function inputOf(
+  req: PlanRequest,
+  started: number,
+  speed: number,
+  accept: string[] | undefined
+): PlanInput {
   return {
     from: req.from,
     to: req.to,
@@ -82,7 +104,7 @@ function inputOf(req: PlanRequest, started: number, speed: number): PlanInput {
     probability: req.probability,
     draft: req.draft,
     airHeight: req.airHeight,
-    accept: req.accept,
+    accept: req.accept ?? accept,
     fallback: req.fallback,
     latestDeparture: req.latestDeparture,
     waitEnRoute: req.waitEnRoute,
@@ -128,7 +150,7 @@ export function apiFor(
     const started = clock.now();
     const reply = await plan(
       api,
-      inputOf(req, started, d.speed),
+      inputOf(req, started, d.speed, hooks.accept?.()),
       AbortSignal.any([client, stop]),
       started,
       limits
@@ -140,9 +162,17 @@ export function apiFor(
   return {
     status: () => {
       const api = ready();
-      return typeof api === "string"
-        ? { state: "off", reason: publicReason(api) }
-        : { state: "ready", provider: api.provider, work: workStatus(base(), rate) };
+      if (typeof api === "string") {
+        return { state: "off", reason: publicReason(api) };
+      }
+      const d = api.defaults();
+      const defaults: PlanDefaults = {
+        speed: d.speed,
+        xteLimit: d.xteLimit,
+        probability: d.probability,
+        ...(d.draft !== undefined && Number.isFinite(d.draft) && { draft: d.draft })
+      };
+      return { state: "ready", provider: api.provider, work: workStatus(base(), rate), defaults };
     },
     async plan(body: unknown, client: AbortSignal): Promise<Reply> {
       const stop = running();

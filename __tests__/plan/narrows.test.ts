@@ -302,5 +302,6 @@ describe("narrows properties", () => {
       }),
       { numRuns: 25 }
     );
-  });
+    // 25 charts, each planned twice: past Jest's default 5 s when the suite runs in parallel.
+  }, 60_000);
 });

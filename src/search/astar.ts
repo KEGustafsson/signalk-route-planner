@@ -42,6 +42,13 @@ export interface SearchLimits {
    * overestimate, so it lifts `greed`'s bound on the path's cost.
    */
   heuristic?(p: XY): number;
+  /**
+   * A length, units, no path at or above which is wanted: a square whose length so far, along
+   * its cheapest way in, and straight line on to the goal reach it is never queued. The order
+   * stays by cost; with a route in hand that a path must be shorter than, the search spends no
+   * work on squares no such path can cross.
+   */
+  bound?: number;
 }
 
 export type SearchResult =
@@ -57,6 +64,10 @@ interface State {
   enter: (n: QuadNode) => boolean;
   goal: XY;
   greed: number;
+  /** No square is queued whose lower bound on a path's length reaches this (`SearchLimits.bound`). */
+  bound: number;
+  /** Each square's length along its cheapest way in, units. */
+  len: Map<number, number>;
   /** The estimate from a point, and a lower bound of it over a square not yet classified. */
   h: (p: XY) => number;
   hSquare: (n: QuadNode) => number;
@@ -90,14 +101,20 @@ function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
     return;
   }
   const gn = st.g.get(n.id) as number;
+  const ln = st.len.get(n.id) ?? 0;
   const gm =
     gn + dist(st.pos(n), portal) * weightOf(st, n) + dist(portal, st.pos(m)) * weightOf(st, m);
+  const lm = ln + dist(st.pos(n), portal) + dist(portal, st.pos(m));
   const better = gm < (st.g.get(m.id) ?? Infinity);
   if (better) {
     st.g.set(m.id, gm);
+    st.len.set(m.id, lm);
     st.back.set(m.id, { prev: n, portal });
   }
   if (m.state === "unknown" && m.size > 1) {
+    if (ln + toSquare(m, st.pos(n)) + toSquare(m, st.goal) >= st.bound) {
+      return;
+    }
     // The centre's cost and the square's key are separate: the key is the lowest bound any
     // predecessor gives, so a later one with a cheaper centre but a higher bound keeps it.
     const f = gn + toSquare(m, st.pos(n)) * weightOf(st, n) + st.greed * st.hSquare(m);
@@ -107,7 +124,7 @@ function relax(st: State, n: QuadNode, m: QuadNode, portal: XY): void {
     }
     return;
   }
-  if (better) {
+  if (better && lm + dist(st.pos(m), st.goal) < st.bound) {
     const f = gm + st.greed * st.h(st.pos(m));
     st.queued.set(m.id, f);
     st.open.push(m, f);
@@ -175,6 +192,8 @@ export async function aStar(
     enter,
     goal,
     greed: Math.max(1, limits.greed ?? 1),
+    bound: limits.bound ?? Infinity,
+    len: new Map([[from.id, 0]]),
     h,
     hSquare,
     g: new Map([[from.id, 0]]),
@@ -183,6 +202,9 @@ export async function aStar(
     open: new Heap<QuadNode>(),
     queued: new Map([[from.id, h(start)]])
   };
+  if (dist(start, goal) >= st.bound) {
+    return { found: false, reason: "unreachable", expanded: 0 };
+  }
   st.open.push(from, h(start));
   let expanded = 0;
   while (st.open.size > 0) {

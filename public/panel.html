@@ -11,16 +11,44 @@
       select { width: 100%; min-height: 32px; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--field); border-radius: 6px; }
       button { margin-top: 8px; min-height: 32px; padding: 0 12px; font: inherit; color: var(--on-accent); background: var(--accent); border: 0; border-radius: 6px; cursor: pointer; }
       button:disabled { opacity: 0.5; cursor: default; }
-      button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+      button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       #result { margin-top: 10px; }
       table { border-collapse: collapse; width: 100%; font-size: 13px; margin-top: 6px; }
       td, th { text-align: left; padding: 3px 4px; border-bottom: 1px solid var(--line); }
       th { color: var(--muted); font-weight: 600; }
       .ok { color: var(--ok); } .marginal { color: var(--warn); } .fail { color: var(--todo); } .unverified { color: var(--unverified); }
       .muted { color: var(--muted); font-size: 12px; }
-      label.check { display: flex; gap: 6px; align-items: flex-start; color: var(--ink); font-size: 13px; }
       #choices div { display: flex; gap: 8px; align-items: center; margin-top: 4px; font-size: 13px; }
       #choices button { margin-top: 0; min-height: 28px; }
+      [hidden] { display: none !important; }
+      .lbl, legend { display: block; margin: 12px 0 4px; padding: 0; color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+      legend label { margin: 0; color: inherit; font-size: inherit; }
+      fieldset { margin: 0; padding: 0; border: 0; min-width: 0; }
+      .seg { display: flex; border: 1px solid var(--field); border-radius: 6px; overflow: hidden; }
+      .seg label { flex: 1; margin: 0; padding: 7px 4px; text-align: center; color: var(--ink); font-size: 13px; cursor: pointer; background: var(--panel); }
+      .seg.small label { padding: 5px 2px; font-size: 12px; }
+      .seg label + label { border-left: 1px solid var(--field); }
+      .seg input { position: absolute; opacity: 0; pointer-events: none; }
+      .seg label:has(input:checked) { color: var(--on-accent); background: var(--accent); font-weight: 600; }
+      .seg label:has(input:focus-visible) { outline: 2px solid var(--ink); outline-offset: -3px; }
+      label.choice { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 5px; padding: 7px 9px; color: var(--ink); font-size: 13px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+      label.choice:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+      label.choice input { margin-top: 3px; }
+      label.choice b { display: block; font-weight: 600; }
+      label.choice small { display: block; color: var(--muted); font-size: 12px; }
+      .note { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+      .params { margin-top: 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); font-size: 13px; }
+      .params .head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 9px; }
+      .params .grid { display: grid; grid-template-columns: 1fr 120px; gap: 6px 8px; padding: 0 9px 9px; align-items: center; }
+      .params .grid label { margin: 0; color: var(--ink); font-size: 13px; }
+      .params .grid .seg label { color: var(--ink); }
+      .params .grid .seg label:has(input:checked) { color: var(--on-accent); }
+      .params input[type="number"] { width: 100%; box-sizing: border-box; min-height: 30px; font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--field); border-radius: 6px; padding: 0 6px; }
+      .params small, #paramsReset, .params .seg.small, #riskLabel { grid-column: 1 / -1; }
+      .params small { color: var(--muted); font-size: 11px; }
+      button.link { margin: 0; min-height: 0; padding: 2px 0; color: var(--accent); background: none; font-weight: 600; justify-self: start; }
+      button.secondary { color: var(--accent); background: var(--page); border: 1px solid var(--accent); }
+      #plan { width: 100%; margin-top: 14px; min-height: 38px; font-weight: 600; }
     </style>
     <script src="theme.js"></script>
     <script src="planner-shared.js"></script>
@@ -31,25 +59,57 @@
       Advisory only. The planned route is checked against your charts by Under-Keel Awareness; it
       is a suggestion. Check every leg on an official chart before you sail it.
     </div>
-    <label for="route">Route: its first point is the start, its last the destination</label>
+    <label class="lbl" for="route">Route to plan: its last point is the destination</label>
     <select id="route"></select>
-    <label class="check"><input id="boat" type="checkbox" /> Start from the boat's position, not the route's first point</label>
-    <label class="check"><input id="accept" type="checkbox" /> Plan on depth data marked not for navigation (its legs stay unverified)</label>
-    <label class="check"><input id="fallback" type="checkbox" /> If no route passes, show the lowest risk-weighted route, its risky legs marked</label>
-    <label for="wait">Wait for the tide, at most</label>
-    <select id="wait">
-      <option value="0">do not wait</option>
-      <option value="6">6 hours</option>
-      <option value="12">12 hours</option>
-      <option value="24">24 hours</option>
-    </select>
-    <label class="check"><input id="waitEnRoute" type="checkbox" /> If no departure passes, also wait on the way, where there is room to swing at anchor</label>
-    <label class="check"><input id="narrows" type="checkbox" checked /> Through sounds and fairways narrower than the corridor, checked at the harbour corridor; off fairway lines only where the way round costs more</label>
-    <label class="check"><input id="lines" type="checkbox" /> Keep to leading lines, fairway lines and my own tracks where that costs little more distance</label>
-    <label class="check"><input id="alternatives" type="checkbox" /> Offer the shortest, balanced and safest routes, drawn on the map (plans for leaving now)</label>
-    <label class="check"><input id="replan" type="checkbox" checked /> Re-plan the legs beside a waypoint I drag on the planned route</label>
+    <fieldset>
+      <legend>Start</legend>
+      <div class="seg">
+        <label><input id="boat" type="radio" name="start" value="boat" checked /> Boat position</label>
+        <label><input id="first" type="radio" name="start" value="first" /> Route's first point</label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Route</legend>
+      <label class="choice"><input id="shortest" type="radio" name="mode" value="shortest" checked />
+        <span><b>Shortest route</b><small>through any water deep enough</small></span></label>
+      <label class="choice"><input id="lines" type="radio" name="mode" value="lines" />
+        <span><b>Route using fairways</b><small>keeps to fairway and leading lines where that costs little more distance</small></span></label>
+      <label class="choice"><input id="alternatives" type="radio" name="mode" value="alternatives" />
+        <span><b>Shortest, balanced and safest</b><small>all three drawn on the map, pick one</small></span></label>
+    </fieldset>
+    <fieldset>
+      <legend><label for="wait">Tide</label></legend>
+      <select id="wait">
+        <option value="0">Leave now, do not wait</option>
+        <option value="6">Wait up to 6 hours</option>
+        <option value="12">Wait up to 12 hours</option>
+        <option value="24">Wait up to 24 hours</option>
+      </select>
+      <p class="note" id="waitNote" hidden>Leaves at the earliest time every leg passes; if none does, it may also wait at an anchorage on the way.</p>
+      <p class="note" id="threeNote" hidden>The three routes are planned for leaving now.</p>
+    </fieldset>
+    <div class="params" id="params">
+      <div class="head"><span id="paramsText">Route check settings</span><button id="paramsToggle" class="link" type="button" aria-expanded="false" aria-controls="paramsBody">Change</button></div>
+      <div class="grid" id="paramsBody" hidden>
+        <label for="draft">Draft (m)</label>
+        <input id="draft" type="number" min="0.01" max="30" step="0.1" inputmode="decimal" />
+        <label for="xte">Cross-track limit, how far off the line I may be (m)</label>
+        <input id="xte" type="number" min="0" max="1000" step="1" inputmode="decimal" />
+        <label for="knots">Speed (kn)</label>
+        <input id="knots" type="number" min="0.2" max="58" step="0.1" inputmode="decimal" />
+        <span id="riskLabel">Risk I accept</span>
+        <div class="seg small" role="radiogroup" aria-labelledby="riskLabel">
+          <label><input id="riskLow" type="radio" name="risk" value="low" /> Low</label>
+          <label><input id="riskNormal" type="radio" name="risk" value="normal" checked /> Normal</label>
+          <label><input id="riskHigh" type="radio" name="risk" value="high" /> High</label>
+        </div>
+        <small id="riskNote"></small>
+        <button id="paramsReset" class="link" type="button">Reset to the route check's settings</button>
+      </div>
+    </div>
     <button id="plan" type="button">Plan through safe water</button>
     <div id="result" role="status"></div>
+    <button id="lowest" class="secondary" type="button" hidden>Show the lowest-risk route, risky legs marked</button>
     <div id="choices"></div>
     <table id="legs" hidden>
       <thead><tr><th>Leg</th><th>Length</th><th>Status</th><th>Risk</th><th>Why</th></tr></thead>

@@ -48,6 +48,13 @@ quality, so each case assumes a CATZOC.
   harbour corridor is fine and asks about smaller squares: B took 13.8 M work against 9.8 M, A1
   10.8 M against 9.5 M, and B with lines 14.5 M against 10.8 M.
 - The work in brackets is from 2026-11-21, before narrows; it has not been re-run unsteered since.
+- Hull corridor, corner cutting and the bounded search (2026-11-22, later): a corridor is the
+  xte limit and half the beam, no position buffer, so the stretch that needed a `narrows` part
+  passes at the 10 m xte limit itself. B: 19.8 nm in 28 legs, harbour stage, route, harbour stage,
+  12.4 M work; A1: 19.0 nm in 34 legs, 9.7 M; B with lines 19.9 nm, 12.9 M.
+- Band refinement (plan §4.1 step 16, 2026-11-23): each part is searched again on a 100 m grid
+  along it and on a 30 m grid round its turns. B: 19.77 nm in 54 legs, 14.8 M work; A1: 18.97 nm
+  in 49 legs, 12.3 M. Their caps are 16.5 M and 13.5 M.
 
 - Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
   search was steered along a coarse path (`src/plan/steer.ts`).
@@ -87,6 +94,10 @@ start is at sea off South Pointe, 25.760871 N, 80.125431 W.
 | `miami-bayside`             | 3.66 nm, route then harbour stage; unassessed water in it is marked     |           23.4 M (26.0 M, 25.8 M) |
 | `miami-beach-marina`        | refused: Meloy Channel is dredged to 1.7 m (2025), shallower than 1.8 m |              2.7 M (2.9 M, 2.9 M) |
 
+- Hull corridor (2026-11-22, later): Fisher Island basin, 1.02 nm in 4 legs, all at the xte
+  limit with the hull's half-beam, no `narrows` part, 0.44 M work; Bayside 3.63 nm, 22.5 M.
+  Beach Marina is refused for the same reason in 5.5 M: with the narrower corridor more of the
+  water near the marina is free, and proving no way through it asks about more squares.
 - With narrows the main search names the free water near an end it cannot join, so an end in a
   marina goes to its harbour stage without a second search at the request's corridor: Bayside and
   Beach Marina take less work than before.

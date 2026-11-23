@@ -4,8 +4,9 @@ A Signal K server plugin and Freeboard-SK extension that plans the shortest rout
 deep enough for the boat, between the start and destination of a route you draw. Every leg of a
 plan is checked by [Under-Keel Awareness](https://github.com/KEGustafsson/signalk-underkeel)
 (signalk-underkeel) the same way its `/route-check` checks a route: a corridor of the cross-track
-limit plus a planning buffer, scored by P(UKC < 0) from the chart's survey quality, the water
-level forecast, draft, squat and waves.
+limit plus half the boat's beam, scored by P(UKC < 0) from the chart's survey quality, the water
+level forecast, draft and waves. A plan reads no GNSS: position error is underkeel's look-ahead's,
+underway.
 
 **Advisory only.** A plan is a suggestion written into your route as an unsaved change. Check
 every leg on an official chart before you sail it. The plugin never sends autopilot or steering
@@ -38,21 +39,33 @@ the trip: about half a minute on a Raspberry Pi 4 for 50 nm.
 ## Use
 
 1. In Freeboard, draw a route from where you are to where you want to go. Two points are enough.
-2. Open **Route planner** from the map toolbar, pick the route and press **Plan through safe
-   water**.
+2. Open **Route planner** from the map toolbar and pick the route. Choose where to start (the
+   boat's position or the route's first point), the route (**Shortest route**, **Route using
+   fairways**, or **Shortest, balanced and safest**) and whether to wait for the tide, then press
+   **Plan through safe water**.
 3. The route's points are replaced by the plan as an unsaved change, with each leg's status and
    P(UKC < 0) in the panel. The route's first and last points keep their names. Save the route,
    or undo the change, in Freeboard's route editor.
 
-The panel can start from the boat's position instead of the route's first point, and offer the
-shortest, balanced and safest routes: they are drawn on the map, each listed with its length and
-risk, and **Use** writes another in place of the one written. Drag a waypoint of the planned
-route and the legs on either side of it are planned again. Freeboard finds the planner as the
-`routePlan` service of its `navigationSafety` services.
+**Shortest, balanced and safest** draws the three routes on the map, each listed with its length
+and risk, and **Use** writes another in place of the one written. A wait for the tide leaves at
+the earliest time every leg passes, and when no departure does, may also wait at an anchorage on
+the way. The row under it shows the draft (signalk-underkeel's, which is Signal K's
+`design.draft` unless set there) and the route check's cross-track limit, speed and accepted
+risk; **Change** sets them for the plan, the risk as low, normal or high (a tenth, once or five times
+signalk-underkeel's setting). Drag a waypoint of the planned route and the legs on either side of
+it are planned again. The panel keeps its choices in the browser. Freeboard finds the planner as
+the `routePlan` service of its `navigationSafety` services.
+
+To plan on depth data marked not for navigation, such as the Traficom WFS, turn on **Plan on
+depth data marked not for navigation** in the plugin's settings; every leg on it stays
+`unverified`.
 
 When no route passes the check, the panel says why: land or shoals close every way, the only way
 through is water the check cannot verify (no chart coverage or an unassessed survey), the start
-or destination is not in water the check passes, or the search reached its work limit.
+or destination is not in water the check passes, or the search reached its work limit. The panel then offers **Show the lowest-risk route, risky
+legs marked**: the lowest risk-weighted route through charted water, never over land, its risky
+legs marked by the route check.
 
 ## How a plan is made
 
@@ -62,17 +75,19 @@ or destination is not in water the check passes, or the search reached its work 
    finer near land and shoals. A square is free water when every point in it, with the corridor
    around it, passes the check over the whole trip's time window.
 3. A\* finds the shortest path through free squares, and string pulling straightens it into as
-   few legs as pass the check.
+   few legs as pass the check. A fine grid in a band along that route is then searched again, so
+   a route the squares led round the long side of an islet takes the short side.
 4. signalk-underkeel's route check checks the final route at its departure, each leg at its own
    arrival time. The statuses you see are that check's.
 
-A sound or fairway narrower than the corridor (the route check's cross-track limit plus its
-planning buffer) is planned through at the harbour corridor, 10 m. The search runs at that
+A sound or fairway narrower than the corridor (the route check's cross-track limit plus half the
+beam) is planned through at the harbour corridor, no cross-track limit: the hull on its line, half
+its beam each side. The search runs at that
 corridor, and water only it passes costs twice as much per metre, unless it lies on a charted
 fairway line laid out for the boat's draft: the route keeps your corridor where the way round
 costs less and follows the fairway through a sound where it does not. The legs your corridor does
-not pass are checked at 10 m and named in the panel: keep to the fairway there. **Through sounds
-and fairways narrower than the corridor**, on by default, turns this off (`narrows: false`).
+not pass are checked at 10 m and named in the panel: keep to the fairway there. A request with
+`narrows: false` turns this off.
 
 `docs/DEVELOPMENT-PLAN.md` describes the design and the milestones that follow: planning past
 the chart box, waiting for the tide, risk-weighted alternatives, air draft under bridges and
@@ -84,18 +99,21 @@ Base `/plugins/signalk-route-planner/v1`, open to logged-in readonly users.
 
 | Route         | Answer                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------- |
-| `GET /status` | `{ state: "ready", provider, work }` or `{ state: "off", reason }`                            |
+| `GET /status` | `{ state: "ready", provider, work, defaults }` or `{ state: "off", reason }`                  |
 | `POST /plan`  | 200 with the planned `route`, its `length`, `status` and the route check; 422 with a `reason` |
 
 A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departure` (ISO 8601),
 `speed` (m/s), `xteLimit` (m), `probability` and `draft` (m); unset options take
 signalk-underkeel's route-check settings. `accept: ["NOT_FOR_NAVIGATION"]` plans on depth data
-marked not for navigation (its legs stay `unverified`), and `fallback: true` returns, when no
+marked not for navigation (its legs stay `unverified`); without `accept`, the plugin setting
+**Plan on depth data marked not for navigation** decides. `fallback: true` returns, when no
 route passes, the lowest risk-weighted route through charted water with its risky legs marked. Start and destination may be at most 60 km apart, or 100 nm where signalk-underkeel serves
 its depth survey: such a trip is planned in a corridor, or in a planning box where the machine
 builds its whole region, with a corridor's work budget either way.
 
-`work` gives the plan's work budget and, once a plan of at least 100 000 work units has run, the
+`defaults` gives the settings a plan takes unless the request sets them: `speed` (m/s),
+`xteLimit` (m) and `probability` from the route check, and the boat's `draft` (m) while
+signalk-underkeel states one. `work` gives the plan's work budget and, once a plan of at least 100 000 work units has run, the
 work units a second this machine does and what the budget takes here (`unitsPerSecond`,
 `budgetSeconds`). The plugin's
 setting **Work budget per plan** sets the budget a plan has at least; a longer trip is given more,
@@ -111,14 +129,11 @@ While signalk-underkeel builds the chart index for a trip's region, `/plan` answ
 `preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the
 machine is 413 with underkeel's reason.
 
-A fairway narrower than the search can resolve is followed along its charted navigation line;
-with signalk-underkeel's pilotage, a leg between the marks of a swept fairway is checked at the
-boat's planned position accuracy rather than the least position buffer, flagged `PILOTAGE`: the
-configured σ, or the boat's own fix over the last week when that has been worse; pilotage does
-not use the current fix directly. Such a leg carries
-`pilotage: { buffer, room }`, the room being how far off the line its swept water reaches; the
-panel shows it as "keep within ±room m", and underway signalk-underkeel warns when the live fix
-is wider than the room of the leg the boat is on.
+A fairway narrower than the search can resolve is followed along its charted navigation line.
+Under a bridge, where the fairway's swept areas leave a gap, a leg on the line is held to the
+line's guaranteed depth, flagged `FAIRWAY_GAP`; the panel names it "under a bridge, on the fairway
+line". Underway, signalk-underkeel warns when the live fix is wider than the swept water left past
+the hull on the leg the boat is on.
 
 `narrows: false` keeps every leg but a harbour stage's to the request's corridor; by default a
 passage narrower than it is planned at the harbour corridor (above), in parts the reply marks

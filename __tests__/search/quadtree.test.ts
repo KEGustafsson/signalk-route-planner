@@ -92,6 +92,52 @@ describe("quadtree adjacency", () => {
   });
 });
 
+describe("a length bound", () => {
+  // A U-shaped channel: down column 0, along row 0, up column 7. Its way from (0.5, 7.5) to
+  // (7.5, 7.5) is about 21 units; the straight line is 7.
+  const u = (x: number, y: number): boolean => x === 0 || y === 0 || x === 7;
+  const ends = (tree: QuadTree) =>
+    [
+      tree.leafAt(0.5, 7.5) as never,
+      [0.5, 7.5],
+      tree.leafAt(7.5, 7.5) as never,
+      [7.5, 7.5]
+    ] as const;
+
+  test("finds the same way while the way is shorter than the bound", async () => {
+    const free = treeWith(u);
+    const [a, p, b, q] = ends(free);
+    const unbound = await aStar(free, a, [...p], b, [...q], limits);
+    const bound = treeWith(u);
+    const [c, r, d, t] = ends(bound);
+    const bounded = await aStar(bound, c, [...r], d, [...t], { ...limits, bound: 30 });
+    expect(bounded.found && unbound.found && bounded.points).toEqual(
+      unbound.found && unbound.points
+    );
+  });
+
+  test("gives up, classifying fewer squares, when no way can be shorter than the bound", async () => {
+    const queries = { n: 0 };
+    const unbound = { n: 0 };
+    const free = treeWith(u, unbound);
+    const [a, p, b, q] = ends(free);
+    expect((await aStar(free, a, [...p], b, [...q], limits)).found).toBe(true);
+    // A way must be shorter than 15 units: the U, about 21, cannot be.
+    const tree = treeWith(u, queries);
+    const [c, r, d, t] = ends(tree);
+    const bounded = await aStar(tree, c, [...r], d, [...t], { ...limits, bound: 15 });
+    expect(bounded).toMatchObject({ found: false, reason: "unreachable" });
+    expect(queries.n).toBeLessThan(unbound.n);
+    // Below the straight line nothing at all is asked.
+    const none = { n: 0 };
+    const t2 = treeWith(u, none);
+    const [e, s2, f, g] = ends(t2);
+    const before = none.n;
+    expect((await aStar(t2, e, [...s2], f, [...g], { ...limits, bound: 6 })).found).toBe(false);
+    expect(none.n).toBe(before);
+  });
+});
+
 describe("nearest free squares", () => {
   test("best first: the nearest accepted squares, without classifying the whole disc", () => {
     const tree = treeWith((x, y) => (x === 1 && y === 6) || (x === 5 && y === 5));

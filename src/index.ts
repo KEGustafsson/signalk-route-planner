@@ -33,13 +33,28 @@ const SCHEMA = {
       default: DEFAULT_PLAN.maxWork,
       minimum: WORK_SETTING.min,
       maximum: WORK_SETTING.max
+    },
+    acceptNotForNavigation: {
+      type: "boolean",
+      title: "Plan on depth data marked not for navigation",
+      description:
+        "Such as the Traficom WFS depths. A leg on such data stays unverified, never ok. A request's own accept list takes its place.",
+      default: false
     }
   }
 };
 
+/** The flags a plan accepts by the plugin's settings when its request names none. */
+function acceptedBy(options: unknown): string[] {
+  const on = (options as { acceptNotForNavigation?: unknown } | null | undefined)
+    ?.acceptNotForNavigation;
+  return on === true ? ["NOT_FOR_NAVIGATION"] : [];
+}
+
 function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plugin {
   let running: AbortController | undefined;
   let limits: PlanOptions = DEFAULT_PLAN;
+  let accept: string[] = [];
   const rate = new WorkRate();
   let recheck: NodeJS.Timeout | undefined;
   const stopRecheck = (): void => {
@@ -73,6 +88,7 @@ function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plugin {
       const setting = (options as { maxWork?: unknown } | null | undefined)?.maxWork;
       const chosen = withWorkSetting(DEFAULT_PLAN, setting);
       limits = chosen.opts;
+      accept = acceptedBy(options);
       if (chosen.ignored !== undefined) {
         app.error(chosen.ignored);
       }
@@ -96,7 +112,8 @@ function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plugin {
         apiFor(clock, () => running?.signal, undefined, {
           limits: () => limits,
           rate,
-          planned: showStatus
+          planned: showStatus,
+          accept: () => accept
         }),
         (m) => app.error(m)
       );

@@ -99,9 +99,9 @@ export function tripLimits(
 
 /**
  * The features a session has on any index, as the provider's own: holding legs to bridges and
- * listing the chart objects, the lines a route keeps to among them; and pilotage in swept water.
+ * listing the chart objects, the lines a route keeps to among them.
  */
-const SESSION_FEATURES = new Set(["objects", "pilotage"]);
+const SESSION_FEATURES = new Set(["objects"]);
 
 /** The planning APIs over a corridor's index (`onPrepared`), for `inCorridor`. */
 const CORRIDORS = new WeakSet<PlanningApiV1>();
