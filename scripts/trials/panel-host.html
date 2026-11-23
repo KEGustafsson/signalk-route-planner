@@ -28,12 +28,11 @@
     <pre id="log"></pre>
     <script type="module">
       // A chart host for the planner panel (panel-trial.js): the Plotter Extensions bus host
-      // with the routes, data overlays and Signal K stream the panel uses, over one route.
+      // with the routes and Signal K stream the panel uses, over one route.
       import { HostConnection, windowPort } from "/bus/host.js";
 
       const log = (text) => (document.getElementById("log").textContent += text + "\n");
       const routes = new Map();
-      const overlays = {};
       const route = (r) => ({ ...r, points: r.points.map((p) => ({ ...p })) });
       const frame = document.getElementById("panel");
       let conn;
@@ -61,7 +60,7 @@
           host: "panel-trial",
           hostVersion: "1",
           apiVersion: "1",
-          capabilities: ["panels.iframe", "routes", "overlays.data", "signalk.stream"]
+          capabilities: ["panels.iframe", "routes", "signalk.stream"]
         },
         context: { kind: "panel", id: "planner" },
         methods: {
@@ -83,11 +82,6 @@
             changed(r, "replace");
             return { rev: r.rev };
           },
-          "overlay.setData": ({ overlayId, source, data }) => {
-            overlays[overlayId] = { source, data };
-            log(`overlay.setData ${overlayId} ${data.features.length} features`);
-            return {};
-          },
           "signalk.subscribe": ({ paths }) => {
             if (boat && paths.includes("navigation.position")) {
               setTimeout(
@@ -105,10 +99,9 @@
         }
       });
 
-      // What the trial reads and does: the routes, the overlays, and a waypoint dragged by hand.
+      // What the trial reads and does: the routes, and a waypoint dragged by hand.
       window.trial = {
         routes: () => [...routes.values()].map(route),
-        overlays: () => overlays,
         drag(routeId, i, position) {
           const r = routes.get(routeId);
           r.points[i] = { ...r.points[i], position };

@@ -40,15 +40,14 @@ the trip: about half a minute on a Raspberry Pi 4 for 50 nm.
 
 1. In Freeboard, draw a route from where you are to where you want to go. Two points are enough.
 2. Open **Route planner** from the map toolbar and pick the route. Choose where to start (the
-   boat's position or the route's first point), the route (**Shortest route**, **Route using
-   fairways**, or **Shortest, balanced and safest**) and whether to wait for the tide, then press
+   boat's position or the route's first point), the route (**Shortest route** or **Route using
+   fairways**) and whether to wait for the tide, then press
    **Plan through safe water**.
 3. The route's points are replaced by the plan as an unsaved change, with each leg's status and
    P(UKC < 0) in the panel. The route's first and last points keep their names. Save the route,
    or undo the change, in Freeboard's route editor.
 
-**Shortest, balanced and safest** draws the three routes on the map, each listed with its length
-and risk, and **Use** writes another in place of the one written. A wait for the tide leaves at
+A wait for the tide leaves at
 the earliest time every leg passes, and when no departure does, may also wait at an anchorage on
 the way. The row under it shows the draft (signalk-underkeel's, which is Signal K's
 `design.draft` unless set there) and the route check's cross-track limit, speed and accepted

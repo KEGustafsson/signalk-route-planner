@@ -263,41 +263,12 @@ describe("panel model", () => {
     ).toEqual([pts[0], { position: [22.05, 60.02] }, pts[1], pts[2], pts[3]]);
   });
 
-  test("a leg's flags in words, alternatives in one line each, and the map's lines", () => {
+  test("a leg's flags in words", () => {
     expect(P.legNote({ flags: ["AIR_DRAFT", "SWEPT"] })).toBe(
       "a bridge or overhead cable too low for the mast; swept"
     );
     expect(P.legNote({ flags: ["SOMETHING_NEW"] })).toBe("SOMETHING_NEW");
     expect(P.legNote({})).toBe("");
-    const shortest = {
-      name: "shortest",
-      length: 1852,
-      risk: 0.0123,
-      status: "ok",
-      route: {
-        type: "LineString",
-        coordinates: [
-          [22, 60],
-          [22.1, 60]
-        ]
-      }
-    };
-    const safest = { ...shortest, name: "safest", dominatedBy: "shortest" };
-    const balanced = { ...shortest, name: "balanced", sameAs: "shortest" };
-    expect(P.alternativeText(shortest)).toBe("shortest: 1.0 nm, risk 1.23 %, ok");
-    expect(P.alternativeText(safest)).toMatch(/no safer than shortest$/);
-    expect(P.alternativeText({ name: "safest", reason: "over the budget" })).toBe(
-      "safest: not offered, over the budget"
-    );
-    const map = P.alternativesGeoJSON([shortest, balanced, safest], "shortest");
-    const props = map.features.map((f: { properties: { name: string; chosen: boolean } }) => [
-      f.properties.name,
-      f.properties.chosen
-    ]);
-    expect(props).toEqual([
-      ["shortest", true],
-      ["safest", false]
-    ]);
   });
 
   test("the start is the boat's position when it is known", () => {

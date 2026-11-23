@@ -1,7 +1,6 @@
 // Route planner panel: plans between the ends of a visible route, or from the boat, and writes
-// the plan back into it as an unsaved change; offers alternatives drawn on the map, the
-// lowest-risk route after a refusal, and plans again the legs beside a waypoint dragged on the
-// planned route (plan §4.5).
+// the plan back into it as an unsaved change; offers the lowest-risk route after a refusal, and
+// plans again the legs beside a waypoint dragged on the planned route (plan §4.5).
 import { connectExtension } from "./vendor/plotterext-bus/extension.js";
 
 const P = globalThis.PLANNER;
@@ -15,7 +14,6 @@ const select = $("route");
 const button = $("plan");
 const result = $("result");
 const table = $("legs");
-const choices = $("choices");
 const creditsLine = $("credits");
 const lowest = $("lowest");
 const has = (c) => client.hasCapability(c);
@@ -25,7 +23,7 @@ let boat;
 /** The points the panel last wrote into a route: a drag of one of them is planned again. */
 let written;
 /**
- * The planning in progress: a plan, a choice of alternative or a drag's re-plan. Each takes the
+ * The planning in progress: a plan or a drag's re-plan. Each takes the
  * next number and, once its replies are in, changes the route and the panel only while it is
  * still the latest, so a slow one never undoes what a later one did.
  */
@@ -91,19 +89,6 @@ function showLegs(legs) {
   table.hidden = legs.length === 0;
 }
 
-/** The alternatives drawn on the map; none clears them. A host without data overlays shows none. */
-async function drawAlternatives(alternatives, chosen) {
-  if (!has("overlays.data")) {
-    return;
-  }
-  try {
-    const data = P.alternativesGeoJSON(alternatives, chosen);
-    await client.call("overlay.setData", { overlayId: "alternatives", source: "routes", data });
-  } catch (err) {
-    console.warn("route planner alternatives overlay", err);
-  }
-}
-
 /**
  * The departure and the latest departure, `hours` after it, as request fields, both from one
  * reading of the clock so the wait never exceeds the server's limit, and `waitEnRoute` when
@@ -123,17 +108,16 @@ function latest(hours, enRoute) {
 
 /**
  * The options the panel's controls set, for a plan between `ends`: the route asked for, the
- * route parameters that differ from the route check's, and the wait for the tide (with waiting
- * on the way) unless the three alternatives are asked for; `fallback` for the lowest-risk route.
+ * route parameters that differ from the route check's, and the wait for the tide with waiting
+ * on the way; `fallback` for the lowest-risk route.
  */
-function requestFor(ends, alternatives = $("alternatives").checked, fallback = false) {
+function requestFor(ends, fallback = false) {
   return {
     ...ends,
     ...(fallback && { fallback: true }),
     ...($("lines").checked && { preferLines: true }),
     ...paramsNow().fields,
-    // Alternatives are planned at one departure: the panel's wait for the tide is left out.
-    ...(alternatives ? { alternatives: true } : latest(Number($("wait").value), true))
+    ...latest(Number($("wait").value), true)
   };
 }
 
@@ -183,44 +167,6 @@ async function write(routeId, route, coordinates, op) {
   return routeWrites.done(ticket);
 }
 
-/** The alternatives and their overlay withdrawn: the route they were planned for has changed. */
-function dropChoices() {
-  choices.replaceChildren();
-  void drawAlternatives([], undefined);
-}
-
-/**
- * The offered alternatives, each with a button that writes it into the route instead. `route`
- * is the route as this set of alternatives last wrote it: one changed since is not overwritten.
- */
-function showChoices(routeId, route, body) {
-  const offered = (body.alternatives || []).map((a) => {
-    const row = document.createElement("div");
-    const text = document.createElement("span");
-    text.textContent = P.alternativeText(a) + (a.name === body.chosen ? " (written)" : "");
-    row.append(text);
-    if (a.route && !a.sameAs && a.name !== body.chosen) {
-      const use = document.createElement("button");
-      use.type = "button";
-      use.textContent = "Use";
-      use.addEventListener("click", async () => {
-        const op = ++latestOp;
-        if (await write(routeId, route, a.route.coordinates, op)) {
-          body.chosen = a.name;
-          showLegs(a.legs || []);
-          showCredits(P.credits(a.attributions));
-          showChoices(routeId, { points: written.points }, body);
-          void drawAlternatives(body.alternatives, a.name);
-          show(a.status, "Wrote the " + a.name + " route: " + P.alternativeText(a));
-        }
-      });
-      row.append(use);
-    }
-    return row;
-  });
-  choices.replaceChildren(...offered);
-}
-
 async function planSelected(fallback = false) {
   const routeId = select.value;
   if (!routeId) {
@@ -235,7 +181,6 @@ async function planSelected(fallback = false) {
   button.disabled = true;
   lowest.hidden = true;
   table.hidden = true;
-  dropChoices();
   // The credits stay with the route on the chart until a plan replaces it.
   show("muted", "Planning…");
   try {
@@ -252,7 +197,7 @@ async function planSelected(fallback = false) {
       show("fail", "The route needs a start and a destination point.");
       return;
     }
-    const request = requestFor(ends, $("alternatives").checked, fallback);
+    const request = requestFor(ends, fallback);
     const { status, body } = await planRequest(request);
     if (op !== latestOp) {
       return;
@@ -264,13 +209,9 @@ async function planSelected(fallback = false) {
     }
     const s = P.summary(status, body);
     show(s.kind, s.text);
-    await drawAlternatives(body.alternatives, body.chosen);
     if (status === 200 && (await write(routeId, route, body.route.coordinates, op))) {
       showLegs(body.check.legs);
       showCredits(P.credits(body.attributions));
-      if (body.alternatives) {
-        showChoices(routeId, { points: written.points }, body);
-      }
     }
   } catch (err) {
     if (op === latestOp) {
@@ -302,14 +243,13 @@ async function replanDrag(routeId) {
   // What was shown was for the route before the drag.
   table.hidden = true;
   lowest.hidden = true;
-  dropChoices();
   // Each leg is checked at the time the boat sails it, without waiting for the tide: a drag
   // that would need a wait is refused, never written with the wait left unsaid. The leg after
   // the waypoint is checked from when the boat reaches it.
   const leg = async (a, b, departure) => {
     const ends = { from: pts[a].position, to: pts[b].position };
     const request = {
-      ...requestFor(ends, false),
+      ...requestFor(ends),
       departure,
       latestDeparture: undefined,
       waitEnRoute: undefined
@@ -404,19 +344,16 @@ function showParams() {
   }
 }
 
-/** Waiting for the tide applies to one route at a departure: the three alternatives leave now. */
+/** The wait's note, shown while a wait is picked. */
 function showTide() {
-  const three = $("alternatives").checked;
-  $("wait").disabled = three;
-  $("threeNote").hidden = !three;
-  $("waitNote").hidden = three || Number($("wait").value) === 0;
+  $("waitNote").hidden = Number($("wait").value) === 0;
 }
 
 /**
  * The controls whose choice the panel keeps in this browser, so it opens as the last plan was
  * asked for. A browser that keeps nothing opens on the defaults.
  */
-const KEPT = ["boat", "first", "shortest", "lines", "alternatives", "wait", "xte", "knots", ...Object.values(RISK)];
+const KEPT = ["boat", "first", "shortest", "lines", "wait", "xte", "knots", ...Object.values(RISK)];
 const STORE = "signalk-route-planner.panel.v2";
 
 function restoreChoices() {
@@ -436,6 +373,10 @@ function restoreChoices() {
     } else if (typeof v === "string" && (el.tagName !== "SELECT" || [...el.options].some((o) => o.value === v))) {
       el.value = v;
     }
+  }
+  // A choice kept from an earlier panel that no longer offers it: the shortest route.
+  if (!$("shortest").checked && !$("lines").checked) {
+    $("shortest").checked = true;
   }
 }
 

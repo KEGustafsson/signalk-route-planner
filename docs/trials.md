@@ -172,9 +172,9 @@ reported. The script's header says what it keeps between runs.
 `npm run trial:panel` runs the panel in Chromium, hosted by signalk-plotterext-bus's own host
 implementation (`scripts/trials/panel-host.html`), on one route in Miami, and answers `/plan`
 with the planner on the field trials' NOAA cells through signalk-underkeel's planning API. It
-plans with alternatives, checks the overlay data the panel hands the host (the host draws no
-map) and the panel's lists, writes another alternative, and drags a planned waypoint to see the
-legs beside it planned again. The steps and what each checks are in
+plans the shortest route, checks it was written and the panel lists its legs, and drags a
+planned waypoint to see the legs beside it planned again. Until 2026-11-23 it planned with
+alternatives too, which the panel no longer offers (plan §4.5). The steps and what each checks are in
 `scripts/trials/panel-trial.js`; it saves screenshots in `data/trials/`.
 
 ## The panel in Freeboard (R5's exit)

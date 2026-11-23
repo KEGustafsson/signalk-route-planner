@@ -533,14 +533,12 @@ or a wait the request asks for.
 ### 4.5 R5: Freeboard UX and upstream
 
 - Extension panel: start at the vessel (`navigation.position` from the host's Signal K stream)
-  or at the first point of a selected route, destination at its last point; alternatives drawn
-  as a data overlay (`alternatives`, the written one marked), each listed with its length, risk
-  and status and a button that writes it instead; the chosen one written with `route.replace` as
-  an unsaved draft; the timed plan and each leg's flags in words in the panel. Alternatives plan
-  at one departure, so the panel leaves its wait for the tide out while they are asked for.
+  or at the first point of a selected route, destination at its last point; the plan written
+  with `route.replace` as an unsaved draft; the timed plan and each leg's flags in words in the
+  panel.
 - Panel choices (decision, 2026-11-23): the panel asks only what changes from trip to trip. The
-  start (the boat or the route's first point); the route (shortest; using fairways, which is
-  `preferLines`; or the shortest, balanced and safest, which is `alternatives`); and the wait for
+  start (the boat or the route's first point); the route (shortest, or using fairways, which is
+  `preferLines`); and the wait for
   the tide, which always allows waiting on the way (`waitEnRoute`; it waits there only when no
   single departure passes). A row of route parameters shows the route check's settings
   (`GET /status` `defaults`) and changes them for the plan: the cross-track limit, the speed in
@@ -555,6 +553,17 @@ or a wait the request asks for.
   for navigation depends on the charts, not the trip: it is the plugin setting
   `acceptNotForNavigation`, the `accept` of a request that names none. The panel keeps its
   choices in the browser.
+- No alternatives in the panel (decision, 2026-11-23): the panel no longer offers the shortest,
+  balanced and safest routes, nor draws them as a map overlay; `alternatives` stays in the REST
+  API (§4.4). In the archipelago they were refused where the shortest route was not: the balanced
+  and safest routes are planned without narrows (§4.1 step 14), at the request's corridor, which
+  holds no way through the sounds the shortest takes (Pargas to Nagu at xte 30 m: the shortest
+  12.85 nm, both others refused). Planned through narrows at the harbour corridor, the search
+  sees a leg's risk at that corridor, less than the request's wider corridor meets in open water,
+  and Pargas to Nagu reached the work limit after 5.6 minutes. Where they were offered they kept
+  close to the shortest: its riskiest leg there is 0.05 %, a twentieth of the route check's _p_.
+  Three plans for each request cost three times the work on a Raspberry Pi. The panel's risk
+  level (low is _p_/10) asks for a safer route, and the lowest-risk route follows a refusal.
 - Interactive editing: when exactly one point of the route the panel wrote moves (`route.dirty`
   from the host), the legs from the point before it to it and from it to the point after are
   planned again, each as a plan of its own, and spliced in; the dragged point stays where it was
@@ -568,12 +577,12 @@ or a wait the request asks for.
   reply of §5); Freeboard core and signalk-underkeel's copy of the contract schema list it next.
 - **Panel trial** (`npm run trial:panel`, `scripts/trials/panel-trial.js`): the panel in
   Chromium, hosted by the bus's own host implementation over one route, planning through
-  signalk-underkeel's planning API on the field trials' charts. It plans with alternatives from
-  the route's first point, takes the lowest-risk route when the plan is refused, writes another
-  alternative, drags a waypoint and waits for its legs to be planned again.
+  signalk-underkeel's planning API on the field trials' charts. It plans the shortest route from
+  the route's first point, takes the lowest-risk route when the plan is refused, drags a waypoint
+  and waits for its legs to be planned again.
 - **Freeboard trial** (R5's exit, `docs/trials.md`): the panel in Freeboard-SK on a Signal K
   server with signalk-underkeel and Charts Provider, planning a Miami route from the panel, the
-  plan written into Freeboard's route and the alternatives drawn on its map.
+  plan written into Freeboard's route.
 
 ## 5. REST API
 

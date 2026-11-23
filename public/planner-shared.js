@@ -271,40 +271,6 @@
       .join("; ");
   }
 
-  /** One line for an alternative of a `/plan` reply with `alternatives`. */
-  function alternativeText(a) {
-    if (!a) {
-      return "";
-    }
-    if (a.reason) {
-      return a.name + ": not offered, " + a.reason;
-    }
-    const tail = a.sameAs
-      ? ", the same as " + a.sameAs
-      : a.dominatedBy
-        ? ", no safer than " + a.dominatedBy
-        : "";
-    return a.name + ": " + nm(a.length) + ", risk " + (a.risk * 100).toFixed(2) + " %, " + a.status + tail;
-  }
-
-  /** The offered alternatives as an overlay's GeoJSON, `chosen` marked, the repeats left out. */
-  function alternativesGeoJSON(alternatives, chosen) {
-    return {
-      type: "FeatureCollection",
-      features: (alternatives || [])
-        .filter(function (a) {
-          return a && a.route && !a.sameAs;
-        })
-        .map(function (a) {
-          return {
-            type: "Feature",
-            geometry: a.route,
-            properties: { name: a.name, status: a.status, chosen: a.name === chosen }
-          };
-        })
-    };
-  }
-
   /** Whether `position` is a known one: a longitude and a latitude, both finite. */
   function hasPosition(position) {
     return (
@@ -493,8 +459,6 @@
     movedPoint: movedPoint,
     spliceLegs: spliceLegs,
     legNote: legNote,
-    alternativeText: alternativeText,
-    alternativesGeoJSON: alternativesGeoJSON,
     fromBoat: fromBoat,
     hasPosition: hasPosition,
     worstStatus: worstStatus,

@@ -87,8 +87,7 @@ All notable changes to signalk-route-planner are documented here.
 - Preference lines, with `preferLines`: leading lines, recommended tracks, fairway navigation
   lines laid out for the boat's draft and the boat's own tracks that signalk-underkeel lists are
   kept to where that costs little more distance, to starboard of a two-way line (COLREG rule 9).
-- Panel: start from the boat's position; the shortest, balanced and safest routes drawn on the
-  map and listed, any of them written with **Use**; each leg's flags in words; a dragged waypoint's
+- Panel: start from the boat's position; each leg's flags in words; a dragged waypoint's
   legs planned again, also in Freeboard, which hands a route's points back a few 1e-14 degrees off
   through its map projection; keeping to fairway lines and own tracks as a check box. The manifest offers
   `routePlan` in the `navigationSafety` services, and `npm run trial:panel` runs the panel in
@@ -127,15 +126,17 @@ All notable changes to signalk-route-planner are documented here.
 - Attributions: an offered route lists the open data it leaned on (`attributions`), the FTIA's
   navigation lines it kept to and Traficom's WFS depths it crossed, and the panel shows the
   credit under the plan.
-- Panel: four choices, from what changes from trip to trip. Start at the boat or the route's
-  first point; the shortest route, the route using fairways, or the shortest, balanced and
-  safest; the wait for the tide, which may also wait on the way. A row shows the draft signalk-underkeel plans with
+- Panel: three choices, from what changes from trip to trip. Start at the boat or the route's
+  first point; the shortest route or the route using fairways; the wait for the tide, which may also wait on the way. A row shows the draft signalk-underkeel plans with
   (Signal K's `design.draft` unless set there) and the route check's cross-track limit, speed and
   accepted risk, and changes them for the plan (risk low, normal or
   high: a tenth, once or five times the route check's). After a refusal a button plans the
   lowest-risk route, its risky legs marked. Sounds narrower than the corridor and the re-plan of
   a dragged waypoint are always on. Depth data marked not for navigation is the plugin setting
   **Plan on depth data marked not for navigation**. `GET /status` gives the route check's
-  settings (`defaults`). The panel keeps its choices in the browser.
+  settings (`defaults`). The panel keeps its choices in the browser. It no longer offers the
+  shortest, balanced and safest routes, nor draws them on the map: in the archipelago they were
+  refused where the shortest passed, and kept close to it where offered; `alternatives` stays in
+  the REST API.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.
