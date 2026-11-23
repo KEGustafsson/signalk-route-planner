@@ -15,7 +15,7 @@ import type { TautRule } from "../search/taut";
 import { tautWithin } from "../search/taut";
 import { fairwayRoute } from "./fairway";
 import { joined } from "./proof";
-import { checkLeg, searchRoute, WORK_LIMIT } from "./search";
+import { checkLeg, searchRoute, tooLongForOneLeg, WORK_LIMIT } from "./search";
 import type { Part, Stage } from "./stages";
 
 /**
@@ -106,10 +106,13 @@ const LINE_REACH = 2000;
 /**
  * A leg's check for the strict passes here, which read no more of a verdict than whether
  * `rule` passes it: settled on the session's raster where that says (`search/field.ts`), else
- * the route check's.
+ * the route check's. A leg too long to check as one is `checkLeg`'s, never the raster's.
  */
-const settled = (s: Session, rule: PassRule): ((p: LonLat, q: LonLat) => Verdict) =>
-  settledCheck(s, rule, (p, q) => checkLeg(s, p, q));
+export function settled(s: Session, rule: PassRule): (p: LonLat, q: LonLat) => Verdict {
+  const exact = (p: LonLat, q: LonLat): Verdict => checkLeg(s, p, q);
+  const field = settledCheck(s, rule, exact);
+  return (p, q) => (tooLongForOneLeg(s, p, q) ? exact(p, q) : field(p, q));
+}
 
 /** A strict route's price for `taut`: its length where `rule` passes a leg; nowhere else. */
 const strictTaut = (rule: PassRule): TautRule => ({

@@ -1,7 +1,9 @@
 import fc from "fast-check";
 import { DEFAULT_PLAN } from "../../src/plan/options";
+import { settled } from "../../src/plan/narrows";
 import { plan } from "../../src/plan/plan";
-import { disc, tileAt, tiledApi } from "../helpers/tiled-oracle";
+import { OK_ONLY } from "../../src/search/passes";
+import { disc, TILE_M, tileAt, tiledApi } from "../helpers/tiled-oracle";
 
 /**
  * The raster field under a whole plan (`search/field.ts`): on a chart of tiles, as
@@ -80,5 +82,26 @@ describe("a plan with the session's raster", () => {
       { numRuns: 12 }
     );
     expect(differing).toEqual([]);
+  });
+});
+
+describe("a leg too long to check as one", () => {
+  test("is never settled on the raster: the leg check's refusal, the chart not asked", async () => {
+    const api = tiledApi([], true);
+    // A 1 km half-width: a 12 km leg's corridor is 28 km², an 8 km leg's 20 km².
+    const params = { departure: NOW, until: NOW + 3_600_000, speed: 3, xteLimit: 990 };
+    const r = await api.session(params, NEVER, (s) => {
+      const check = settled(s, OK_ONLY);
+      const long = check(tileAt(0, 120), tileAt(12_000 / TILE_M, 120));
+      const short = check(tileAt(0, 120), tileAt(8000 / TILE_M, 120));
+      return Promise.resolve({ long, short });
+    });
+    expect(r.ok && r.value.long).toMatchObject({
+      status: "unverified",
+      flags: ["TOO_LONG_FOR_ONE_LEG"]
+    });
+    expect(r.ok && r.value.short.status).toBe("ok");
+    expect(api.asked.legs).toBe(0);
+    expect(api.asked.blocks).toBeGreaterThan(0);
   });
 });

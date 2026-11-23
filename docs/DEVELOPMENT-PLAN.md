@@ -293,11 +293,12 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     cost or preference lines, whose price is not length. Pargas to Nagu: 12.87 nm south of
     Torrgrund, where it was 13.09 north of it, 2.5 M work more; Turku to Nauvo 17.36 against 17.38.
     A second pass searches a 30 m grid 200 m either side, only within 500 m along the route of a
-    turn (`bandAroundTurns`, `FINE_BAND`): a taut route turns only where it touches land or a shoal,
-    so a shorter way through a gap narrower than the first grid starts near a turn, and its
-    straight legs need no search. Pargas to Nagu 12.85 nm for about 1.3 M work more, shorter than a
-    reference search on a 50 m grid 3 km either side (12.856 nm, 10 M work); the uniform 30 m grid
-    along the whole route reaches the same for 6 M. A part's ends stay where it meets the next,
+    turn (`bandAroundTurns`, `FINE_BAND`), a window of route at a time where turns run together:
+    a taut route turns only where it touches land or a shoal, so a shorter way through a gap
+    narrower than the first grid starts near a turn, and its straight legs need no search.
+    Pargas to Nagu 12.85 nm for about 1.3 M work more, shorter than a reference search on a 50 m
+    grid 3 km either side (12.856 nm, 10 M work); the uniform 30 m grid along the whole route
+    reaches the same for 6 M. A part's ends stay where it meets the next,
     so a route split into narrows parts gains less (Turku to Nauvo 17.354 nm, against 17.318 on a
     30 m grid over the whole route at the harbour corridor).
     Invariants: every leg it offers is still the route check's (1); it only changes which passing
@@ -306,8 +307,8 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
 17. **The raster field** (`src/search/field.ts`, `field-geometry.ts`). Steps 4, 15 and 16 test
     thousands of legs, and each test was a corridor query of the chart: on Parainen to Nauvo
     15 246 of them, 4.4 M of the plan's 5.2 M work units. With a provider serving `raster`
-    (§2.1), the planner reads the chart's own tiles a block of 256 × 256 at a time and tests a
-    leg against the cells near it. signalk-underkeel's corridor of a leg is a rectangle, the
+    (§2.1), the planner reads the chart's own tiles a block at a time (`BLOCK` cells a side) and
+    tests a leg against the cells near it. signalk-underkeel's corridor of a leg is a rectangle, the
     half-width and the leg's great-circle bow to each side and past each end, and its verdict
     counts every tile in it and, by the chart's position uncertainty, those within the raster's
     `reach` of it. So where every cell within that rectangle and reach passes the rule, the leg
@@ -315,9 +316,9 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     inside the corridor, it does not; any other leg is asked of `segment` as before. A box is
     settled the same way against its verdict's ring. The corridor's own cells are read first:
     a closed one settles the leg, any other not free leaves it to `segment`, and only a
-    corridor all free is worth the reach past it, which is scanned up to 40 000 cells
-    (`MAX_RING_CELLS`). A chart of poor survey quality counts tiles 1.9 km off, and scanning
-    that far costs more than the query it would spare: there a leg is only ever failed here.
+    corridor all free is worth the reach past it, which is scanned only up to `MAX_RING_CELLS`
+    cells. A chart of poor survey quality counts tiles kilometres off, and scanning that far
+    costs more than the query it would spare: there a leg is only ever failed here.
     The margins are underkeel's own: the bow
     is measured as `legCorridors` measures it, and a ground metre is taken at most 1.2 % longer
     and at least 1 % shorter on the chart than on the sphere, for the ellipsoid and the ring's
@@ -326,10 +327,13 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     tightening of a strict shortest route's parts (`settledCheck`), a square of the quadtree
     without a risk cost (a square it passes is free; one larger than a unit it fails is split
     unasked) and the narrow-water test. A search with a risk cost, a fallback and the search's
-    own pulling by price ask the chart every time. A route's refinement is kept only when
-    `segment` itself passes every leg of it, and the proof is the route check as ever.
-    Parainen to Nauvo: the same 24 338 m route in 27 legs, 0.81 M work units against 5.23 M,
-    1 072 legs and 746 boxes asked of the chart against 15 246 and 3 496.
+    own pulling by price ask the chart every time. A leg too long to check as one
+    (`tooLongForOneLeg`, `src/plan/search.ts`) is never settled here: it stays `checkLeg`'s,
+    not checked. A route's refinement
+    is kept only when `segment` itself passes every leg of it, and the proof is the route check
+    as ever. Measured on Parainen to Nauvo, as an example: the same 24 338 m route in 27 legs,
+    0.81 M work units against 5.23 M, 1 072 legs and 746 boxes asked of the chart against
+    15 246 and 3 496.
     Invariants: a leg or square settled on the raster is one the chart's own query answers the
     same way (`__tests__/search/field.test.ts`, `__tests__/plan/field-plan.test.ts`, and
     underkeel's `planning-raster.test.ts`), so no verdict changes (2, 3); every offered leg is
@@ -345,27 +349,43 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
 
 **Built:**
 
-- `/plan` asks for every place the search may ask about: the square its region is cut from
-  around the midpoint (§4.1) and a harbour stage's region around each end, each with a
-  corridor's reach (`searchRegion`, `src/plan/prepare.ts`). When that is too large to build on
-  the machine (413), it asks for the trip's least region: both ends with the search's least
-  margin and a harbour stage around them (`tripRegion`). Underkeel answers with the chart box
-  when it covers the region, the whole index when there is no box, or a planning box built for
-  it. The search and the proof then run on that index; past it the chart reads no coverage,
-  `unverified`, never `ok` (invariant 2), so the search keeps to the water it can check.
-- The region asked for first is not the whole search region but the trip's snug one
-  (`snugRegion`): the box of both ends grown by a quarter of the trip's length, at least the
-  least region's margin, its edges on a grid of 0.025° by 0.05°. It is a third to a half of the
-  search region's area, and the index is downloaded and built in about that share of the time;
-  on the grid, a trip whose ends moved a little asks for the same region, which underkeel then
-  holds. A plan made there stands when no way leaving the region could be shorter: such a way
-  touches an edge, so it is at least the way from one end to the edge and on to the other
-  (`leavingAtLeast`). A route at least that long, or a refusal for want of a way, is planned
-  again in the whole search region once that is prepared (`beatable`, `src/plugin-api.ts`).
-  Before any build, a provider serving `held` is asked for an index it holds already that
-  covers the trip's own ends; the plan is made on it, and the larger regions asked for only on
-  the same test. Parainen to Nauvo: 829 km² asked for against 2 201 km², the route 24.3 km against
-  a least 32.1 km for any way leaving it.
+- `/plan` prepares the trip's index in steps (`Preparer.forTrip`, `src/plan/prepare.ts`, and
+  `widened`, `src/plugin-api.ts`). Three regions are named: the trip's least region, both ends
+  with the search's least margin and a harbour stage around them (`tripRegion`); its snug region,
+  the box of both ends grown by a share of the trip's length (`SNUG_SHARE`), at least the least
+  region's margin, its edges moved out to a grid (`SNAP_LAT`, `SNAP_LON`) and never past the
+  search region (`snugRegion`); and the search region, every place the search may ask about: the
+  square its region is cut from around the midpoint (§4.1) and a harbour stage's region around
+  each end, each with a corridor's reach (`searchRegion`).
+  1. A provider serving `held` is asked for an index it holds already that covers the least
+     region; no build starts. Without one, a build in progress whose region holds the least
+     region, or one of a corridor for this trip, serves it, else a build is started for the snug
+     region. When the machine refuses a region as too large to build (413), the build turns to
+     the least region, and when that is too, to a corridor (below). On the grid, a trip whose
+     ends moved a little asks for the same snug region, which underkeel then holds.
+  2. The plan is made on that index, and is planned again in a larger region only when
+     `beatable` says a way leaving the index may beat it. That needs the index's box, less the
+     band inside its edge where it reads no coverage (`EDGE_BAND_M`), not to hold the search
+     region, and the plan to be one of: a 422 refusal for want of a way (`NO_WAY`,
+     `UNVERIFIED_WAY`); a route at least `leavingAtLeast` long, the least length of any way that
+     leaves the box, which touches an edge and so is at least the way from one end to the edge
+     and on to the other; or any route of a plan that prices its ways by more than their length,
+     a risk weight, preference lines, alternatives or a fallback (`pricedByLength`), since a
+     route's price is at least its length and a longer way leaving the box may cost less. Any
+     other refusal, the work limit's and the risk budget's among them, stands, and so does any
+     plan on an index with no box.
+  3. The larger regions are the snug region, then the search region, each from a build whose
+     region holds it, one in progress or a new one, never the held index or a corridor, and
+     planned on only when it covers ground the last index did not. A 413 for a larger region
+     leaves the smaller region's answer standing; a build still running answers 503 (below).
+
+  Underkeel answers each `prepare` with the chart box when it covers the region, the whole index
+  when there is no box, or a planning box built for it. The search and the proof run on that
+  index; past it the chart reads no coverage, `unverified`, never `ok` (invariant 2), so the
+  search keeps to the water it can check. Measured on Parainen to Nauvo, as an example: 829 km²
+  asked for against 2 201 km² for the search region, the route 24.3 km against a least 32.1 km for
+  any way leaving it.
+
 - A build can take minutes on a Pi. `/plan` waits 20 s for it, then answers 503 with
   `preparing: true` and `Retry-After: 3` while the build runs on until the plugin stops. The
   panel plans again while the build continues, then asks to plan again later if it is still

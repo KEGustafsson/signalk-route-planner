@@ -107,6 +107,8 @@ const SNAP = 5;
 
 /** Side of the grid squares the legs are looked up by (`junctions`), degrees. */
 const GRID_DEG = 0.01;
+/** A leg whose box meets more grid squares than this is held against every point instead. */
+const GRID_SQUARES_AT_MOST = 64;
 
 /**
  * Where the lines meet: a line's point within SNAP of another line's leg, by leg. Lines meet at
@@ -126,11 +128,16 @@ function junctions(legs: [LonLat, LonLat][]): Map<number, LonLat[]> {
     ];
   });
   // The legs by the grid squares their boxes meet: a point is held against the legs of its
-  // own square alone, not every leg of the region.
+  // own square alone, not every leg of the region, and against the few legs too long to grid.
   const grid = new Map<string, number[]>();
+  const long: number[] = [];
   const square = (v: number): number => Math.floor(v / GRID_DEG);
   boxes.forEach((box, j) => {
     const [w, s, e, n] = box as [number, number, number, number];
+    if ((square(e) - square(w) + 1) * (square(n) - square(s) + 1) > GRID_SQUARES_AT_MOST) {
+      long.push(j);
+      return;
+    }
     for (let x = square(w); x <= square(e); x++) {
       for (let y = square(s); y <= square(n); y++) {
         const key = `${x},${y}`;
@@ -146,7 +153,8 @@ function junctions(legs: [LonLat, LonLat][]): Map<number, LonLat[]> {
   const same = (p: LonLat, q: LonLat): boolean => p[0] === q[0] && p[1] === q[1];
   legs.forEach((leg, i) => {
     for (const p of leg) {
-      for (const j of grid.get(`${square(p[0])},${square(p[1])}`) ?? []) {
+      const own = grid.get(`${square(p[0])},${square(p[1])}`) ?? [];
+      for (const j of long.length > 0 ? [...own, ...long] : own) {
         const [a, b] = legs[j] as [LonLat, LonLat];
         const [w, s, e, n] = boxes[j] as [number, number, number, number];
         if (j === i || same(p, a) || same(p, b) || p[0] < w || p[0] > e || p[1] < s || p[1] > n) {

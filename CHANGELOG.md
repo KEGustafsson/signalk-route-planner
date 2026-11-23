@@ -59,9 +59,10 @@ All notable changes to signalk-route-planner are documented here.
   Orin 3.4 to 3.8 s where it took 34.8 s.
 - A trip's index is asked for its snug region first, the ends and a quarter of the trip's length
   around them on a grid, a third to a half of the search region: built in that share of the
-  time. A route no way leaving the region could beat stands; any other, and a refusal for want of
-  a way, is planned again in the whole search region. Before any build, an index
-  signalk-underkeel holds already that covers the trip's ends is planned on (its `held`).
+  time. A route no way leaving the region could be shorter than stands; any other, a route priced
+  by more than its length (a risk weight, preference lines, alternatives, a fallback) and a
+  refusal for want of a way are planned again in the whole search region. Before any build, an
+  index signalk-underkeel holds already that covers the trip's ends is planned on (its `held`).
 - The plugin's debug log says when a plan is planned again in a larger region, and what the
   plan in the smaller one came to.
 - While an index builds, `/plan`'s 503 asks the panel back in 3 s, not 30: the request asked

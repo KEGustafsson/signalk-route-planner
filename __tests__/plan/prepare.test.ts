@@ -13,7 +13,7 @@ import {
   tripLimits,
   tripRegion
 } from "../../src/plan/prepare";
-import { beatable, boxReleased, apiFor } from "../../src/plugin-api";
+import { beatable, boxReleased, apiFor, pricedByLength } from "../../src/plugin-api";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
@@ -647,6 +647,17 @@ describe("/plan in a part of the search region", () => {
     expect(p.asked).toEqual([snugRegion(from, to)]);
   });
 
+  test("a route priced by its risk is planned again in the whole region, however short", async () => {
+    const p = regional({ obstacles: [{ x: 10_000, y: 0, r: 600 }] });
+    g[PLANNING_API] = p.api;
+    const api = apiFor({ now: () => NOW }, () => new AbortController().signal, new Preparer(1000));
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    const r = await api.plan({ from, to, riskWeight: 0.5 }, new AbortController().signal);
+    expect(r.status).toBe(200);
+    expect(p.asked).toEqual([snugRegion(from, to), snugRegion(from, to), searchRegion(from, to)]);
+  });
+
   test("a route one leaving the snug region could beat is planned again in the whole region", async () => {
     // A wall across the trip, 9 km to each side: the way round it is longer than a way that
     // leaves the snug region need be.
@@ -700,5 +711,27 @@ describe("/plan in a part of the search region", () => {
       beatable(refused("no water the route check passes within 500 m of the start"), req, snug)
     ).toBe(false);
     expect(beatable({ status: 503, body: { errors: ["x"] } }, req, snug)).toBe(false);
+  });
+
+  test("beatable: a route priced by more than its length may lose to a longer way leaving the region", () => {
+    const from = at(0, 0);
+    const to = at(20_000, 0);
+    const req = { from, to };
+    const snug = snugRegion(from, to);
+    const short = { status: 200, body: { length: 21_000 } };
+    expect(beatable(short, req, snug)).toBe(false);
+    expect(beatable(short, req, snug, false)).toBe(true);
+    const fallback = { status: 200, body: { length: 21_000, fallback: "the tide" } };
+    expect(beatable(fallback, req, snug)).toBe(true);
+    // The whole search region settles it either way.
+    expect(beatable(short, req, [20, 58, 24, 62], false)).toBe(false);
+    expect(pricedByLength(DEFAULT_PLAN, req)).toBe(true);
+    expect(pricedByLength(DEFAULT_PLAN, { ...req, riskWeight: 0.5 })).toBe(false);
+    expect(pricedByLength({ ...DEFAULT_PLAN, riskWeight: 0.5 }, req)).toBe(false);
+    expect(pricedByLength(DEFAULT_PLAN, { ...req, preferLines: true })).toBe(false);
+    expect(
+      pricedByLength({ ...DEFAULT_PLAN, preferWeight: 0 }, { ...req, preferLines: true })
+    ).toBe(true);
+    expect(pricedByLength(DEFAULT_PLAN, { ...req, alternatives: true })).toBe(false);
   });
 });

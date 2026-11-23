@@ -6,7 +6,7 @@ import type { Bbox, PlanningApiV1, Reply } from "./oracle/contract";
 import { planningApi } from "./oracle/contract";
 import { haversine } from "./foundation/geo";
 import type { PlanOptions } from "./plan/options";
-import { DEFAULT_PLAN, limitsFor } from "./plan/options";
+import { DEFAULT_PLAN, limitsFor, requestOptions } from "./plan/options";
 import type { PlanInput } from "./plan/plan";
 import { plan } from "./plan/plan";
 import type { Reach } from "./plan/prepare";
@@ -109,16 +109,21 @@ function larger(now: Bbox | undefined, before: Bbox | undefined): boolean {
 
 /**
  * Whether a plan made on an index covering `coverage` may be beaten in the whole search region:
- * the index does not hold that region, and the plan is a refusal for a reason other than the
- * work limit, or a route no shorter than the least any way leaving the covered region is
- * (`leavingAtLeast`).
+ * the index does not hold that region, and the plan is a refusal for want of a way, or a route
+ * no shorter than the least any way leaving the covered region is (`leavingAtLeast`). With
+ * `byLength` false, the search priced its ways by more than their length, so any route may be.
  */
-export function beatable(reply: Reply, req: PlanRequest, coverage: Bbox | undefined): boolean {
+export function beatable(
+  reply: Reply,
+  req: PlanRequest,
+  coverage: Bbox | undefined,
+  byLength = true
+): boolean {
   const judged = judgedIn(coverage);
   if (judged === undefined || within(judged, searchRegion(req.from, req.to))) {
     return false;
   }
-  const body = reply.body as { length?: unknown; reason?: unknown } | null;
+  const body = reply.body as { length?: unknown; reason?: unknown; fallback?: unknown } | null;
   if (reply.status === 422) {
     // No way through: the way may lie past the region. Any other refusal holds there too.
     return typeof body?.reason === "string" && body.reason.includes(NO_ROUTE_CONNECTS);
@@ -126,7 +131,22 @@ export function beatable(reply: Reply, req: PlanRequest, coverage: Bbox | undefi
   if (reply.status !== 200 || typeof body?.length !== "number") {
     return false;
   }
+  // A route's price is at least its length, so a leaving way's length bounds only a price
+  // that is length alone: a priced route, a fallback's among them, may lose to a longer way.
+  if (!byLength || body.fallback !== undefined) {
+    return true;
+  }
   return body.length >= leavingAtLeast(req.from, req.to, judged);
+}
+
+/**
+ * Whether a plan of `req` prices its ways by their length alone: no risk weight, no preference
+ * lines, no alternatives at other risk weights.
+ */
+export function pricedByLength(opts: PlanOptions, req: PlanRequest): boolean {
+  const own = requestOptions(opts, req);
+  const lines = own.preferLines && own.preferWeight > 0;
+  return own.riskWeight === 0 && !lines && req.alternatives !== true;
 }
 
 /** The band inside a prepared index's box where it reads no coverage, metres, at most. */
@@ -165,12 +185,13 @@ async function widened(
   req: PlanRequest,
   planOn: (on: PlanningApiV1) => Promise<Reply>,
   wider: (reach: Reach) => Promise<PlanningApiV1 | Reply>,
+  byLength: boolean,
   note: (message: string) => void = () => undefined
 ): Promise<Reply> {
   let on = api;
   let reply = await planOn(on);
   for (const reach of ["snug", "whole"] as const) {
-    if (!beatable(reply, req, on.coverage())) {
+    if (!beatable(reply, req, on.coverage(), byLength)) {
       break;
     }
     note(
@@ -264,7 +285,9 @@ export function apiFor(
     };
     const wider = (reach: Reach): Promise<PlanningApiV1 | Reply> =>
       preparer.forTrip(found, req.from, req.to, stop, req.draft, reach);
-    return near ? widened(api, req, planOn, wider, hooks.note) : planOn(api);
+    return near
+      ? widened(api, req, planOn, wider, pricedByLength(opts, req), hooks.note)
+      : planOn(api);
   };
   return {
     status: () => {

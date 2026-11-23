@@ -96,12 +96,12 @@ legs, 6 m shorter than the 3.099 nm in 6 legs the code before it gave in the sam
 
 ## Parainen → Nauvo guest harbour (Finland)
 
-`parainen-nauvo` plans from the water off Parainen (22.2946 E, 60.2806 N) to Nauvo guest harbour
-for a 0.9 m draft at 2.5 m/s and the route check's default xte of 30 m, at CATZOC A1 with the
-FTIA's lines charted but not preferred: the trip the raster field was measured on, as a plan on
-the plugin's own Traficom WFS cell makes it. Its index is built as the plugin builds one (`edge`
-in `trials.json`: tiles across a swept area's edge two zooms finer); at the leaf zoom alone the
-swept fairway out of Parainen does not pass and the trip is refused.
+`parainen-nauvo` plans from the water off Parainen to Nauvo guest harbour, with the draft,
+speed, corridor, CATZOC and index build its entry in `scripts/trials/trials.json` sets: the trip
+the raster field was measured on, as a plan on the plugin's own Traficom WFS cell makes it. Its
+index is built as the plugin builds one (`edge`: tiles across a swept area's edge two zooms finer
+than the leaf zoom); at the leaf zoom alone the swept fairway out of Parainen does not pass and
+the trip is refused.
 
 | Run (2026-11-23)        | Result                                                    |   Work | Time (Jetson Orin) |
 | ----------------------- | --------------------------------------------------------- | -----: | -----------------: |

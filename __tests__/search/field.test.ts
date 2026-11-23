@@ -124,8 +124,9 @@ describe("a leg on the raster", () => {
     expect(s.asked).toBe(0);
     // Two blocks of 256 cells a side, each read once.
     expect(s.blocks).toBe(f.stats.blocks);
+    const read = s.blocks;
     f.leg(at(10.5, 10.5), at(300.5, 140.5));
-    expect(s.blocks).toBe(f.stats.blocks);
+    expect(s.blocks).toBe(read);
   });
 
   test("fails where land lies on it or inside its corridor", () => {
@@ -322,6 +323,8 @@ describe("the field against the ground (property)", () => {
       fc.double({ min: 2, max: 60, noNaN: true }),
       fc.double({ min: 2, max: 60, noNaN: true })
     );
+    // Where along the leg a closed cell is put on it, if one is.
+    const across = fc.option(fc.double({ min: 0, max: 1, noNaN: true }), { nil: undefined });
     const cells = fc.uniqueArray(
       fc.tuple(fc.integer({ min: 0, max: 62 }), fc.integer({ min: 0, max: 62 })),
       {
@@ -331,23 +334,40 @@ describe("the field against the ground (property)", () => {
     );
     const wrong: string[] = [];
     fc.assert(
-      fc.property(point, point, cells, fc.constantFrom(2, 12, 40), (p, q, bad, halfWidth) => {
-        const closed = Object.fromEntries(
-          bad.map(([x, y]) => [`${x},${y}`, { byte: LAND, flags: ["LAND"] }])
-        );
-        const f = field(session(but(closed), { halfWidth }));
-        const [a, b] = [at(p[0], p[1]), at(q[0], q[1])];
-        const known = f.leg(a, b);
-        const nearest = Math.min(Infinity, ...bad.map(([x, y]) => ground(a, b, x, y)));
-        // Sampled along the leg: within a twentieth of a cell of the true distance.
-        const slack = CELL_M / 4;
-        if (known === true && nearest < halfWidth - slack) {
-          wrong.push(`passed ${nearest.toFixed(1)} m from land at half-width ${halfWidth}`);
+      fc.property(
+        point,
+        point,
+        cells,
+        fc.constantFrom(2, 12, 40),
+        across,
+        (p, q, some, halfWidth, t) => {
+          // The cell under the point a fraction `t` along the leg: the leg crosses it, so it lies
+          // inside the corridor at any half-width, the slack the check below allows included.
+          const crossed: [number, number][] =
+            t === undefined
+              ? []
+              : [[Math.floor(p[0] + (q[0] - p[0]) * t), Math.floor(p[1] + (q[1] - p[1]) * t)]];
+          const bad = [...some, ...crossed];
+          const closed = Object.fromEntries(
+            bad.map(([x, y]) => [`${x},${y}`, { byte: LAND, flags: ["LAND"] }])
+          );
+          const f = field(session(but(closed), { halfWidth }));
+          const [a, b] = [at(p[0], p[1]), at(q[0], q[1])];
+          const known = f.leg(a, b);
+          const nearest = Math.min(Infinity, ...bad.map(([x, y]) => ground(a, b, x, y)));
+          // Sampled along the leg: within a twentieth of a cell of the true distance.
+          const slack = CELL_M / 4;
+          if (known === true && nearest < halfWidth - slack) {
+            wrong.push(`passed ${nearest.toFixed(1)} m from land at half-width ${halfWidth}`);
+          }
+          if (known === true && crossed.length > 0) {
+            wrong.push(`passed across a closed cell at half-width ${halfWidth}`);
+          }
+          if (known === false && nearest > halfWidth + slack) {
+            wrong.push(`failed ${nearest.toFixed(1)} m from land at half-width ${halfWidth}`);
+          }
         }
-        if (known === false && nearest > halfWidth + slack) {
-          wrong.push(`failed ${nearest.toFixed(1)} m from land at half-width ${halfWidth}`);
-        }
-      }),
+      ),
       { numRuns: 400 }
     );
     expect(wrong).toEqual([]);

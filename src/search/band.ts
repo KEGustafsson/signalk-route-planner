@@ -450,8 +450,11 @@ export async function bandShortest(
   return cur;
 }
 
-/** Fine band refinement: grid step, band half-width and reach along the route round a turn, metres. */
-export const FINE_BAND = { step: 30, width: 200, reach: 500 };
+/**
+ * Fine band refinement: grid step, band half-width, reach along the route round a turn, and the
+ * most route searched at a time, metres.
+ */
+export const FINE_BAND = { step: 30, width: 200, reach: 500, window: BAND_WINDOW };
 
 /**
  * The route searched again on a fine grid only round its turns (`aroundTurns`): a taut route
@@ -464,16 +467,21 @@ export async function bandAroundTurns(
   check: (a: LonLat, b: LonLat) => Verdict,
   limits: PullLimits,
   rule: PassRule,
-  shape: { step: number; width: number; reach: number } = FINE_BAND
+  shape: { step: number; width: number; reach: number; window?: number } = FINE_BAND
 ): Promise<LonLat[] | undefined> {
   const ok = (a: LonLat, b: LonLat): boolean => passes(check(a, b), rule);
+  const window = shape.window ?? FINE_BAND.window;
   const out: LonLat[] = [route[0] as LonLat];
   for (const { piece, turn } of aroundTurns(route, shape.reach)) {
-    const r = turn ? await refinePiece(piece, ok, limits, shape) : piece;
-    if (r === "work") {
-      return undefined;
+    // Turns run together over a long stretch are searched a window at a time: a band's grid is
+    // made whole before the work limit can stop its search.
+    for (const part of turn ? pieces(piece, window, 0) : [piece]) {
+      const r = turn ? await refinePiece(part, ok, limits, shape) : part;
+      if (r === "work") {
+        return undefined;
+      }
+      out.push(...r.slice(1));
     }
-    out.push(...r.slice(1));
   }
   return out;
 }
