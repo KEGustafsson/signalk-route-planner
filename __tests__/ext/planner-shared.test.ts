@@ -343,7 +343,7 @@ describe("panel model", () => {
     ]);
   });
 
-  test("route parameters send only what differs from the route check's settings", () => {
+  test("route parameters send every typed value, blank fields the route check's own", () => {
     const d = { speed: 2.5, xteLimit: 30, probability: 0.01, draft: 0.9 };
     const same = P.routeParams(d, { xte: null, knots: null, draft: "", risk: "normal" });
     expect(same).toMatchObject({
@@ -357,6 +357,11 @@ describe("panel model", () => {
     expect(P.paramsText(same)).toBe(
       "Draft 0.9 m · XTE 30 m · 4.9 kn · normal risk, under 1\u00a0%"
     );
+    // A value typed as the route check's setting is sent, so it holds if that setting changes.
+    const typed = P.routeParams(d, { xte: "30", knots: (2.5 / P.KNOT).toString(), draft: "0.9" });
+    expect(typed.fields).toEqual({ xteLimit: 30, speed: 2.5, draft: 0.9 });
+    expect(typed.changed).toBe(false);
+    expect(P.paramsText(typed)).toBe(P.paramsText(same));
     const own = P.routeParams(d, { xte: "10", knots: "6", draft: "1.2", risk: "low" });
     expect(own.fields).toEqual({ xteLimit: 10, speed: 6 * P.KNOT, draft: 1.2, probability: 0.001 });
     expect(own.errors).toEqual([]);

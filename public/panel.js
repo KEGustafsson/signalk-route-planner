@@ -108,8 +108,8 @@ function latest(hours, enRoute) {
 
 /**
  * The options the panel's controls set, for a plan between `ends`: the route asked for, the
- * route parameters that differ from the route check's, and the wait for the tide with waiting
- * on the way; `fallback` for the lowest-risk route.
+ * route parameters typed in the panel, and the wait for the tide with waiting on the way;
+ * `fallback` for the lowest-risk route.
  */
 function requestFor(ends, fallback = false) {
   return {
@@ -267,6 +267,16 @@ async function replanDrag(routeId) {
     };
   };
   const none = { coordinates: [], status: "ok", legs: [], attributions: [] };
+  const unplanned = (reason) => {
+    written = { routeId, points: pts };
+    show("unverified", "The moved waypoint stays as you left it, the legs beside it unchecked: " + reason);
+  };
+  // A parameter out of range plans nothing, as for the whole route.
+  const errors = paramsNow().errors;
+  if (errors.length > 0) {
+    unplanned(errors.join("; ") + ".");
+    return;
+  }
   show("muted", "Planning the legs beside the moved waypoint…");
   const left = i > 0 ? await leg(i - 1, i) : none;
   const right =
@@ -280,8 +290,7 @@ async function replanDrag(routeId) {
   }
   const failed = [left, right].find((l) => typeof l === "string");
   if (failed) {
-    written = { routeId, points: pts };
-    show("unverified", "The moved waypoint stays as you left it, the legs beside it unchecked: " + failed);
+    unplanned(failed);
     return;
   }
   const points = P.spliceLegs(pts, i, left.coordinates, right.coordinates);

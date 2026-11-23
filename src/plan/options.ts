@@ -4,17 +4,17 @@ export interface PlanOptions {
    * Work one plan may do at least, search and pulling together; sized for about 3 s on a
    * Raspberry Pi 4. The plugin's setting; a longer trip may do more (`workPerKm`).
    */
-  /**
-   * Set by a stage, never by a request: a route the search must be shorter than is in hand, and
-   * no path this many metres long or more is wanted (`search/astar.ts`, `SearchLimits.bound`).
-   */
-  lengthBound?: number;
   maxWork: number;
   /**
    * ...and a trip in the chart box may do this much per km of its straight distance, if that is
    * more: a longer trip meets more shore, and an archipelago passage most of all.
    */
   workPerKm: number;
+  /**
+   * Set by a stage, never by a request: a route the search must be shorter than is in hand, and
+   * no path this many metres long or more is wanted (`search/astar.ts`, `SearchLimits.bound`).
+   */
+  lengthBound?: number;
   /** The share of `maxWork` after which the search stops and the plan is refused. */
   searchShare: number;
   /**

@@ -52,9 +52,9 @@ quality, so each case assumes a CATZOC.
   xte limit and half the beam, no position buffer, so the stretch that needed a `narrows` part
   passes at the 10 m xte limit itself. B: 19.8 nm in 28 legs, harbour stage, route, harbour stage,
   12.4 M work; A1: 19.0 nm in 34 legs, 9.7 M; B with lines 19.9 nm, 12.9 M.
-- Band refinement (plan §4.1 step 16, 2026-11-23): each part is searched again on a 100 m grid
-  along it and on a 30 m grid round its turns. B: 19.77 nm in 54 legs, 14.8 M work; A1: 18.97 nm
-  in 49 legs, 12.3 M. Their caps are 16.5 M and 13.5 M.
+- Band refinement (plan §4.1 step 16, 2026-11-23; its grids are in `src/search/band.ts`): B:
+  19.77 nm in 54 legs, 14.8 M work; A1: 18.97 nm in 49 legs, 12.3 M. Each case's work cap is its
+  `workAtMost` in `scripts/trials/trials.json`.
 
 - Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
   search was steered along a coarse path (`src/plan/steer.ts`).

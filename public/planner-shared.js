@@ -377,8 +377,9 @@
   /**
    * The plan's route parameters from the panel's choice over the route check's `defaults`
    * (`GET /status`): `xte` in metres and `knots` as typed, each null for the default, and the
-   * `risk` level. `fields` are the request fields that differ from the defaults; `errors` the
-   * values out of the planner's range, when the plan cannot be asked for.
+   * `risk` level. `fields` are the request fields of every value typed and of a risk level other
+   * than normal; `changed` whether any of them differs from the defaults; `errors` the values out
+   * of the planner's range, when the plan cannot be asked for.
    */
   function routeParams(defaults, choice) {
     const d = defaults || {};
@@ -388,23 +389,24 @@
     const blank = function (v) {
       return v === null || v === undefined || String(v).trim() === "";
     };
-    // A blank field is the route check's own setting, sent as nothing.
+    // A blank field is the route check's own setting, sent as nothing; a typed value is sent as
+    // typed, so it holds if the route check's setting changes while the panel is open.
     const xte = blank(c.xte) ? d.xteLimit : decimal(c.xte);
     if (!blank(c.xte) && !(isFinite(xte) && xte >= 0 && xte <= 1000)) {
       errors.push("the cross-track limit must be 0 to 1000 m");
-    } else if (!blank(c.xte) && xte !== d.xteLimit) {
+    } else if (!blank(c.xte)) {
       fields.xteLimit = xte;
     }
     const speed = blank(c.knots) ? d.speed : decimal(c.knots) * KNOT;
     if (!blank(c.knots) && !(isFinite(speed) && speed >= 0.1 && speed <= 30)) {
       errors.push("the speed must be 0.2 to 58 kn");
-    } else if (!blank(c.knots) && speed !== d.speed) {
+    } else if (!blank(c.knots)) {
       fields.speed = speed;
     }
     const draft = blank(c.draft) ? d.draft : decimal(c.draft);
     if (!blank(c.draft) && !(isFinite(draft) && draft >= 0.01 && draft <= 30)) {
       errors.push("the draft must be 0.01 to 30 m");
-    } else if (!blank(c.draft) && draft !== d.draft) {
+    } else if (!blank(c.draft)) {
       fields.draft = draft;
     }
     const level = c.risk === "low" || c.risk === "high" ? c.risk : "normal";
@@ -419,6 +421,11 @@
       level: level,
       probability: probability,
       fields: fields,
+      changed:
+        fields.probability !== undefined ||
+        (fields.xteLimit !== undefined && fields.xteLimit !== d.xteLimit) ||
+        (fields.speed !== undefined && fields.speed !== d.speed) ||
+        (fields.draft !== undefined && fields.draft !== d.draft),
       errors: errors
     };
   }
@@ -442,8 +449,7 @@
     parts.push(
       (p.level || "normal") + " risk" + (isFinite(p.probability) ? ", under " + percent(p.probability) : "")
     );
-    const changed = p.fields && Object.keys(p.fields).length > 0;
-    return parts.join(" · ") + (changed ? " (changed)" : "");
+    return parts.join(" · ") + (p.changed ? " (changed)" : "");
   }
 
   /**

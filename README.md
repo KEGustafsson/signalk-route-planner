@@ -4,9 +4,9 @@ A Signal K server plugin and Freeboard-SK extension that plans the shortest rout
 deep enough for the boat, between the start and destination of a route you draw. Every leg of a
 plan is checked by [Under-Keel Awareness](https://github.com/KEGustafsson/signalk-underkeel)
 (signalk-underkeel) the same way its `/route-check` checks a route: a corridor of the cross-track
-limit plus half the boat's beam, scored by P(UKC < 0) from the chart's survey quality, the water
-level forecast, draft and waves. A plan reads no GNSS: position error is underkeel's look-ahead's,
-underway.
+limit plus half the boat's beam (with signalk-underkeel 0.7.0, plus its **Least position buffer**
+setting instead), scored by P(UKC < 0) from the chart's survey quality, the water level forecast,
+draft and waves. A plan reads no GNSS: position error is underkeel's look-ahead's, underway.
 
 **Advisory only.** A plan is a suggestion written into your route as an unsaved change. Check
 every leg on an official chart before you sail it. The plugin never sends autopilot or steering

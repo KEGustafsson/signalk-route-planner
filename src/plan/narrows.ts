@@ -14,7 +14,7 @@ import type { TautRule } from "../search/taut";
 import { tautWithin } from "../search/taut";
 import { fairwayRoute } from "./fairway";
 import { joined } from "./proof";
-import { checkLeg, searchRoute } from "./search";
+import { checkLeg, searchRoute, WORK_LIMIT } from "./search";
 import type { Part, Stage } from "./stages";
 
 /**
@@ -153,7 +153,8 @@ const slack = (st: Stage): number => (st.opts.preferLines ? 1 / (1 - FAIRWAY_GAI
 
 /**
  * The search's outcome, or the way along the lines when that is in hand and the search found
- * none, only a fallback, or a way longer than the lines' by more than its `slack`.
+ * none for a reason other than its work limit, only a fallback, or a way longer than the lines'
+ * by more than its `slack`. A search cut short by the work limit refuses the plan (invariant 5).
  */
 function shorter(
   o: SearchOutcome,
@@ -163,7 +164,9 @@ function shorter(
   const work = c.work;
   const better =
     f !== undefined &&
-    (!o.ok || o.fallback !== undefined || lengthOf(o.coordinates) > c.slack * lengthOf(f));
+    (o.ok
+      ? o.fallback !== undefined || lengthOf(o.coordinates) > c.slack * lengthOf(f)
+      : o.reason !== WORK_LIMIT);
   return better && f
     ? { ok: true, coordinates: f, direct: o.direct, squares: o.squares, work }
     : { ...o, work };
