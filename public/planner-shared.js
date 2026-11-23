@@ -400,6 +400,15 @@
   }
 
   /**
+   * A number as typed, with a decimal comma or point ("7,5" or "7.5"); NaN for anything else, so
+   * a value that is not a number is refused, never read as another.
+   */
+  function decimal(v) {
+    const t = String(v).trim().replace(",", ".");
+    return /^[+-]?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : NaN;
+  }
+
+  /**
    * The plan's route parameters from the panel's choice over the route check's `defaults`
    * (`GET /status`): `xte` in metres and `knots` as typed, each null for the default, and the
    * `risk` level. `fields` are the request fields that differ from the defaults; `errors` the
@@ -411,22 +420,22 @@
     const errors = [];
     const fields = {};
     const blank = function (v) {
-      return v === null || v === undefined || v === "";
+      return v === null || v === undefined || String(v).trim() === "";
     };
     // A blank field is the route check's own setting, sent as nothing.
-    const xte = blank(c.xte) ? d.xteLimit : Number(c.xte);
+    const xte = blank(c.xte) ? d.xteLimit : decimal(c.xte);
     if (!blank(c.xte) && !(isFinite(xte) && xte >= 0 && xte <= 1000)) {
       errors.push("the cross-track limit must be 0 to 1000 m");
     } else if (!blank(c.xte) && xte !== d.xteLimit) {
       fields.xteLimit = xte;
     }
-    const speed = blank(c.knots) ? d.speed : Number(c.knots) * KNOT;
+    const speed = blank(c.knots) ? d.speed : decimal(c.knots) * KNOT;
     if (!blank(c.knots) && !(isFinite(speed) && speed >= 0.1 && speed <= 30)) {
       errors.push("the speed must be 0.2 to 58 kn");
     } else if (!blank(c.knots) && speed !== d.speed) {
       fields.speed = speed;
     }
-    const draft = blank(c.draft) ? d.draft : Number(c.draft);
+    const draft = blank(c.draft) ? d.draft : decimal(c.draft);
     if (!blank(c.draft) && !(isFinite(draft) && draft >= 0.01 && draft <= 30)) {
       errors.push("the draft must be 0.01 to 30 m");
     } else if (!blank(c.draft) && draft !== d.draft) {
@@ -503,6 +512,7 @@
     riskLevels: riskLevels,
     percent: percent,
     routeParams: routeParams,
+    decimal: decimal,
     paramsText: paramsText,
     offersFallback: offersFallback
   };

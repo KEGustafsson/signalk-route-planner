@@ -403,6 +403,21 @@ describe("panel model", () => {
     expect(P.routeParams(d, { risk: "reckless" }).fields).toEqual({});
   });
 
+  test("a number typed with a decimal comma or point is read, anything else refused", () => {
+    expect([P.decimal("7,5"), P.decimal(" 7.5 "), P.decimal("30"), P.decimal(",5")]).toEqual([
+      7.5, 7.5, 30, 0.5
+    ]);
+    for (const bad of ["7,5,1", "7.5kn", "1e3", "abc", "7..5"]) {
+      expect(P.decimal(bad)).toBeNaN();
+    }
+    const d = { speed: 2.5, xteLimit: 30, probability: 0.01, draft: 0.9 };
+    expect(P.routeParams(d, { knots: "7,5", draft: "1,2" }).fields).toEqual({
+      speed: 7.5 * P.KNOT,
+      draft: 1.2
+    });
+    expect(P.routeParams(d, { knots: "7.5kn" }).errors).toEqual(["the speed must be 0.2 to 58 kn"]);
+  });
+
   test("a refusal offers the lowest-risk route once, never for a request that had it", () => {
     expect(P.offersFallback(422, { from: [0, 0] })).toBe(true);
     expect(P.offersFallback(422, { fallback: true })).toBe(false);

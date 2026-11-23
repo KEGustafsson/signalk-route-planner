@@ -43,7 +43,7 @@
       .params .grid label { margin: 0; color: var(--ink); font-size: 13px; }
       .params .grid .seg label { color: var(--ink); }
       .params .grid .seg label:has(input:checked) { color: var(--on-accent); }
-      .params input[type="number"] { width: 100%; box-sizing: border-box; min-height: 30px; font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--field); border-radius: 6px; padding: 0 6px; }
+      .params input[type="text"] { width: 100%; box-sizing: border-box; min-height: 30px; font: inherit; color: var(--ink); background: var(--page); border: 1px solid var(--field); border-radius: 6px; padding: 0 6px; }
       .params small, #paramsReset, .params .seg.small, #riskLabel { grid-column: 1 / -1; }
       .params small { color: var(--muted); font-size: 11px; }
       button.link { margin: 0; min-height: 0; padding: 2px 0; color: var(--accent); background: none; font-weight: 600; justify-self: start; }
@@ -92,11 +92,11 @@
       <div class="head"><span id="paramsText">Route check settings</span><button id="paramsToggle" class="link" type="button" aria-expanded="false" aria-controls="paramsBody">Change</button></div>
       <div class="grid" id="paramsBody" hidden>
         <label for="draft">Draft (m)</label>
-        <input id="draft" type="number" min="0.01" max="30" step="0.1" inputmode="decimal" />
+        <input id="draft" type="text" inputmode="decimal" autocomplete="off" />
         <label for="xte">Cross-track limit, how far off the line I may be (m)</label>
-        <input id="xte" type="number" min="0" max="1000" step="1" inputmode="decimal" />
+        <input id="xte" type="text" inputmode="decimal" autocomplete="off" />
         <label for="knots">Speed (kn)</label>
-        <input id="knots" type="number" min="0.2" max="58" step="0.1" inputmode="decimal" />
+        <input id="knots" type="text" inputmode="decimal" autocomplete="off" />
         <span id="riskLabel">Risk I accept</span>
         <div class="seg small" role="radiogroup" aria-labelledby="riskLabel">
           <label><input id="riskLow" type="radio" name="risk" value="low" /> Low</label>
