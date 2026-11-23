@@ -63,6 +63,10 @@ quality, so each case assumes a CATZOC.
   is the fallback's: its searches weigh each verdict's risk and flags, which the field does not
   give, and ask the chart for every leg.
 
+- Eased joints (plan §4.1 step 12, 2026-11-24): the harbour stages no longer turn at their
+  handovers. B 19.73 nm in 55 legs, B with lines 19.86 nm in 38, A1 18.97 nm in 49, for about
+  10 000 work more each.
+
 - Work (unsteered) is the same case with steering off (`steerShare: 0`), as planned before the
   search was steered along a coarse path (`src/plan/steer.ts`).
 - Both routes are fallback routes (the Aura river, below). Since R3d the planner first searches

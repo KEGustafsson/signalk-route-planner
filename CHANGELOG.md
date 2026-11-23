@@ -65,6 +65,11 @@ All notable changes to signalk-route-planner are documented here.
   index signalk-underkeel holds already that covers the trip's ends is planned on (its `held`).
 - The plugin's debug log says when a plan is planned again in a larger region, and what the
   plan in the smaller one came to.
+- The joint between a harbour stage and the route is eased: the route no longer turns at the
+  handover point whichever way the two parts came (out of Parainen's marina, 180 m toward the
+  bridge and back). The harbour part is drawn tight with the route's first 500 m past the
+  handover, at the harbour corridor, and takes that stretch over. Parainen's marina to Pargas
+  Port 15 872 m where it was 16 094 m.
 - While an index builds, `/plan`'s 503 asks the panel back in 3 s, not 30: the request asked
   again waits for the build itself, so the plan follows the build by seconds.
 - The fairway stage finds where lines meet by a grid of their legs, not every point against every
@@ -159,3 +164,8 @@ All notable changes to signalk-route-planner are documented here.
   the REST API.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.
+
+### Fixed
+
+- A route drawn tight could keep a point twice where a turn moved onto its neighbour: a leg of
+  no length in the check, one more leg than the route has.

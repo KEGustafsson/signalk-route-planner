@@ -206,6 +206,17 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     (`src/plan/handover.ts`). The main search then runs between the handover points, and every
     stage draws on the plan's one work budget. Each part is proved by its own route check at its
     own corridor, from the time the boat reaches it, and every leg names its part and corridor.
+    The harbour stage and the main search each find the shortest way of their own, to and from
+    the handover, so where they meet the route turned at the handover whichever way the two
+    came: out of Parainen's marina it ran 180 m south-west to the free water by the bridge and
+    back east from there. The joint is eased (`src/plan/joint.ts`): the harbour part, less its
+    berth leg, is drawn tight (step 4) together with the route's first leg past the handover, up
+    to `JOINT_REACH` (500 m) of it, in a session at the harbour corridor, and takes that stretch
+    over, so the handover moves along the route's own leg and the rest of that leg stays part of
+    a leg already checked. A fallback's harbour part is drawn at the fallback's own price, no
+    leg into worse water than it replaced. Parainen's marina to Pargas Port: 15 872 m where it
+    was 16 094 m, the turn at the joint 27° where it was 90°. Invariants: the new legs are
+    checked at the harbour corridor and proved there by the route check (1).
 13. **Berth legs.** Alongside a quay, even the harbour corridor touches the quay. The harbour
     stage then joins the end by a stub of at most `berthMetres`, toward the first free square
     near the end that a checked leg joins from the stub's far end; five halvings shorten the stub

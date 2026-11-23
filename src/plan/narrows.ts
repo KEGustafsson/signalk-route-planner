@@ -11,8 +11,7 @@ import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
 import { bandAroundTurns, bandShortest } from "../search/band";
 import { settledCheck } from "../search/field";
-import type { TautRule } from "../search/taut";
-import { tautWithin } from "../search/taut";
+import { strictRule, tautWithin } from "../search/taut";
 import { fairwayRoute } from "./fairway";
 import { joined } from "./proof";
 import { checkLeg, searchRoute, tooLongForOneLeg, WORK_LIMIT } from "./search";
@@ -114,16 +113,6 @@ export function settled(s: Session, rule: PassRule): (p: LonLat, q: LonLat) => V
   return (p, q) => (tooLongForOneLeg(s, p, q) ? exact(p, q) : field(p, q));
 }
 
-/** A strict route's price for `taut`: its length where `rule` passes a leg; nowhere else. */
-const strictTaut = (rule: PassRule): TautRule => ({
-  cost: (v) => (passes(v, rule) ? 1 : Infinity),
-  rank: (v) => (passes(v, rule) ? 0 : 3),
-  // The lines' way and a route's straightened parts turn between long legs.
-  cutCorners: true,
-  // Shortest mode (`narrowsOn`): every passing leg alike.
-  passing: true
-});
-
 const lengthOf = (c: readonly LonLat[]): number =>
   c.slice(1).reduce((sum, p, i) => sum + haversine(c[i] as LonLat, p), 0);
 
@@ -153,7 +142,7 @@ async function fairwayCandidate(
   // The lines turn where they meet: their corners cut, as far as the water lets the route.
   return pulled === "work"
     ? f
-    : tautWithin(pulled, check, { session: s, maxWork: c.maxWork }, strictTaut(c.st.rule));
+    : tautWithin(pulled, check, { session: s, maxWork: c.maxWork }, strictRule(c.st.rule));
 }
 
 /**
@@ -214,7 +203,7 @@ async function refined(
     const tight =
       pulled === "work"
         ? band
-        : await tautWithin(pulled, check, { session: s, maxWork: c.maxWork }, strictTaut(rule));
+        : await tautWithin(pulled, check, { session: s, maxWork: c.maxWork }, strictRule(rule));
     // Kept only when it is shorter and the route check itself passes every leg of it.
     const holds = (): boolean =>
       tight.slice(1).every((q, i) => passes(checkLeg(s, tight[i] as LonLat, q), rule));
@@ -360,7 +349,7 @@ async function shortenParts(
       tight =
         pulled === "work"
           ? p.coordinates
-          : await tautWithin(pulled, check, { session: s, maxWork: c.budget }, strictTaut(rule));
+          : await tautWithin(pulled, check, { session: s, maxWork: c.budget }, strictRule(rule));
     }
     out.push({ ...p, coordinates: await refined(s, tight, { rule, maxWork: c.budget }) });
   }
