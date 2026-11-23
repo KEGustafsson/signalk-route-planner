@@ -85,8 +85,8 @@ its beam each side. The search runs at that
 corridor, and water only it passes costs twice as much per metre, unless it lies on a charted
 fairway line laid out for the boat's draft: the route keeps your corridor where the way round
 costs less and follows the fairway through a sound where it does not. The legs your corridor does
-not pass are checked at 10 m and named in the panel: keep to the fairway there. A request with
-`narrows: false` turns this off.
+not pass are checked at the harbour corridor (`xteLimit: 0`) and named in the panel: keep to the
+fairway there. A request with `narrows: false` turns this off.
 
 `docs/DEVELOPMENT-PLAN.md` describes the design and the milestones that follow: planning past
 the chart box, waiting for the tide, risk-weighted alternatives, air draft under bridges and
@@ -139,8 +139,8 @@ passage narrower than it is planned at the harbour corridor (above), in parts th
 (`check.parts[].part: "narrows"`, `xteLimit: 0`).
 
 An end in a harbour narrower than the corridor (a guest harbour in a river, a marina) is planned
-out to open water in a harbour stage at a 10 m corridor, and a point alongside a quay leaves by a
-short berth leg the reply marks (`berths`, and `underway` for the status of every other leg).
+out to open water in a harbour stage at the harbour corridor, and a point alongside a quay leaves
+by a short berth leg the reply marks (`berths`, and `underway` for the status of every other leg).
 
 The plan is the route passable now: each stretch is checked at the water the boat meets there,
 leaving at the departure at its speed, so a bar the tide covers while you cross it is used though

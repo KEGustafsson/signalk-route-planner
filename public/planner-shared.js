@@ -379,7 +379,8 @@
    * (`GET /status`): `xte` in metres and `knots` as typed, each null for the default, and the
    * `risk` level. `fields` are the request fields of every value typed and of a risk level other
    * than normal; `changed` whether any of them differs from the defaults; `errors` the values out
-   * of the planner's range, when the plan cannot be asked for.
+   * of the planner's range, and a low or high risk level without the route check's probability
+   * to set it from, when the plan cannot be asked for.
    */
   function routeParams(defaults, choice) {
     const d = defaults || {};
@@ -411,7 +412,10 @@
     }
     const level = c.risk === "low" || c.risk === "high" ? c.risk : "normal";
     const probability = isFinite(d.probability) ? riskLevels(d.probability)[level] : undefined;
-    if (level !== "normal" && probability !== undefined) {
+    // Without it the server would plan at its own probability, the chosen level left unsaid.
+    if (level !== "normal" && probability === undefined) {
+      errors.push("the route check's settings have not loaded, so the chosen risk level cannot be applied");
+    } else if (level !== "normal") {
       fields.probability = probability;
     }
     return {

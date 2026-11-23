@@ -394,6 +394,19 @@ describe("panel model", () => {
     expect(P.routeParams(d, { knots: "7.5kn" }).errors).toEqual(["the speed must be 0.2 to 58 kn"]);
   });
 
+  test("a low or high risk level without the route check's probability plans nothing", () => {
+    const unloaded =
+      "the route check's settings have not loaded, so the chosen risk level cannot be applied";
+    for (const defaults of [undefined, { speed: 2.5, xteLimit: 30 }]) {
+      for (const risk of ["low", "high"]) {
+        const p = P.routeParams(defaults, { risk });
+        expect(p.errors).toEqual([unloaded]);
+        expect(p.fields).toEqual({});
+      }
+      expect(P.routeParams(defaults, { risk: "normal" }).errors).toEqual([]);
+    }
+  });
+
   test("a refusal offers the lowest-risk route once, never for a request that had it", () => {
     expect(P.offersFallback(422, { from: [0, 0] })).toBe(true);
     expect(P.offersFallback(422, { fallback: true })).toBe(false);

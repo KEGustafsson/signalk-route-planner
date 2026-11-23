@@ -108,15 +108,15 @@ function latest(hours, enRoute) {
 
 /**
  * The options the panel's controls set, for a plan between `ends`: the route asked for, the
- * route parameters typed in the panel, and the wait for the tide with waiting on the way;
- * `fallback` for the lowest-risk route.
+ * route parameters `params` (`paramsNow`, as validated before the plan's first wait), and the
+ * wait for the tide with waiting on the way; `fallback` for the lowest-risk route.
  */
-function requestFor(ends, fallback = false) {
+function requestFor(ends, params, fallback = false) {
   return {
     ...ends,
     ...(fallback && { fallback: true }),
     ...($("lines").checked && { preferLines: true }),
-    ...paramsNow().fields,
+    ...params.fields,
     ...latest(Number($("wait").value), true)
   };
 }
@@ -197,7 +197,7 @@ async function planSelected(fallback = false) {
       show("fail", "The route needs a start and a destination point.");
       return;
     }
-    const request = requestFor(ends, fallback);
+    const request = requestFor(ends, params, fallback);
     const { status, body } = await planRequest(request);
     if (op !== latestOp) {
       return;
@@ -249,7 +249,7 @@ async function replanDrag(routeId) {
   const leg = async (a, b, departure) => {
     const ends = { from: pts[a].position, to: pts[b].position };
     const request = {
-      ...requestFor(ends),
+      ...requestFor(ends, params),
       departure,
       latestDeparture: undefined,
       waitEnRoute: undefined
@@ -271,10 +271,11 @@ async function replanDrag(routeId) {
     written = { routeId, points: pts };
     show("unverified", "The moved waypoint stays as you left it, the legs beside it unchecked: " + reason);
   };
-  // A parameter out of range plans nothing, as for the whole route.
-  const errors = paramsNow().errors;
-  if (errors.length > 0) {
-    unplanned(errors.join("; ") + ".");
+  // A parameter out of range plans nothing, as for the whole route. Both legs are asked with
+  // these parameters, as validated here, whatever the controls change to while they plan.
+  const params = paramsNow();
+  if (params.errors.length > 0) {
+    unplanned(params.errors.join("; ") + ".");
     return;
   }
   show("muted", "Planning the legs beside the moved waypoint…");

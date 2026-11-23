@@ -197,8 +197,8 @@ panel, and the planner planned through signalk-underkeel's planning API.
   `miami-fisher-island-basin` on the live server: that case takes 1.9 M work units, the budget
   1.2 M. The field trials raise the limit; a live server does not, so this trial plans the
   shorter passage, which takes 1.4 M for its three alternatives.
-- With the alternatives all the same route, no **Use** button is offered, so writing another
-  alternative is covered by the panel trial above, not here.
+- With the alternatives all the same route, no **Use** button was offered, so writing another
+  alternative was not shown here.
 - Dragging a waypoint in Freeboard's route editor was not shown here: a scripted drag in
   Freeboard's modify mode moved no point. The panel trial covers the re-plan.
 - Plugins start in no set order: the planner's status waits for signalk-underkeel and turns to
