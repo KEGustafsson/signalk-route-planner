@@ -1,6 +1,6 @@
 import type { LonLat } from "../foundation/geo";
 import type { Frame } from "../foundation/geo";
-import { frameAt, haversine } from "../foundation/geo";
+import { frameAt, haversine, wrapLon } from "../foundation/geo";
 import type { Verdict } from "../oracle/contract";
 import { Heap } from "./heap";
 import type { PassRule } from "./passes";
@@ -325,7 +325,7 @@ function cutAt(route: readonly LonLat[], cuts: readonly number[]): LonLat[][] {
     const len = haversine(a, b);
     for (; c < cuts.length && len > 0 && at + len > (cuts[c] as number); c++) {
       const t = ((cuts[c] as number) - at) / len;
-      const cut: LonLat = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+      const cut: LonLat = [wrapLon(a[0] + wrapLon(b[0] - a[0]) * t), a[1] + (b[1] - a[1]) * t];
       piece.push(cut);
       out.push(piece);
       piece = [cut];

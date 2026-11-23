@@ -13,7 +13,7 @@ import {
   tripLimits,
   tripRegion
 } from "../../src/plan/prepare";
-import { beatable, boxReleased, apiFor, pricedByLength } from "../../src/plugin-api";
+import { beatable, boxReleased, apiFor, narrowsWeight, pricedByLength } from "../../src/plugin-api";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import type { Synthetic } from "../helpers/synthetic-oracle";
 import { at, syntheticApi } from "../helpers/synthetic-oracle";
@@ -725,6 +725,22 @@ describe("/plan in a part of the search region", () => {
     expect(beatable(fallback, req, snug)).toBe(true);
     // The whole search region settles it either way.
     expect(beatable(short, req, [20, 58, 24, 62], false)).toBe(false);
+    // Narrow water adds its weight to the price of the metres it holds.
+    const narrowed = {
+      status: 200,
+      body: { length: 21_000, check: { legs: [{ part: "narrows", length: 21_000 }] } }
+    };
+    expect(beatable(narrowed, req, snug, true, 0)).toBe(false);
+    expect(beatable(narrowed, req, snug, true, 2)).toBe(true);
+    const wide = {
+      status: 200,
+      body: { length: 21_000, check: { legs: [{ part: "route", length: 21_000 }] } }
+    };
+    expect(beatable(wide, req, snug, true, 2)).toBe(false);
+    // A reply that does not say which legs are narrows is priced as if all were.
+    expect(beatable(short, req, snug, true, 2)).toBe(true);
+    expect(narrowsWeight(DEFAULT_PLAN, req)).toBe(DEFAULT_PLAN.narrowWeight);
+    expect(narrowsWeight(DEFAULT_PLAN, { ...req, narrows: false })).toBe(0);
     expect(pricedByLength(DEFAULT_PLAN, req)).toBe(true);
     expect(pricedByLength(DEFAULT_PLAN, { ...req, riskWeight: 0.5 })).toBe(false);
     expect(pricedByLength({ ...DEFAULT_PLAN, riskWeight: 0.5 }, req)).toBe(false);

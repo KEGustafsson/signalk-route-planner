@@ -290,6 +290,9 @@ async function between(
     return joined;
   }
   work += joined.value.work;
+  if (work >= st.opts.maxWork) {
+    return limit();
+  }
   const { parts } = joined.value;
   return { ok: true, parts, direct: o.direct, work, squares: h.squares + inner.value.squares };
 }

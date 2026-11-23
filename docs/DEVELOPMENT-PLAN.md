@@ -378,9 +378,10 @@ time and released once unused, on underkeel's policy (its plan §4.11). API v1 g
      `beatable` says a way leaving the index may beat it. That needs the index's box, less the
      band inside its edge where it reads no coverage (`EDGE_BAND_M`), not to hold the search
      region, and the plan to be one of: a 422 refusal for want of a way (`NO_WAY`,
-     `UNVERIFIED_WAY`); a route at least `leavingAtLeast` long, the least length of any way that
+     `UNVERIFIED_WAY`); a route priced at least `leavingAtLeast`, the least length of any way that
      leaves the box, which touches an edge and so is at least the way from one end to the edge
-     and on to the other; or any route of a plan that prices its ways by more than their length,
+     and on to the other (its price is its length and `narrowWeight` more on each metre of its
+     narrows legs, `narrowsWeight`); or any route of a plan that prices its ways by more than that,
      a risk weight, preference lines, alternatives or a fallback (`pricedByLength`), since a
      route's price is at least its length and a longer way leaving the box may cost less. Any
      other refusal, the work limit's and the risk budget's among them, stands, and so does any

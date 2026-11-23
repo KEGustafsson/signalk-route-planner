@@ -110,6 +110,12 @@ const GRID_DEG = 0.01;
 /** A leg whose box meets more grid squares than this is held against every point instead. */
 const GRID_SQUARES_AT_MOST = 64;
 
+/** The legs of a point's own square, then the legs held apart for spanning many. */
+function* candidates(own: readonly number[], long: readonly number[]): Generator<number> {
+  yield* own;
+  yield* long;
+}
+
 /**
  * Where the lines meet: a line's point within SNAP of another line's leg, by leg. Lines meet at
  * shared points, but a branch often ends on another line's leg between its points (a T), and
@@ -154,7 +160,7 @@ function junctions(legs: [LonLat, LonLat][]): Map<number, LonLat[]> {
   legs.forEach((leg, i) => {
     for (const p of leg) {
       const own = grid.get(`${square(p[0])},${square(p[1])}`) ?? [];
-      for (const j of long.length > 0 ? [...own, ...long] : own) {
+      for (const j of candidates(own, long)) {
         const [a, b] = legs[j] as [LonLat, LonLat];
         const [w, s, e, n] = boxes[j] as [number, number, number, number];
         if (j === i || same(p, a) || same(p, b) || p[0] < w || p[0] > e || p[1] < s || p[1] > n) {

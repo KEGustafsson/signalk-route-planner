@@ -110,20 +110,27 @@ function larger(now: Bbox | undefined, before: Bbox | undefined): boolean {
 /**
  * Whether a plan made on an index covering `coverage` may be beaten in the whole search region:
  * the index does not hold that region, and the plan is a refusal for want of a way, or a route
- * no shorter than the least any way leaving the covered region is (`leavingAtLeast`). With
- * `byLength` false, the search priced its ways by more than their length, so any route may be.
+ * priced no lower than the least any way leaving the covered region is long (`leavingAtLeast`).
+ * With `byLength` false, the search priced its ways by more than their length and narrow
+ * water, so any route may be; `narrowWeight` is what each metre of narrows adds to the price.
  */
 export function beatable(
   reply: Reply,
   req: PlanRequest,
   coverage: Bbox | undefined,
-  byLength = true
+  byLength = true,
+  narrowWeight = 0
 ): boolean {
   const judged = judgedIn(coverage);
   if (judged === undefined || within(judged, searchRegion(req.from, req.to))) {
     return false;
   }
-  const body = reply.body as { length?: unknown; reason?: unknown; fallback?: unknown } | null;
+  const body = reply.body as {
+    length?: unknown;
+    reason?: unknown;
+    fallback?: unknown;
+    check?: unknown;
+  } | null;
   if (reply.status === 422) {
     // No way through: the way may lie past the region. Any other refusal holds there too.
     return typeof body?.reason === "string" && body.reason.includes(NO_ROUTE_CONNECTS);
@@ -136,7 +143,25 @@ export function beatable(
   if (!byLength || body.fallback !== undefined) {
     return true;
   }
-  return body.length >= leavingAtLeast(req.from, req.to, judged);
+  return (
+    body.length + narrowWeight * narrowsLength(body.length, body.check) >=
+    leavingAtLeast(req.from, req.to, judged)
+  );
+}
+
+/**
+ * Metres of the route's narrows legs, the water its price counts `narrowWeight` more on; the
+ * whole route when the reply does not say which legs those are.
+ */
+function narrowsLength(length: number, check: unknown): number {
+  const legs = (check as { legs?: unknown } | undefined)?.legs;
+  if (!Array.isArray(legs)) {
+    return length;
+  }
+  return (legs as { part?: unknown; length?: unknown }[]).reduce(
+    (s, l) => s + (l.part === "narrows" && typeof l.length === "number" ? l.length : 0),
+    0
+  );
 }
 
 /**
@@ -148,6 +173,17 @@ export function pricedByLength(opts: PlanOptions, req: PlanRequest): boolean {
   const lines = own.preferLines && own.preferWeight > 0;
   return own.riskWeight === 0 && !lines && req.alternatives !== true;
 }
+
+/** What a metre of narrow water adds to the price of a plan of `req` (`plan/narrows.ts`). */
+export function narrowsWeight(opts: PlanOptions, req: PlanRequest): number {
+  const own = requestOptions(opts, req);
+  return own.narrows ? Math.max(own.narrowWeight, 0) : 0;
+}
+
+const pricing = (opts: PlanOptions, req: PlanRequest) => ({
+  byLength: pricedByLength(opts, req),
+  narrowWeight: narrowsWeight(opts, req)
+});
 
 /** The band inside a prepared index's box where it reads no coverage, metres, at most. */
 const EDGE_BAND_M = 2000;
@@ -185,13 +221,13 @@ async function widened(
   req: PlanRequest,
   planOn: (on: PlanningApiV1) => Promise<Reply>,
   wider: (reach: Reach) => Promise<PlanningApiV1 | Reply>,
-  byLength: boolean,
+  pricing: { byLength: boolean; narrowWeight: number },
   note: (message: string) => void = () => undefined
 ): Promise<Reply> {
   let on = api;
   let reply = await planOn(on);
   for (const reach of ["snug", "whole"] as const) {
-    if (!beatable(reply, req, on.coverage(), byLength)) {
+    if (!beatable(reply, req, on.coverage(), pricing.byLength, pricing.narrowWeight)) {
       break;
     }
     note(
@@ -285,9 +321,7 @@ export function apiFor(
     };
     const wider = (reach: Reach): Promise<PlanningApiV1 | Reply> =>
       preparer.forTrip(found, req.from, req.to, stop, req.draft, reach);
-    return near
-      ? widened(api, req, planOn, wider, pricedByLength(opts, req), hooks.note)
-      : planOn(api);
+    return near ? widened(api, req, planOn, wider, pricing(opts, req), hooks.note) : planOn(api);
   };
   return {
     status: () => {
