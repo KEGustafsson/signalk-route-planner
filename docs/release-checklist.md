@@ -28,6 +28,6 @@ Before a release, also run the **SignalK Plugin CI** workflow manually with
 "Run armv7 (Cerbo GX) tests via QEMU" ticked; the automatic runs skip armv7.
 
 Before a release that changes the search or its work limit, plan the field trials on a Raspberry
-Pi 4 (`docs/trials.md`) and compare the plugin status's seconds per work budget with the last
-release's. If a plan at `maxWork` takes over 3 s, lower `maxWork` in `DEFAULT_PLAN`
-(`src/plan/options.ts`).
+Pi 4 (`docs/trials.md`) with the **Work budget per plan** setting left at its default, and compare
+the plugin status's seconds per work budget with the last release's. If a plan at `maxWork` takes
+over 3 s, lower `maxWork` in `DEFAULT_PLAN` (`src/plan/options.ts`).
