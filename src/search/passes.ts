@@ -23,7 +23,7 @@ export const OK_ONLY: PassRule = { accept: [], probability: 0 };
  * them too. An `unverified` one passes on its other flags alone (signalk-underkeel's swept or
  * dredged fairway in a cell not for navigation reads `DREDGED`, `NOT_FOR_NAVIGATION`).
  */
-const DESCRIBES = new Set([
+export const DESCRIBES: ReadonlySet<string> = new Set([
   "SWEPT",
   "DREDGED",
   "LIVECHART_ADJUSTED",

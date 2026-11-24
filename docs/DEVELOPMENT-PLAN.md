@@ -223,8 +223,14 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     to within 1/32 of its first length of the shortest that joins. The berth leg is returned as its own leg with the route check's status (usually
     `fail`, `LAND`) and `berth: true`; the reply's `underway` status covers every other leg, and
     `status` stays the worst of all. A strict plan is not refused for the quay a berth leg
-    touches, but a berth leg is never taken into water a hard rule or no chart closes. The
-    planner cannot check a berth leg, so the panel says to steer it by eye. Defaults are in
+    touches, but a berth leg is never taken into water a hard rule or no chart closes, nor
+    through land: signalk-underkeel 0.8.0 flags a leg whose own line lies over land past the
+    land at its ends `LAND_CROSSED`, beside the `LAND` of a corridor that reaches land, and
+    `berthable` takes no flag but `LAND` and those the fallback crosses. Before it, a stub of
+    31 m went from a slot too narrow for the harbour corridor through an 8 m breakwater to the
+    water behind it (`__tests__/plan/harbour.test.ts`); now the plan is refused with the reason
+    (invariants 4 and 5). The planner cannot check a berth leg, so the panel says to steer it by
+    eye. Defaults are in
     `src/plan/options.ts`.
 14. **Narrows.** A sound or a fairway narrower than the request's corridor closes the main search
     as a harbour closes an end: through Killingholms sund at Nauvo the land is 19.7 m from the

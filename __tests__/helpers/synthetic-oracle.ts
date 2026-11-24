@@ -26,7 +26,10 @@ export interface Circle {
 }
 
 export interface Chart {
-  /** Land: fails and is never crossed (flag LAND). */
+  /**
+   * Land: fails and is never crossed (flag LAND). A leg whose own line lies over it, past the
+   * land at its own ends, is flagged LAND_CROSSED too (`crossesLand`).
+   */
   obstacles: Circle[];
   /** Charted shallows: fail, but the fallback may cross them. */
   shallows?: Circle[];
@@ -158,7 +161,49 @@ export function legVerdict(
 ): Verdict {
   const pa = xy(a);
   const pb = xy(b);
-  return judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r, level, air);
+  const v = judge(chart, (c) => segDist(c.x, c.y, pa, pb) < c.r + r, level, air);
+  return v.flags.includes("LAND") && crossesLand(chart, pa, pb)
+    ? { ...v, flags: [...v.flags, "LAND_CROSSED"] }
+    : v;
+}
+
+/** Land at a leg's own end is not crossed as far as this from the end, metres. */
+const OWN_LAND = 10;
+
+/**
+ * Whether the line a–b crosses land, as signalk-underkeel flags it (`LAND_CROSSED`): it lies
+ * over an obstacle somewhere that is not the land at its own ends, the stretch of land it runs
+ * over from an end without a gap, as far as OWN_LAND from that end.
+ */
+function crossesLand(chart: Chart, a: [number, number], b: [number, number]): boolean {
+  const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (length === 0) {
+    return false;
+  }
+  const [ux, uy] = [(b[0] - a[0]) / length, (b[1] - a[1]) / length];
+  // The stretch of the line inside each obstacle, metres from a.
+  const over = chart.obstacles
+    .flatMap((c): [number, number][] => {
+      const along = (c.x - a[0]) * ux + (c.y - a[1]) * uy;
+      const off2 = (c.x - a[0]) ** 2 + (c.y - a[1]) ** 2 - along * along;
+      const half = Math.sqrt(c.r * c.r - off2);
+      const [from, to] = [Math.max(0, along - half), Math.min(length, along + half)];
+      return off2 < c.r * c.r && from < to ? [[from, to]] : [];
+    })
+    .sort((p, q) => p[0] - q[0]);
+  // Obstacles that overlap or touch are one stretch of land: an end owns it whole or not at all.
+  const runs: [number, number][] = [];
+  for (const [from, to] of over) {
+    const last = runs.at(-1);
+    if (last && from <= last[1] + 1e-9) {
+      last[1] = Math.max(last[1], to);
+    } else {
+      runs.push([from, to]);
+    }
+  }
+  const own = ([from, to]: [number, number]): boolean =>
+    (from <= 1e-9 && to <= OWN_LAND) || (to >= length - 1e-9 && length - from <= OWN_LAND);
+  return !runs.every(own);
 }
 
 /** The status of the leg a → b on `chart`, ignoring a chart marked not for navigation. */

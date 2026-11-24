@@ -79,6 +79,10 @@ describe("fallback", () => {
     for (const flag of ["UNASSESSED", "NOT_FOR_NAVIGATION", "DREDGED", "WATER_LEVEL_FALLBACK"]) {
       expect(crossable({ flags: [flag] })).toBe(true);
     }
+    // A leg under a bridge, held to the fairway gap's strip: the strict rule passes it, and a
+    // lowest-risk route that takes it is not refused for it.
+    expect(crossable({ flags: ["SWEPT", "NOT_FOR_NAVIGATION", "FAIRWAY_GAP"] })).toBe(true);
+    expect(berthable({ flags: ["LAND", "FAIRWAY_GAP"] })).toBe(true);
     for (const flag of [
       "LAND",
       "NO_COVERAGE",
@@ -95,6 +99,44 @@ describe("fallback", () => {
     for (const flag of ["ENTRY_PROHIBITED", "NO_COVERAGE", "BOX_TOO_LARGE"]) {
       expect(berthable({ flags: ["LAND", flag] })).toBe(false);
     }
+  });
+
+  test("a leg whose own line crosses land is no berth leg, and nothing the fallback crosses", () => {
+    expect(berthable({ flags: ["LAND", "LAND_CROSSED"] })).toBe(false);
+    expect(berthable({ flags: ["LAND", "LAND_CROSSED", "NOT_FOR_NAVIGATION"] })).toBe(false);
+    expect(crossable({ flags: ["LAND_CROSSED"] })).toBe(false);
+  });
+
+  test("the test chart flags a line through land, not one that leaves the land at its end", () => {
+    const chart: Chart = { obstacles: [{ x: 0, y: 30, r: 6 }] };
+    // Across the obstacle, and from alongside it through it.
+    expect(legVerdict(chart, at(0, 0), at(0, 60), 10).flags).toEqual(["LAND", "LAND_CROSSED"]);
+    expect(legVerdict(chart, at(0, 22), at(0, 60), 10).flags).toEqual(["LAND", "LAND_CROSSED"]);
+    // From alongside it, away; from on its edge, out; past it with the corridor on it.
+    expect(legVerdict(chart, at(0, 22), at(0, -20), 10).flags).toEqual(["LAND"]);
+    expect(legVerdict(chart, at(0, 26), at(0, -20), 10).flags).toEqual(["LAND"]);
+    expect(legVerdict(chart, at(-40, 20), at(40, 20), 10).flags).toEqual(["LAND"]);
+  });
+
+  test("the test chart takes land that runs on from one obstacle into the next as one stretch", () => {
+    const one: Chart = { obstacles: [{ x: 0, y: 8, r: 9 }] };
+    const two: Chart = {
+      obstacles: [
+        { x: 0, y: 4, r: 5 },
+        { x: 0, y: 12, r: 5 }
+      ]
+    };
+    for (const chart of [one, two]) {
+      expect(legVerdict(chart, at(0, 0), at(0, 16), 1).flags).toContain("LAND_CROSSED");
+    }
+    // Two obstacles at a leg's own end, together within its reach, are still its own land.
+    const quay: Chart = {
+      obstacles: [
+        { x: 0, y: 2, r: 3 },
+        { x: 0, y: 6, r: 3 }
+      ]
+    };
+    expect(legVerdict(quay, at(0, 0), at(0, 40), 1).flags).toEqual(["LAND"]);
   });
 
   test("a berth leg along a quay into uncharted water keeps NO_COVERAGE and is closed", () => {
