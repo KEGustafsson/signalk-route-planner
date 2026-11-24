@@ -187,6 +187,11 @@ All notable changes to signalk-route-planner are documented here.
 
 ### Fixed
 
+- The easing of a harbour stage's joint reached no further than the one part beside the
+  handover. From Parainen to Stenskär a narrows part 12 m long lay there, so only those 12 m
+  were eased: the route ran 350 m past the harbour's way in to the handover and back. The
+  harbour part now takes over the route's first 500 m past the handover across as many parts as
+  they reach, at the start and at the destination. That trip: 18 019 m where it was 18 940 m.
 - A route no longer goes the long way round near an end because of where the search's squares
   fell. Parainen to Stenskär went round by Spåharu sund, 1.9 km longer than the way past
   Korsskär a plan of its last 3.3 km takes. Where a route's last or first 3 km (straight) run

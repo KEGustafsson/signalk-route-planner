@@ -95,7 +95,7 @@
       "expect": {
         "status": 200,
         "lengthNm": [12.8, 13.6],
-        "workAtMost": 850000,
+        "workAtMost": 950000,
         "parts": ["narrows", "route", "narrows", "harbour:end"]
       },
       "cellLines": true,

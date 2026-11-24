@@ -210,10 +210,13 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     the handover, so where they meet the route turned at the handover whichever way the two
     came: out of Parainen's marina it ran 180 m south-west to the free water by the bridge and
     back east from there. The joint is eased (`src/plan/joint.ts`): the harbour part, less its
-    berth leg, is drawn tight (step 4) together with the route's first leg past the handover, up
-    to `JOINT_REACH` (500 m) of it, in a session at the harbour corridor, and takes that stretch
-    over, so the handover moves along the route's own leg and the rest of that leg stays part of
-    a leg already checked. A fallback's harbour part is drawn at the fallback's own price, no
+    berth leg, is drawn tight (step 4) together with the route's first `JOINT_REACH` (500 m)
+    past the handover, across as many legs and parts as those metres reach, in a session at the
+    harbour corridor, and takes that stretch over, so the handover moves along the route's own
+    legs and the rest of the leg it lands on stays part of a leg already checked. Reaching into
+    the one part beside the handover was not enough: from Parainen to Stenskär a narrows part
+    12 m long lay there, the route ran 350 m past the harbour's way in and back, and the trip
+    was 18 940 m where it is 18 019 m eased across parts. A fallback's harbour part is drawn at the fallback's own price, no
     leg into worse water than it replaced. Parainen's marina to Pargas Port: 15 872 m where it
     was 16 094 m, the turn at the joint 27° where it was 90°. Invariants: the new legs are
     checked at the harbour corridor and proved there by the route check (1).

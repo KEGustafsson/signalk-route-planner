@@ -53,58 +53,88 @@ async function tightened(
 }
 
 /**
- * The start's harbour part and the part after it with their joint eased: the harbour part, less
- * its berth leg, drawn tight with the next part's first leg up to JOINT_REACH, which it takes
- * over. Unchanged when that is no shorter.
+ * The first `reach` metres of the path through `parts`, each meeting the next at its first point:
+ * the points in it, the point `reach` metres along (`cut`), and the parts left past the cut, the
+ * first of them starting there. A part the stretch covers whole is not among those left; parts
+ * shorter than `reach` in all are the stretch whole, cut at their last point, with none left.
+ */
+function head(
+  parts: readonly Part[],
+  reach: number
+): { points: LonLat[]; cut: LonLat; rest: Part[] } | undefined {
+  const points: LonLat[] = [];
+  let left = reach;
+  for (let k = 0; k < parts.length; k++) {
+    const c = (parts[k] as Part).coordinates;
+    for (let i = 1; i < c.length; i++) {
+      const [a, b] = [c[i - 1] as LonLat, c[i] as LonLat];
+      if (points.length === 0) {
+        points.push(a);
+      }
+      const len = haversine(a, b);
+      if (len >= left) {
+        const cut = toward(a, b, left);
+        const tail = same(cut, b) ? c.slice(i + 1) : c.slice(i);
+        // Cut at this part's last point: the next part starts there already.
+        const own = tail.length > 0 ? [{ ...(parts[k] as Part), coordinates: [cut, ...tail] }] : [];
+        return { points, cut, rest: [...own, ...parts.slice(k + 1)] };
+      }
+      left -= len;
+      points.push(b);
+    }
+  }
+  // The parts end within the reach: the stretch is all of them, cut at their last point.
+  const cut = points.pop();
+  return cut ? { points, cut, rest: [] } : undefined;
+}
+
+/** `part` with its coordinates in the reverse order. */
+const reversed = (part: Part): Part => ({ ...part, coordinates: [...part.coordinates].reverse() });
+
+/**
+ * The start's harbour part and the parts after it with their joint eased: the harbour part, less
+ * its berth leg, drawn tight with the route's first JOINT_REACH metres past the handover, which
+ * it takes over, across as many parts as those metres reach: a narrows part a few metres long
+ * at the handover is no wall to the easing. Unchanged when that is no shorter.
  */
 async function easedStart(
   s: Session,
   st: Stage,
-  [harbour, next]: [Part, Part],
+  harbour: Part,
+  after: Part[],
   maxWork: number
-): Promise<[Part, Part]> {
+): Promise<[Part, Part[]]> {
   const h = harbour.coordinates;
-  const m = next.coordinates;
-  const [first, second] = [m[0], m[1]];
-  if (!first || !second || h.length < 2) {
-    return [harbour, next];
+  const stretch = head(after, JOINT_REACH);
+  if (!stretch || h.length < 2) {
+    return [harbour, after];
   }
   // The berth leg, from the quay to the berth point, stays as it is.
   const lead = harbour.berth ? 1 : 0;
-  const to = toward(first, second, JOINT_REACH);
-  const tight = await tightened(s, st, harbour, [...h.slice(lead), to], maxWork);
+  const points = [...h.slice(lead), ...stretch.points.slice(1), stretch.cut];
+  const tight = await tightened(s, st, harbour, points, maxWork);
   if (!tight) {
-    return [harbour, next];
+    return [harbour, after];
   }
-  return [
-    { ...harbour, coordinates: [...h.slice(0, lead), ...tight] },
-    { ...next, coordinates: same(to, second) ? m.slice(1) : [to, ...m.slice(1)] }
-  ];
+  return [{ ...harbour, coordinates: [...h.slice(0, lead), ...tight] }, stretch.rest];
 }
 
-/** As `easedStart`, for the part before the destination's harbour part and that part. */
+/** As `easedStart`, for the parts before the destination's harbour part and that part. */
 async function easedEnd(
   s: Session,
   st: Stage,
-  [prev, harbour]: [Part, Part],
+  before: Part[],
+  harbour: Part,
   maxWork: number
-): Promise<[Part, Part]> {
-  const h = harbour.coordinates;
-  const m = prev.coordinates;
-  const [last, before] = [m[m.length - 1], m[m.length - 2]];
-  if (!last || !before || h.length < 2) {
-    return [prev, harbour];
-  }
-  const tail = harbour.berth ? 1 : 0;
-  const from = toward(last, before, JOINT_REACH);
-  const tight = await tightened(s, st, harbour, [from, ...h.slice(0, h.length - tail)], maxWork);
-  if (!tight) {
-    return [prev, harbour];
-  }
-  return [
-    { ...prev, coordinates: same(from, before) ? m.slice(0, -1) : [...m.slice(0, -1), from] },
-    { ...harbour, coordinates: [...tight, ...h.slice(h.length - tail)] }
-  ];
+): Promise<[Part[], Part]> {
+  const back = await easedStart(
+    s,
+    st,
+    { ...reversed(harbour), berth: harbour.berth },
+    [...before].reverse().map(reversed),
+    maxWork
+  );
+  return [[...back[1]].reverse().map(reversed), { ...reversed(back[0]), berth: harbour.berth }];
 }
 
 const isHarbour = (p: Part | undefined, end: "start" | "end"): p is Part =>
@@ -121,16 +151,20 @@ export function eased(
 ): Promise<SessionResult<{ parts: Part[]; work: number }>> {
   const params = { ...st.params, xteLimit: st.opts.harbourXte };
   return st.api.session(params, st.signal, async (s) => {
-    const out = [...parts];
     const limit = (): number => s.work() + Math.min(JOINT_WORK, Math.max(0, budget - s.work()));
-    const [h0, next] = [out[0], out[1]];
-    if (isHarbour(h0, "start") && next && next.kind !== "harbour") {
-      [out[0], out[1]] = await easedStart(s, st, [h0, next], limit());
+    let out = [...parts];
+    const h0 = out[0];
+    if (isHarbour(h0, "start") && out.length > 1 && out[1]?.kind !== "harbour") {
+      const inner = out.slice(1).filter((p) => p.kind !== "harbour");
+      const [h, rest] = await easedStart(s, st, h0, inner, limit());
+      out = [h, ...rest, ...out.slice(1 + inner.length)];
     }
-    const n = out.length;
-    const [prev, h1] = [out[n - 2], out[n - 1]];
-    if (isHarbour(h1, "end") && prev && prev.kind !== "harbour") {
-      [out[n - 2], out[n - 1]] = await easedEnd(s, st, [prev, h1], limit());
+    const h1 = out[out.length - 1];
+    if (isHarbour(h1, "end") && out.length > 1 && out[out.length - 2]?.kind !== "harbour") {
+      const lead = isHarbour(out[0], "start") ? 1 : 0;
+      const inner = out.slice(lead, -1);
+      const [rest, h] = await easedEnd(s, st, inner, h1, limit());
+      out = [...out.slice(0, lead), ...rest, h];
     }
     return { parts: out.filter((p) => p.coordinates.length > 1), work: s.work() };
   });
