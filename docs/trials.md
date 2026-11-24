@@ -12,7 +12,7 @@ npm run trial -- miami            # one area, or one case by name
 ```
 
 The trials need network. They download the Traficom WFS and NOAA ENC cells once into
-`data/trials/` (git-ignored), and they need a built signalk-underkeel 0.7.0 or later checkout
+`data/trials/` (git-ignored), and they need a built signalk-underkeel 0.8.0 or later checkout
 next to this one, or at `UNDERKEEL_DIR`. Each case writes its reply to
 `data/trials/<case>.json` and its legs with their statuses to `data/trials/<case>.geojson`. The
 run exits 1 when a result does not meet the expectation in `scripts/trials/trials.json`.
@@ -173,7 +173,7 @@ verdicts all read marginal, coarser than a leg's corridor, so the larger weight 
 line, and the reply marks it `dominatedBy: "shortest"` rather than offering it as safer. The three
 plans took 7.9 M work units together.
 
-- Miami Beach Marina is a pier field. The 10 m harbour corridor touches a pier almost
+- Miami Beach Marina is a pier field. The harbour corridor touches a pier almost
   everywhere in its basin, and the only way in, Meloy Channel, is shallower than the draft at
   chart datum. The refusal is the right answer; a shallower draft or a tide gate (R3) would
   change it.
@@ -219,6 +219,10 @@ alternatives too, which the panel no longer offers (plan §4.5). The steps and w
 
 ## The panel in Freeboard (R5's exit)
 
+These trials record the panel as it was on 2026-11-21. Its check boxes, the alternatives list
+and the alternatives overlay have since been replaced by the Start, Route and Tide choices and the
+route check settings row; the README's screenshot shows the panel as it is now.
+
 On 2026-11-21 the panel ran in Freeboard-SK 3.4.1 on a Signal K server 2.37.0, beside
 signalk-underkeel 0.8.0 and signalk-charts-provider-simple 2.22.0, with the server's resources
 provider holding the route. Charts Provider converted the three Miami NOAA cells from a folder on
@@ -245,6 +249,10 @@ panel, and the planner planned through signalk-underkeel's planning API.
   ready once its planning API appears.
 
 ## The panel in Freeboard again (W4)
+
+These trials record the panel as it was on 2026-11-21. Its check boxes, the alternatives list
+and the alternatives overlay have since been replaced by the Start, Route and Tide choices and the
+route check settings row; the README's screenshot shows the panel as it is now.
 
 On 2026-11-21 the same setup ran again with the planner from `main` after the work budget setting,
 the measured work rate and the data attributions: Freeboard-SK 3.4.1, Signal K server 2.37.0,

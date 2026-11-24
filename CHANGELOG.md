@@ -19,9 +19,9 @@ All notable changes to signalk-route-planner are documented here.
   Traficom WFS; every such leg stays `unverified`.
 - `fallback: true`: when no route passes, the lowest risk-weighted route through charted water, never over
   land, with its risky legs marked `fail`, `marginal` or `unverified` by the route check.
-- The panel offers both as check boxes.
+- The `/plan` API takes both.
 - Harbour stage: an end in a harbour narrower than the corridor is planned out to open water at
-  a 10 m corridor, each part proved at its own corridor; a point alongside a quay leaves by a
+  the harbour corridor (no cross-track limit, half the beam), each part proved at its own corridor; a point alongside a quay leaves by a
   berth leg, marked in the reply and the panel.
 - No leg goes through land. With signalk-underkeel 0.8.0, land narrower than a chart tile is
   land in the Traficom WFS depths (a breakwater at Pargas read as water charted 0 m, and the
@@ -37,7 +37,7 @@ All notable changes to signalk-route-planner are documented here.
   corridor costs twice as much per metre unless it lies on a charted fairway line, so a route
   takes a sound or a fairway where the way round costs more and keeps the request's corridor
   elsewhere. Legs the request's corridor does not pass are `narrows` parts proved at the harbour
-  corridor and named in the panel (`narrows: false` and a panel check box turn it off). Nauvo to
+  corridor and named in the panel (`narrows: false` turns it off). Nauvo to
   Kaldö through Killingholms sund at xte 30 m: 3.1 nm, where the plan was refused at the work
   limit; Turku to Nauvo through the Seili fairway, 17.8 nm.
 - Fairway stage: the narrow search also follows the charted navigation lines, as a graph checked
@@ -100,7 +100,7 @@ All notable changes to signalk-route-planner are documented here.
   the water on the way, at places along the route the planning API passes with room to swing at
   anchor at the trip's lowest water, at most as long in all as the boat may wait to leave. The
   route is split where it waits, each piece proved from when the boat leaves for it, and the
-  reply lists the waits (`gate.waits`); the panel offers it as a check box.
+  reply lists the waits (`gate.waits`); the panel's wait for the tide always allows it.
 - The route passable now: with no waiting asked for, each square and leg is asked about at the water
   of the times the boat can be there, not at the lowest water of the whole verdict window. The
   first search allows the boat any timing within the verdict window, so its route holds however
@@ -126,7 +126,7 @@ All notable changes to signalk-route-planner are documented here.
   kept to where that costs little more distance, to starboard of a two-way line (COLREG rule 9).
 - Panel: start from the boat's position; each leg's flags in words; a dragged waypoint's
   legs planned again, also in Freeboard, which hands a route's points back a few 1e-14 degrees off
-  through its map projection; keeping to fairway lines and own tracks as a check box. The manifest offers
+  through its map projection; keeping to fairway lines and own tracks as the Route using fairways choice. The manifest offers
   `routePlan` in the `navigationSafety` services, and `npm run trial:panel` runs the panel in
   Chromium on the field trials' charts.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
