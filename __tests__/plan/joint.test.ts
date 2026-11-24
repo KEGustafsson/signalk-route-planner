@@ -173,6 +173,17 @@ describe("a harbour part's joint with the route", () => {
     expect(passes(chart, h)).toBe(true);
   });
 
+  test("a route past the handover shorter than the reach is taken over whole", async () => {
+    // Out of the harbour south, then 200 m east: the harbour part goes straight to the end.
+    const short: Part = { kind: "route", xteLimit: 30, coordinates: [at(0, -300), at(200, -300)] };
+    const { parts } = await ease({ obstacles: [] }, [start, short]);
+    expect(parts.map((p) => p.kind)).toEqual(["harbour"]);
+    const h = parts[0] as Part;
+    expect(h.coordinates[0]).toEqual(start.coordinates[0]);
+    expect(h.coordinates[h.coordinates.length - 1]).toEqual(at(200, -300));
+    expect(lengthOf(joined(parts))).toBeLessThan(lengthOf(joined([start, short])) - 100);
+  });
+
   test("with harbour parts at both ends, each is eased, and neither takes over the other", async () => {
     const s0: Part = {
       kind: "harbour",

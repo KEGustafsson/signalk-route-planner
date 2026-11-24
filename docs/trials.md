@@ -114,7 +114,7 @@ the trip is refused.
 
 On signalk-underkeel with the shore of the Traficom WFS cell drawn at the edge zoom (pyramid
 version 13, 2026-11-24) the same reply takes 0.90 M: its index holds more tiles along every
-shore. The case's cap is 950 000.
+shore. The case's cap is its `workAtMost` in `scripts/trials/trials.json`.
 
 ## Miami from sea (Florida)
 

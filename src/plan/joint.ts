@@ -55,7 +55,8 @@ async function tightened(
 /**
  * The first `reach` metres of the path through `parts`, each meeting the next at its first point:
  * the points in it, the point `reach` metres along (`cut`), and the parts left past the cut, the
- * first of them starting there. A part the stretch covers whole is not among those left.
+ * first of them starting there. A part the stretch covers whole is not among those left; parts
+ * shorter than `reach` in all are the stretch whole, cut at their last point, with none left.
  */
 function head(
   parts: readonly Part[],
@@ -82,7 +83,9 @@ function head(
       points.push(b);
     }
   }
-  return undefined;
+  // The parts end within the reach: the stretch is all of them, cut at their last point.
+  const cut = points.pop();
+  return cut ? { points, cut, rest: [] } : undefined;
 }
 
 /** `part` with its coordinates in the reverse order. */
