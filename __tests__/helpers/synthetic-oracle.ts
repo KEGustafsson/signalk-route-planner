@@ -167,13 +167,48 @@ export function legVerdict(
     : v;
 }
 
-/** Land at a leg's own end is not crossed as far as this from the end, metres. */
+/** Land at a leg's own end is not crossed as far as this from the end, metres, at least. */
 const OWN_LAND = 10;
+
+/** As signalk-underkeel: an end's own land reaches 1.5 times the way to the nearest water, and 5 m. */
+const NEAREST_WATER_SLACK = 1.5;
+const TILE = 5;
+
+const onLand = (chart: Chart, x: number, y: number): boolean =>
+  chart.obstacles.some((c) => Math.hypot(x - c.x, y - c.y) < c.r);
+
+const waterWays = new WeakMap<Chart, Map<string, number>>();
+
+/** The way from (x, y) to the nearest point no obstacle holds, metres, in 1 m steps; 0 in water. */
+function toWater(chart: Chart, [x, y]: [number, number]): number {
+  let seen = waterWays.get(chart);
+  if (!seen) {
+    seen = new Map();
+    waterWays.set(chart, seen);
+  }
+  const key = `${x},${y}`;
+  const known = seen.get(key);
+  if (known !== undefined) {
+    return known;
+  }
+  let best = Infinity;
+  for (let k = 0; k < 32; k++) {
+    const [dx, dy] = [Math.cos((k * Math.PI) / 16), Math.sin((k * Math.PI) / 16)];
+    let d = 0;
+    while (d < best && d < 1000 && onLand(chart, x + dx * d, y + dy * d)) {
+      d += 1;
+    }
+    best = Math.min(best, d);
+  }
+  seen.set(key, best);
+  return best;
+}
 
 /**
  * Whether the line a–b crosses land, as signalk-underkeel flags it (`LAND_CROSSED`): it lies
  * over an obstacle somewhere that is not the land at its own ends, the stretch of land it runs
- * over from an end without a gap, as far as OWN_LAND from that end.
+ * over from an end without a gap, as far from that end as OWN_LAND, or 1.5 times the way from
+ * it to the nearest water and 5 m more: a point put on land leaves it about the nearest way.
  */
 function crossesLand(chart: Chart, a: [number, number], b: [number, number]): boolean {
   const length = Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -201,8 +236,11 @@ function crossesLand(chart: Chart, a: [number, number], b: [number, number]): bo
       runs.push([from, to]);
     }
   }
+  // The way to the nearest water is walked only for land longer than OWN_LAND at an end.
+  const within = (p: [number, number], d: number): boolean =>
+    d <= OWN_LAND || d <= NEAREST_WATER_SLACK * toWater(chart, p) + TILE;
   const own = ([from, to]: [number, number]): boolean =>
-    (from <= 1e-9 && to <= OWN_LAND) || (to >= length - 1e-9 && length - from <= OWN_LAND);
+    (from <= 1e-9 && within(a, to)) || (to >= length - 1e-9 && within(b, length - from));
   return !runs.every(own);
 }
 

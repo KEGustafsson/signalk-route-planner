@@ -2,6 +2,7 @@ import type { LonLat } from "../foundation/geo";
 import type { PlanningApiV1, SessionParams, SessionResult, Verdict } from "../oracle/contract";
 import type { PassRule } from "../search/passes";
 import { eased } from "./joint";
+import { secondLook } from "./second-look";
 import type { Main } from "./narrows";
 import { mainSearch } from "./narrows";
 import type { PlanOptions } from "./options";
@@ -154,7 +155,10 @@ async function harbours(
     squares += h.value.squares;
     if ("refused" in h.value) {
       const what = end === "start" ? "start" : "destination";
-      const reason = `${o.reason}; the harbour stage found no way out from the ${what} at xte ${st.opts.harbourXte} m: ${h.value.refused}`;
+      // Out of work, the plan says so as every stage does; no way out says where.
+      const reason = /work limit/.test(h.value.refused)
+        ? WORK_LIMIT
+        : `${o.reason}; the harbour stage found no way out from the ${what} at xte ${st.opts.harbourXte} m: ${h.value.refused}`;
       return { ok: false, refusal: { ...o, reason, work, squares }, direct: o.direct, work };
     }
     ends[end] = {
@@ -203,13 +207,26 @@ async function lastResort(
   };
 }
 
-/** The main search, then harbour stages for the ends it could not join, then the main again. */
+/**
+ * The route between `from` and `to` (`stagesOnce`), its ends looked at again
+ * (`second-look.ts`).
+ */
 export async function stages(
   st: Stage,
   from: LonLat,
   to: LonLat,
   xteLimit?: number
 ): Promise<Staged> {
+  const found = await stagesOnce(st, from, to, xteLimit);
+  return secondLook(
+    found,
+    (a, b, maxWork) => stagesOnce({ ...st, opts: { ...st.opts, maxWork } }, a, b, xteLimit),
+    { maxWork: st.opts.maxWork, narrow: st.opts.narrows ? Math.max(st.opts.narrowWeight, 0) : 0 }
+  );
+}
+
+/** The main search, then harbour stages for the ends it could not join, then the main again. */
+async function stagesOnce(st: Stage, from: LonLat, to: LonLat, xteLimit?: number): Promise<Staged> {
   const run: Run = (a, b, opts) => mainSearch(st, [a, b], opts, xteLimit);
   const first = await run(from, to, {});
   if (!first.ok) {
