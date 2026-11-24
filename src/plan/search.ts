@@ -25,6 +25,7 @@ import type { QuadNode } from "../search/quadtree";
 import { centre, QuadTree } from "../search/quadtree";
 import type { Guide } from "../search/guide";
 import { memoBoxes } from "../search/guide";
+import { ashore, toward } from "./ashore";
 import { between } from "./between";
 import { stuckEnds } from "./handover";
 import type { Mode } from "./modes";
@@ -181,16 +182,10 @@ function access(
   return `no water the route check passes within ${opts.accessMetres} m of the ${what}${flags}`;
 }
 
-/** The point `d` metres from `p` toward `q`; short distances, so linear in degrees. */
-function toward(p: LonLat, q: LonLat, d: number): LonLat {
-  const t = Math.min(1, d / Math.max(haversine(p, q), 1e-9));
-  return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
-}
-
 /**
  * A berth leg (plan §4.1): when no checked leg joins `p` because the quay or pier it lies
  * at is inside the corridor, the shortest stub from `p` toward a square's centre, at most
- * `berth` metres, beyond which a checked leg joins. The stub may touch its quay (`LAND`), but
+ * `berth` metres past where it leaves the land (`ashore`), beyond which a checked leg joins. The stub may touch its quay (`LAND`), but
  * one a hard rule or no chart closes is not taken (`berthable`); the route check marks it.
  * Each check stops at the work limit.
  */
@@ -211,7 +206,8 @@ function berthJoin(
       const q = toward(p, cl, d);
       return mode.joins(goal ? checkLeg(session, cl, q) : checkLeg(session, q, cl));
     };
-    let hi = Math.min(berth, 0.9 * haversine(p, cl));
+    // A point put on land, a destination clicked on a harbour's shore, is ashore that far first.
+    let hi = Math.min(berth + ashore(session, p, cl, exhausted), 0.9 * haversine(p, cl));
     if (hi <= 0 || !joinsAt(hi)) {
       continue;
     }

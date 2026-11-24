@@ -187,5 +187,14 @@ All notable changes to signalk-route-planner are documented here.
 
 ### Fixed
 
+- A route no longer goes the long way round near an end because of where the search's squares
+  fell. Parainen to Stenskär went round by Spåharu sund, 1.9 km longer than the way past
+  Korsskär a plan of its last 3.3 km takes. Where a route's last or first 3 km (straight) run
+  more than 1.25 times the straight line, that stretch is planned again on its own and the
+  cheaper is kept: that trip is 17 190 m where it was 18 939 m.
+- A destination clicked on land a few tens of metres in from the shore is reached: its berth leg
+  may run 40 m past where it leaves the land. After signalk-underkeel drew the Traficom shore at
+  5 m, a destination 30–40 m inside Stenskär's shore was refused as having no water within 500 m.
+
 - A route drawn tight could keep a point twice where a turn moved onto its neighbour: a leg of
   no length in the check, one more leg than the route has.

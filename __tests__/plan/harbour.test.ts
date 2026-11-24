@@ -72,6 +72,32 @@ function slot(): Circle[] {
 }
 
 describe("harbour stage", () => {
+  test("a destination put 30 m inland is reached by a berth leg the nearest way off the land", async () => {
+    // An island 200 m across; the destination is clicked 30 m in from its north shore.
+    const chart: Chart = { obstacles: [{ x: 0, y: 0, r: 200 }] };
+    const to = at(0, 170);
+    const r = await plan(
+      syntheticApi(chart),
+      { from: at(0, 1500), to, departure: NOW, speed: 3, xteLimit: 30, fallback: true },
+      NEVER,
+      NOW,
+      HARBOUR
+    );
+    const body = r.body as Body;
+    expect(r.status).toBe(200);
+    expect(body.berths).toHaveLength(1);
+    const berth = body.berths?.[0];
+    expect(berth).toMatchObject({ end: "end" });
+    // The 30 m ashore and at most `berthMetres` past the shore.
+    expect(berth?.length).toBeLessThanOrEqual(30 + DEFAULT_PLAN.berthMetres + 1);
+    const last = body.check.legs[body.check.legs.length - 1];
+    expect(last).toMatchObject({ berth: true });
+    expect(last?.flags).toContain("LAND");
+    expect(last?.flags).not.toContain("LAND_CROSSED");
+    // Every other leg keeps off the island.
+    expect(body.check.legs.slice(0, -1).every((l) => !l.flags.includes("LAND"))).toBe(true);
+  });
+
   test("a berth leg is not taken through a breakwater to the water behind it", async () => {
     const chart: Chart = { obstacles: slot() };
     const from = at(300, 0);

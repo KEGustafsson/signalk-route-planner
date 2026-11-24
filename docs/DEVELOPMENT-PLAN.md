@@ -229,9 +229,14 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     `berthable` takes no flag but `LAND` and those the fallback crosses. Before it, a stub of
     31 m went from a slot too narrow for the harbour corridor through an 8 m breakwater to the
     water behind it (`__tests__/plan/harbour.test.ts`); now the plan is refused with the reason
-    (invariants 4 and 5). The planner cannot check a berth leg, so the panel says to steer it by
-    eye. Defaults are in
-    `src/plan/options.ts`.
+    (invariants 4 and 5). A point put on land, a destination clicked on a harbour's shore, is
+    ashore before its stub reaches the water: the stub may run `berthMetres` past where its way
+    leaves the land (`src/plan/ashore.ts`: every 5 m, the first point whose box at the harbour
+    corridor reaches no land, at most 200 m). signalk-underkeel counts that land as the end's
+    own while the stub leaves it about the nearest way, 1.5 times the way to the nearest water.
+    A destination 30–40 m inside Stenskär's shore was refused after the shore became land; it
+    is reached by a berth leg of 34 m. The planner cannot check a berth leg, so the panel says
+    to steer it by eye. Defaults are in `src/plan/options.ts`.
 14. **Narrows.** A sound or a fairway narrower than the request's corridor closes the main search
     as a harbour closes an end: through Killingholms sund at Nauvo the land is 19.7 m from the
     FTIA's 4.3 m navigation line, and at the route check's default xte of 30 m (40 m half-width)
@@ -355,6 +360,19 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     same way (`__tests__/search/field.test.ts`, `__tests__/plan/field-plan.test.ts`, and
     underkeel's `planning-raster.test.ts`), so no verdict changes (2, 3); every offered leg is
     still the route check's (1).
+18. **A second look at the ends** (`src/plan/second-look.ts`). Each search lays its squares by
+    its own trip, and a harbour stage hands over to the free water nearest the end on that grid.
+    From Parainen to Stenskär the destination's handover fell south-west of the sound by
+    Korsskär, which the main search's grid had closed, and the route went round by Spåharu
+    sund; a plan of the last 3.3 km alone went through the sound, and moving the start 5 m
+    opened it too. So where the route's last `LOOK` (3 km, straight) run more than `DETOUR`
+    (1.25) times that far, that stretch is planned again as a trip of its own on the work left,
+    with its own grid and handovers, and spliced in at the point it was looked at from when its
+    price (length, narrow water at `narrowWeight` more) is lower and it crosses no water that
+    does not pass where the stretch it replaces crossed none; likewise the first `LOOK`. That
+    trip: 17 190 m where it was 18 939 m. It is not a search for the shortest route: a detour
+    farther than `LOOK` from both ends is not looked at again. Invariants: the route is proved
+    as every route is (1); a stretch only a fallback finds never replaces one that passes (2).
 
 ### 4.2 R2: planning beyond the chart box
 
