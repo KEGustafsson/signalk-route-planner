@@ -1,5 +1,6 @@
 import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
+import { WORK_LIMIT } from "./search";
 import type { Part, Staged } from "./stages";
 
 /**
@@ -51,34 +52,27 @@ export function cutAt(parts: readonly Part[], at: LonLat): [Part[], Part[]] {
 /** Whether any part is a lowest risk-weighted one: water no route passes. */
 const fallen = (parts: readonly Part[]): boolean => parts.some((p) => p.fallback !== undefined);
 
-type Found = Extract<Staged, { ok: true }>;
-
 /**
- * `found` with its stretch from `at` to the end (`end` "end") or from its start to `at` ("start")
- * replaced by `again`, a plan of that stretch alone, when that is cheaper and crosses no water
+ * `found` parts with their stretch from `at` to the end (`end` "end") or from their start to `at`
+ * ("start") replaced by `again`, a plan of that stretch alone, when that is cheaper and crosses no water
  * that does not pass where the stretch it replaces crossed none.
  */
 function spliced(
-  found: Found,
-  again: Found,
+  found: readonly Part[],
+  again: readonly Part[],
   at: LonLat,
   end: "start" | "end",
   narrow: number
-): Found {
-  const [head, tail] = cutAt(found.parts, at);
+): Part[] {
+  const [head, tail] = cutAt(found, at);
   const old = end === "end" ? tail : head;
-  if (fallen(again.parts) && !fallen(old)) {
-    return found;
+  if (fallen(again) && !fallen(old)) {
+    return [...found];
   }
-  if (priceOf(again.parts, narrow) >= priceOf(old, narrow) - 1) {
-    return found;
+  if (priceOf(again, narrow) >= priceOf(old, narrow) - 1) {
+    return [...found];
   }
-  return {
-    ...found,
-    parts: end === "end" ? [...head, ...again.parts] : [...again.parts, ...tail],
-    work: found.work + again.work,
-    squares: found.squares + again.squares
-  };
+  return end === "end" ? [...head, ...again] : [...again, ...tail];
 }
 
 /**
@@ -99,7 +93,9 @@ export function lookFrom(path: readonly LonLat[], end: "start" | "end"): LonLat 
 
 /**
  * `found` after a second look at each end: `plan` plans a stretch of the route as a trip of its
- * own on the work left; the cheaper of the two ways stands.
+ * own on the work left; the cheaper of the two ways stands. Every look's work counts, the ones
+ * whose way is not taken included, and a look that runs out of work refuses the plan with the
+ * work limit, as a plan that reaches its limit is (invariant 5).
  */
 export async function secondLook(
   found: Staged,
@@ -109,23 +105,32 @@ export async function secondLook(
   if (!found.ok) {
     return found;
   }
-  let out: Found = found;
+  let { parts, work, squares } = found;
   for (const end of ["end", "start"] as const) {
-    const path = out.parts.flatMap((p) => p.coordinates);
+    const path = parts.flatMap((p) => p.coordinates);
     const at = lookFrom(path, end);
-    const left = c.maxWork - out.work;
+    const left = c.maxWork - work;
     if (!at || left <= 0) {
       continue;
     }
     const first = path[0] as LonLat;
     const last = path[path.length - 1] as LonLat;
     const again = await plan(end === "end" ? at : first, end === "end" ? last : at, left);
-    if (again.ok) {
-      out = spliced(out, again, at, end, c.narrow);
-    } else if (!("refusal" in again)) {
+    if (!("work" in again)) {
       // The provider failed: answered as it answered, never with half a look.
       return again;
     }
+    work += again.work;
+    if (again.ok) {
+      squares += again.squares;
+      parts = spliced(parts, again.parts, at, end, c.narrow);
+      continue;
+    }
+    squares += again.refusal.squares;
+    if (again.refusal.reason === WORK_LIMIT) {
+      const refusal = { ...again.refusal, reason: WORK_LIMIT, work, squares };
+      return { ok: false, refusal, direct: found.direct, work };
+    }
   }
-  return out;
+  return { ...found, parts, work, squares };
 }

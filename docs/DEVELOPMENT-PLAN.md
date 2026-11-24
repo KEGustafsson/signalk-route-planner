@@ -234,9 +234,9 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     water behind it (`__tests__/plan/harbour.test.ts`); now the plan is refused with the reason
     (invariants 4 and 5). A point put on land, a destination clicked on a harbour's shore, is
     ashore before its stub reaches the water: the stub may run `berthMetres` past where its way
-    leaves the land (`src/plan/ashore.ts`: every 5 m, the first point whose box at the harbour
-    corridor reaches no land, at most 200 m). signalk-underkeel counts that land as the end's
-    own while the stub leaves it about the nearest way, 1.5 times the way to the nearest water.
+    leaves the land, a bounded walk out from the point (`src/plan/ashore.ts` has the step and
+    the limit). signalk-underkeel counts that land as the end's own while the stub leaves it
+    about the nearest way to water (its `ownLandReach`).
     A destination 30–40 m inside Stenskär's shore was refused after the shore became land; it
     is reached by a berth leg of 34 m. The planner cannot check a berth leg, so the panel says
     to steer it by eye. Defaults are in `src/plan/options.ts`.
@@ -368,14 +368,15 @@ The seven invariants of `signalk-underkeel` (its AGENTS.md) hold here. In additi
     From Parainen to Stenskär the destination's handover fell south-west of the sound by
     Korsskär, which the main search's grid had closed, and the route went round by Spåharu
     sund; a plan of the last 3.3 km alone went through the sound, and moving the start 5 m
-    opened it too. So where the route's last `LOOK` (3 km, straight) run more than `DETOUR`
-    (1.25) times that far, that stretch is planned again as a trip of its own on the work left,
-    with its own grid and handovers, and spliced in at the point it was looked at from when its
-    price (length, narrow water at `narrowWeight` more) is lower and it crosses no water that
-    does not pass where the stretch it replaces crossed none; likewise the first `LOOK`. That
-    trip: 17 190 m where it was 18 939 m. It is not a search for the shortest route: a detour
-    farther than `LOOK` from both ends is not looked at again. Invariants: the route is proved
-    as every route is (1); a stretch only a fallback finds never replaces one that passes (2).
+    opened it too. So where a stretch near an end runs well beyond the straight line, it is
+    planned again as a trip of its own, with its own grid and handovers, and spliced in when it
+    costs less at the search's own price (the reach, the detour ratio and the splice rule are in
+    `src/plan/second-look.ts`). That trip: 17 190 m where it was 18 939 m. It is not a search for
+    the shortest route: a detour away from both ends is not looked at again. Each look draws on
+    the plan's one budget, counted whether its way is taken or not; a look that reaches the work
+    limit refuses the plan with it, as the taut stage's does (step 4). Invariants: the route is
+    proved as every route is (1); a stretch only a fallback finds never replaces one that passes
+    (2); a look out of work answers with the reason, never the route it set out to improve (5).
 
 ### 4.2 R2: planning beyond the chart box
 
