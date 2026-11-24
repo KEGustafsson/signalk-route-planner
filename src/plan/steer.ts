@@ -1,6 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import type { Session } from "../oracle/contract";
 import { aStar } from "../search/astar";
+import { fieldOf } from "../search/field";
 import type { PassRule } from "../search/passes";
 import type { QuadNode, TreeShape } from "../search/quadtree";
 import { QuadTree } from "../search/quadtree";
@@ -74,7 +75,7 @@ export async function coarsePath(
     return undefined;
   }
   const f = coarse.unit / shape.unit;
-  const tree = new QuadTree(coarse, session, rule);
+  const tree = new QuadTree(coarse, session, rule, undefined, fieldOf(session, rule));
   const ceiling = opts.maxWork * opts.searchShare;
   const limit = Math.min(ceiling, session.work() + ceiling * opts.steerShare);
   const s: XY = [start[0] / f, start[1] / f];

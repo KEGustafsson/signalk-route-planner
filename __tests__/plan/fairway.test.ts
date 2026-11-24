@@ -117,6 +117,39 @@ describe("lines meeting at a T", () => {
     );
     expect(r.status).toBe(200);
   });
+
+  test("the stage's way turns at the T, on a leg of any length", () => {
+    // A runs north–south through (22, 60), a point it does not have; B begins there. Only the
+    // junction joins them: 0.6° of A meets over a hundred of the lookup's grid squares.
+    for (const half of [0.02, 0.3]) {
+      const a: LonLat[] = [
+        [22, 60 - half],
+        [22, 60 + half]
+      ];
+      const b: LonLat[] = [
+        [22, 60],
+        [22.02, 60]
+      ];
+      const session: Session = {
+        halfWidth: 10,
+        box: () => ({ status: "ok", risk: 0, flags: [] }),
+        segment: () => ({ status: "ok", risk: 0, flags: [] }),
+        objects: () =>
+          [a, b].map((coordinates) => ({
+            class: "NAVLINE",
+            geometry: { type: "LineString" as const, coordinates }
+          })),
+        work: () => 0,
+        pause: () => Promise.resolve()
+      };
+      const way = fairwayRoute(session, [[22, 59.99], b[1] as LonLat], {
+        rule: OK_ONLY,
+        reach: 1,
+        exhausted: () => false
+      });
+      expect(way).toContainEqual([22, 60]);
+    }
+  });
 });
 
 describe("flags that describe the water", () => {

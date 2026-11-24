@@ -83,28 +83,35 @@ const indexes = new Map();
 
 /** The chart index for an area (and assumed CATZOC), built once. */
 async function indexFor(areas, c) {
-  const key = `${c.area}:${c.catzoc ?? ""}:${c.lines ? "lines" : ""}`;
+  // The cell with the FTIA's lines: for a case that prefers them, or one that only has them
+  // charted (`cellLines`), as a plan on the plugin's own WFS cell does.
+  const withLines = c.lines === true || c.cellLines === true;
+  const key = `${c.area}:${c.catzoc ?? ""}:${withLines ? "lines" : ""}:${c.edge ? "edge" : ""}`;
   if (!indexes.has(key)) {
     const area = areas[c.area];
     const sources =
       area.source === "noaa-enc"
         ? await noaaCells(area)
-        : await wfsCell(area, c.catzoc ?? 3, c.lines === true);
+        : await wfsCell(area, c.catzoc ?? 3, withLines);
     const { readCell } = uk("ingest/cell-source");
     const cells = [];
     for (const [i, s] of sources.entries()) {
       cells.push(await readCell(s, i));
     }
-    indexes.set(key, uk("spatial/chart-index").buildChartIndex(cells, { leafZoom: 20 }));
+    // With `edge`, built as the plugin builds its own index: tiles across a swept area's edge
+    // two zooms finer, which a swept fairway a few tens of metres wide needs to pass.
+    const build = c.edge ? uk("spatial/build-items").pluginBuild(20) : { leafZoom: 20 };
+    indexes.set(key, uk("spatial/chart-index").buildChartIndex(cells, build));
   }
   return indexes.get(key);
 }
 
 /**
- * The water level over [start, end], at its lowest: chart datum, or a case's modelled tide,
- * mean + amplitude · cos(2π (t − high water) / period), sampled every 5 minutes.
+ * The water level over [start, end], at its lowest, or with `highest` at its highest: chart
+ * datum, or a case's modelled tide, mean + amplitude · cos(2π (t − high water) / period),
+ * sampled every 5 minutes.
  */
-function waterLevel(tide, departure) {
+function waterLevel(tide, departure, highest = false) {
   if (!tide) {
     return () => ({ h: 0, sigma: 0.2, source: "manual" });
   }
@@ -112,10 +119,11 @@ function waterLevel(tide, departure) {
   const at = (t) =>
     tide.mean +
     tide.amplitude * Math.cos((2 * Math.PI * (t - high)) / (tide.periodHours * 3_600_000));
+  const pick = highest ? Math.max : Math.min;
   return (start, end) => {
     let h = at(end);
     for (let t = start; t < end; t += 300_000) {
-      h = Math.min(h, at(t));
+      h = pick(h, at(t));
     }
     return { h, sigma: 0.2, source: "trial tide" };
   };
@@ -132,6 +140,9 @@ function apiFor(index, draft, tide, departure) {
     vessel: () => ({ draft, length: 11, beam: 3.6 }),
     // Chart datum, σ 0.2 m, unless the case models a tide: the trials do not depend on the day.
     waterLevel: waterLevel(tide, departure),
+    // The highest water over a window, as the plugin gives it from its level service: a
+    // session's raster says by it which shoals no water in the window opens.
+    highWater: waterLevel(tide, departure, true),
     waveHeight: () => undefined,
     getRoute: () => Promise.reject(new Error("none")),
     now: () => Date.now(),
@@ -263,7 +274,7 @@ async function main() {
         to: c.to,
         departure,
         ...(c.waitHours && { latestDeparture: departure + c.waitHours * 3_600_000 }),
-        speed: 3,
+        speed: c.speed ?? 3,
         draft: c.draft,
         xteLimit: c.xteLimit,
         ...(c.accept && { accept: c.accept }),

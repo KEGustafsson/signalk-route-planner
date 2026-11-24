@@ -113,6 +113,7 @@ function routePlanner(app: ServerAPI, clock: Clock = SYSTEM_CLOCK): Plugin {
           limits: () => limits,
           rate,
           planned: showStatus,
+          note: (m) => app.debug(m),
           accept: () => accept
         }),
         (m) => app.error(m)

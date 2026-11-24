@@ -65,8 +65,9 @@ describe("harbour stage", () => {
       ["harbour", "start", 0],
       ["route", undefined, 30]
     ]);
-    // The harbour part ran in a session of its own at the narrow corridor.
-    expect(api.sessions.map((s) => s.xteLimit)).toEqual([30, 0, 30]);
+    // The harbour part ran in a session of its own at the narrow corridor, and so did the
+    // easing of its joint with the route (`joint.ts`).
+    expect(api.sessions.map((s) => s.xteLimit)).toEqual([30, 0, 30, 0]);
     // Every leg passes at its own part's corridor: 10 m in the inlet, 40 m outside.
     const c = body.route.coordinates;
     const ok = body.check.legs.every(
@@ -75,6 +76,14 @@ describe("harbour stage", () => {
     );
     expect(ok).toBe(true);
     expect(body.berths).toBeUndefined();
+    // The joint is eased: out of the inlet's mouth at x = 600 the route goes on east, not back
+    // west to the free water the main search named as the handover (370 m east, north of the
+    // inlet), which cost 500 m more. No leg has no length.
+    expect(c).toHaveLength(body.check.legs.length + 1);
+    const xs = c.map((p) => xy(p)[0]);
+    expect(xs.every((x, i) => i === 0 || x > (xs[i - 1] as number))).toBe(true);
+    const length = c.slice(1).reduce((sum, p, i) => sum + haversine(c[i] as LonLat, p), 0);
+    expect(length).toBeLessThan(3100);
   });
 
   test("a point alongside the quay leaves by a berth leg the route check marks", async () => {
@@ -130,9 +139,9 @@ describe("harbour stage", () => {
     const full = await planFrom(at(20, 0));
     const used = (full.body as unknown as { work: number }).work;
     expect(full.r.status).toBe(200);
-    // With the budget at 60 % of what the three sessions used together, a later stage
+    // With the budget at 60 % of what the four sessions used together, a later stage
     // reaches the limit and the plan is refused, not offered past it.
-    expect(full.api.sessions).toHaveLength(3);
+    expect(full.api.sessions).toHaveLength(4);
     const tight = await planFrom(at(20, 0), { ...HARBOUR, maxWork: Math.floor(used * 0.6) });
     expect(tight.r.status).toBe(422);
     expect(tight.body.reason).toMatch(/work limit/);

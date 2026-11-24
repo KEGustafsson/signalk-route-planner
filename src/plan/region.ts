@@ -4,6 +4,7 @@ import type { Bbox, Session, Verdict } from "../oracle/contract";
 import type { RiskCost } from "../search/fallback";
 import type { PassRule } from "../search/passes";
 import { passes } from "../search/passes";
+import { fieldOf } from "../search/field";
 import type { Narrow } from "../search/narrow";
 import { narrowIn, narrowShare, splitsNarrow } from "../search/narrow";
 import type { Preferred } from "../search/prefer";
@@ -143,7 +144,9 @@ export function treeFor(
     (n, risk) =>
       (n.size * shape.unit > opts.riskCell && weighs(opts, cost, risk)) ||
       (held.pref !== undefined && splitsForLines(held.pref, n)) ||
-      (held.narrow !== undefined && splitsNarrow(held.narrow, n, shape.unit))
+      (held.narrow !== undefined && splitsNarrow(held.narrow, n, shape.unit)),
+    // With a risk cost a free square's own risk is weighed: every one is asked of the chart.
+    cost === undefined ? fieldOf(session, rule) : undefined
   );
   held.pref = linesIn(tree, session, ends, opts);
   if (opts.wideMargin > 0) {

@@ -136,6 +136,22 @@ describe("band refinement", () => {
     expect(length(b)).toBeLessThan(4100);
   });
 
+  test("turns run together over 40 km are searched a window at a time", async () => {
+    // A zigzag turning every 600 m: its stretches round the turns join into one.
+    const zigzag = Array.from({ length: 68 }, (_, k) => at(k * 600, k % 2 === 0 ? 0 : 40));
+    let longest = 0;
+    const check = (a: LonLat, b: LonLat): Verdict => {
+      longest = Math.max(longest, haversine(a, b));
+      return { status: "ok", risk: 0, flags: [] };
+    };
+    const fine = await bandAroundTurns(zigzag, check, open, OK_ONLY);
+    expect(fine?.[0]).toEqual(zigzag[0]);
+    expect(fine?.at(-1)).toEqual(zigzag.at(-1));
+    // No leg reaches past its window, 8 km of route and the band's width round it.
+    expect(longest).toBeGreaterThan(5000);
+    expect(longest).toBeLessThan(8600);
+  });
+
   test("the stretches round turns and the straight legs between cover the route, alternating", () => {
     fc.assert(
       fc.property(

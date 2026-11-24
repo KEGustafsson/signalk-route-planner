@@ -87,14 +87,17 @@ const MAX_LEG_KM2 = 24;
 const NOT_CHECKED: Verdict = { status: "unverified", risk: 0, flags: ["TOO_LONG_FOR_ONE_LEG"] };
 
 /**
- * The leg a → b checked through the session, or NOT_CHECKED when its corridor (length plus
- * both ends, times twice the half-width) is over MAX_LEG_KM2: the planning API throws on those.
+ * Whether the leg a → b is never checked as one: its corridor (length plus both ends, times
+ * twice the half-width) is over MAX_LEG_KM2, which the planning API throws on.
  */
-export function checkLeg(session: Session, a: LonLat, b: LonLat): Verdict {
+export function tooLongForOneLeg(session: Session, a: LonLat, b: LonLat): boolean {
   const r = session.halfWidth;
-  return ((haversine(a, b) + 2 * r) * 2 * r) / 1e6 > MAX_LEG_KM2
-    ? NOT_CHECKED
-    : session.segment(a, b);
+  return ((haversine(a, b) + 2 * r) * 2 * r) / 1e6 > MAX_LEG_KM2;
+}
+
+/** The leg a → b checked through the session, or NOT_CHECKED when it is `tooLongForOneLeg`. */
+export function checkLeg(session: Session, a: LonLat, b: LonLat): Verdict {
+  return tooLongForOneLeg(session, a, b) ? NOT_CHECKED : session.segment(a, b);
 }
 
 interface Access {

@@ -1,6 +1,7 @@
 import type { LonLat } from "../foundation/geo";
 import type { PlanningApiV1, SessionParams, SessionResult, Verdict } from "../oracle/contract";
 import type { PassRule } from "../search/passes";
+import { eased } from "./joint";
 import type { Main } from "./narrows";
 import { mainSearch } from "./narrows";
 import type { PlanOptions } from "./options";
@@ -279,6 +280,19 @@ async function between(
   if (work >= st.opts.maxWork) {
     return limit();
   }
-  const parts = harbourParts(mainParts(inner.value, xteLimit));
+  // The harbour parts and the route between them meet at the handovers: eased there.
+  const joined = await eased(
+    st,
+    harbourParts(mainParts(inner.value, xteLimit)),
+    st.opts.maxWork - work
+  );
+  if (!joined.ok) {
+    return joined;
+  }
+  work += joined.value.work;
+  if (work >= st.opts.maxWork) {
+    return limit();
+  }
+  const { parts } = joined.value;
   return { ok: true, parts, direct: o.direct, work, squares: h.squares + inner.value.squares };
 }

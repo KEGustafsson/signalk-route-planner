@@ -395,10 +395,56 @@ export async function taut(
       break;
     }
   }
-  return t.pts;
+  return distinct(t.pts);
 }
 
+/**
+ * `points` with each point that repeats the one before it left out; the ends stay. A turn moved
+ * all the way to its neighbours' line can land on a neighbour, and the two are then one point:
+ * left in, a route would carry a leg of no length.
+ */
+function distinct(points: readonly LonLat[]): LonLat[] {
+  const out: LonLat[] = [];
+  for (const p of points) {
+    const last = out[out.length - 1];
+    if (!last || haversine(last, p) > SAME_M) {
+      out.push(p);
+    }
+  }
+  // The route's own last point, not one a hair from it.
+  const end = points[points.length - 1];
+  if (end && out.length > 1) {
+    out[out.length - 1] = end;
+  }
+  return out;
+}
+
+/** Points closer than this, metres, are one point. */
+const SAME_M = 1e-3;
+
 const STATUS_RANK: Record<string, number> = { ok: 0, marginal: 1, unverified: 2, fail: 3 };
+
+/**
+ * A strict route's price: its length where `rule` passes a leg, nowhere else, corners cut. Every
+ * passing leg is as good as another, as the shortest search prices them.
+ */
+export const strictRule = (rule: PassRule): TautRule => ({
+  cost: (v) => (passes(v, rule) ? 1 : Infinity),
+  rank: (v) => (passes(v, rule) ? 0 : 3),
+  // A chain of lines and a route's straightened parts turn between long legs.
+  cutCorners: true,
+  passing: true
+});
+
+/**
+ * A fallback route's price, as its search weighs water it may cross (`verdictWeight`), corners
+ * cut: no new leg carries more risk than the worst it replaces, nor worse water.
+ */
+export const crossingRule = (rule: PassRule): TautRule => ({
+  cost: (v) => verdictWeight(v, rule, { fallback: true }),
+  rank: (v) => (passes(v, rule) ? 0 : (STATUS_RANK[v.status] ?? 3)),
+  cutCorners: true
+});
 
 /**
  * The search's own price of a leg, as pulling prices it (`verdictWeight`, the lines' cost

@@ -2,6 +2,7 @@ import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { PlanningApiV1, Session, Verdict, Window } from "../oracle/contract";
 import { crossable } from "../search/fallback";
+import { rasterOf } from "../search/field";
 
 /**
  * The route passable now (plan §4.3, R3d): the search asks about each square and leg at the
@@ -127,6 +128,9 @@ export function timedSession(s: Session, t: Timing, met?: Met, reuse?: Met): Ses
         ? s.segment(a, b, window)
         : ask(keyOf("s", r, a, b), () => s.segment(a, b, arrivalWindow(t, ...boundsOf(a, b), r))),
     ...(s.objects && { objects: s.objects.bind(s) }),
+    // The raster is the session's own, over its whole window: a cell that passes there passes
+    // over any arrival window within it.
+    ...rasterOf(s),
     work: () => s.work(),
     pause: () => s.pause(),
     ...(s.within && { within: s.within })

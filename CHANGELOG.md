@@ -51,6 +51,33 @@ All notable changes to signalk-route-planner are documented here.
   on the fairway line".
 - A plan whose planning box signalk-underkeel released before its session ran is prepared and
   planned again, once, rather than answering 503.
+- The raster field: with a signalk-underkeel serving `raster` (0.8.0), a leg or square is settled
+  on the chart's own tiles where they say whether the rule passes it, and asked of the route
+  check only where they do not; the route check still proves every leg of the route offered.
+  Parainen to Nauvo guest harbour: the same 24 338 m route for 0.81 M work units where it took
+  5.23 M, 1 072 legs asked of the chart where it asked 15 246; in the running server on a Jetson
+  Orin 3.4 to 3.8 s where it took 34.8 s.
+- A trip's index is asked for its snug region first, the ends and a quarter of the trip's length
+  around them on a grid, a third to a half of the search region: built in that share of the
+  time. A route no way leaving the region could be cheaper than stands (its price its length and
+  the narrows weight on its narrows legs); any other, a route priced by more than that (a risk
+  weight, preference lines, alternatives, a fallback) and a
+  refusal for want of a way are planned again in the whole search region. When the machine
+  refuses the larger region's build (413), the smaller region's answer is kept, so that route
+  had no search past the smaller region. Before any build, an
+  index signalk-underkeel holds already that covers the trip's ends is planned on (its `held`).
+- The plugin's debug log says when a plan is planned again in a larger region, and what the
+  plan in the smaller one came to.
+- The joint between a harbour stage and the route is eased: the route no longer turns at the
+  handover point whichever way the two parts came (out of Parainen's marina, 180 m toward the
+  bridge and back). The harbour part is drawn tight with the route's first 500 m past the
+  handover, at the harbour corridor, and takes that stretch over. Parainen's marina to Pargas
+  Port 15 872 m where it was 16 094 m.
+- While an index builds, `/plan`'s 503 asks the panel back in 3 s, not 30: the request asked
+  again waits for the build itself, so the plan follows the build by seconds.
+- The fairway stage finds where lines meet by a grid of their legs, not every point against every
+  leg (1.4 s of a 13.9 s plan with 919 lines in the region), and band refinement's search keeps
+  its points by number.
 - Less work per plan (field trials: Turku 18.4 M → 4.8 M work units, Miami Beach Marina 39 M →
   1.5 M): ends and harbour handovers join the nearest squares best first, A\* classifies a square
   only when it reaches it and weights its heuristic by 1.25, the strict search crosses marginal
@@ -93,8 +120,9 @@ All notable changes to signalk-route-planner are documented here.
   `routePlan` in the `navigationSafety` services, and `npm run trial:panel` runs the panel in
   Chromium on the field trials' charts.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
-  index of the whole search region, or of the trip's least region (both ends with the search's
-  least margin and a harbour stage around them) when that is too large to build: the chart box
+  index of the trip's snug region, then the whole search region when the plan may be beaten
+  past it (above), or of the trip's least region (both ends with the search's least margin and
+  a harbour stage around them) when the region asked for is too large to build: the chart box
   around the vessel when it covers the region, else a planning box underkeel builds. While the
   build runs past a short wait, `/plan` answers 503 with `preparing: true` and `Retry-After`.
   The panel plans again while the build continues, then asks to plan again later if it is still
@@ -140,3 +168,8 @@ All notable changes to signalk-route-planner are documented here.
   the REST API.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.
+
+### Fixed
+
+- A route drawn tight could keep a point twice where a turn moved onto its neighbour: a leg of
+  no length in the check, one more leg than the route has.
