@@ -112,6 +112,10 @@ the trip is refused.
 | before the raster field | 13.14 nm, 26 legs: narrows, route, narrows, harbour stage | 4.99 M |             13.5 s |
 | with it                 | the same reply                                            | 0.71 M |              3.4 s |
 
+On signalk-underkeel with the shore of the Traficom WFS cell drawn at the edge zoom (pyramid
+version 13, 2026-11-24) the same reply takes 0.90 M: its index holds more tiles along every
+shore. The case's cap is 950 000.
+
 ## Miami from sea (Florida)
 
 Data: NOAA ENC cells `US4FL2AI`, `US5MIACC` and `US5MIACB`, official and public domain. The

@@ -122,7 +122,7 @@ describe("a harbour part's joint with the route", () => {
     expect(passes(chart, h)).toBe(true);
   });
 
-  test("a route leg shorter than the reach is taken over whole; a straight joint is left alone", async () => {
+  test("a route leg shorter than the reach is taken over whole, and the reach goes on along the next; a straight joint is left alone", async () => {
     const short: Part = {
       kind: "route",
       xteLimit: 30,
@@ -130,8 +130,11 @@ describe("a harbour part's joint with the route", () => {
     };
     const { parts } = await ease({ obstacles: [] }, [start, short]);
     const [h, r] = parts as [Part, Part];
-    expect(same(h.coordinates[h.coordinates.length - 1], at(200, -300))).toBe(true);
-    expect(r.coordinates).toEqual(short.coordinates.slice(1));
+    // JOINT_REACH metres along the route: 200 m of its first leg, the rest along its second.
+    const meet = h.coordinates[h.coordinates.length - 1] as LonLat;
+    expect(same(meet, r.coordinates[0])).toBe(true);
+    expect(haversine(at(200, -300), meet)).toBeCloseTo(JOINT_REACH - 200, 0);
+    expect(r.coordinates.slice(1)).toEqual([at(3000, 0)]);
     // Already straight: nothing to gain, nothing changed.
     const on: Part = { kind: "route", xteLimit: 30, coordinates: [at(0, -300), at(0, -2000)] };
     const straight = await ease({ obstacles: [] }, [start, on]);
@@ -139,5 +142,59 @@ describe("a harbour part's joint with the route", () => {
     // No harbour part, no joint.
     const alone = await ease({ obstacles: [] }, [route]);
     expect(alone.parts).toEqual([route]);
+  });
+
+  test("a part a few metres long at the handover is no wall: the reach goes on into the parts before it", async () => {
+    // As planned from Parainen to Stenskär: the route runs 350 m past the harbour's way in to
+    // a handover, a narrows part 12 m long lies there, and the harbour part turns back.
+    const route: Part = {
+      kind: "route",
+      xteLimit: 30,
+      coordinates: [at(-2000, 0), at(-100, 0), at(250, 0)]
+    };
+    const sliver: Part = { kind: "narrows", xteLimit: 0, coordinates: [at(250, 0), at(262, 0)] };
+    const end: Part = {
+      kind: "harbour",
+      end: "end",
+      xteLimit: 0,
+      coordinates: [at(262, 0), at(-50, 10), at(-60, -300)]
+    };
+    const chart: Chart = { obstacles: [] };
+    const { parts } = await ease(chart, [route, sliver, end]);
+    const all = joined(parts);
+    // The out-and-back is gone: nowhere does the route go east of where it turns south.
+    expect(Math.max(...all.map((p) => xy(p)[0]))).toBeLessThan(0);
+    expect(lengthOf(all)).toBeLessThan(lengthOf(joined([route, sliver, end])) - 600);
+    // The sliver was taken over whole; the route ends where the harbour part begins.
+    expect(parts.map((p) => p.kind)).toEqual(["route", "harbour"]);
+    const [r, h] = parts as [Part, Part];
+    expect(same(r.coordinates[r.coordinates.length - 1], h.coordinates[0])).toBe(true);
+    expect(h.coordinates[h.coordinates.length - 1]).toEqual(at(-60, -300));
+    expect(passes(chart, h)).toBe(true);
+  });
+
+  test("with harbour parts at both ends, each is eased, and neither takes over the other", async () => {
+    const s0: Part = {
+      kind: "harbour",
+      end: "start",
+      xteLimit: 0,
+      coordinates: [at(0, 0), at(0, -300)]
+    };
+    const mid: Part = {
+      kind: "route",
+      xteLimit: 30,
+      coordinates: [at(0, -300), at(3000, -300), at(3000, 0)]
+    };
+    const e0: Part = {
+      kind: "harbour",
+      end: "end",
+      xteLimit: 0,
+      coordinates: [at(3000, 0), at(3300, 0)]
+    };
+    const { parts } = await ease({ obstacles: [] }, [s0, mid, e0]);
+    expect(parts.map((p) => p.kind)).toEqual(["harbour", "route", "harbour"]);
+    expect(parts[0]?.coordinates[0]).toEqual(at(0, 0));
+    expect(parts[2]?.coordinates[(parts[2]?.coordinates.length ?? 1) - 1]).toEqual(at(3300, 0));
+    expect(lengthOf(joined(parts))).toBeLessThan(lengthOf(joined([s0, mid, e0])) - 100);
   });
 });
