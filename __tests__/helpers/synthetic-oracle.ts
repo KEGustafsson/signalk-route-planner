@@ -191,24 +191,19 @@ function crossesLand(chart: Chart, a: [number, number], b: [number, number]): bo
       return off2 < c.r * c.r && from < to ? [[from, to]] : [];
     })
     .sort((p, q) => p[0] - q[0]);
-  const own = new Set<[number, number]>();
-  let reach = 0;
-  for (const s of over) {
-    if (s[0] > reach + 1e-9 || s[1] > OWN_LAND) {
-      break;
+  // Obstacles that overlap or touch are one stretch of land: an end owns it whole or not at all.
+  const runs: [number, number][] = [];
+  for (const [from, to] of over) {
+    const last = runs.at(-1);
+    if (last && from <= last[1] + 1e-9) {
+      last[1] = Math.max(last[1], to);
+    } else {
+      runs.push([from, to]);
     }
-    own.add(s);
-    reach = Math.max(reach, s[1]);
   }
-  reach = length;
-  for (const s of [...over].sort((p, q) => q[1] - p[1])) {
-    if (s[1] < reach - 1e-9 || length - s[0] > OWN_LAND) {
-      break;
-    }
-    own.add(s);
-    reach = Math.min(reach, s[0]);
-  }
-  return own.size < over.length;
+  const own = ([from, to]: [number, number]): boolean =>
+    (from <= 1e-9 && to <= OWN_LAND) || (to >= length - 1e-9 && length - from <= OWN_LAND);
+  return !runs.every(own);
 }
 
 /** The status of the leg a → b on `chart`, ignoring a chart marked not for navigation. */

@@ -118,6 +118,27 @@ describe("fallback", () => {
     expect(legVerdict(chart, at(-40, 20), at(40, 20), 10).flags).toEqual(["LAND"]);
   });
 
+  test("the test chart takes land that runs on from one obstacle into the next as one stretch", () => {
+    const one: Chart = { obstacles: [{ x: 0, y: 8, r: 9 }] };
+    const two: Chart = {
+      obstacles: [
+        { x: 0, y: 4, r: 5 },
+        { x: 0, y: 12, r: 5 }
+      ]
+    };
+    for (const chart of [one, two]) {
+      expect(legVerdict(chart, at(0, 0), at(0, 16), 1).flags).toContain("LAND_CROSSED");
+    }
+    // Two obstacles at a leg's own end, together within its reach, are still its own land.
+    const quay: Chart = {
+      obstacles: [
+        { x: 0, y: 2, r: 3 },
+        { x: 0, y: 6, r: 3 }
+      ]
+    };
+    expect(legVerdict(quay, at(0, 0), at(0, 40), 1).flags).toEqual(["LAND"]);
+  });
+
   test("a berth leg along a quay into uncharted water keeps NO_COVERAGE and is closed", () => {
     // The test oracle reports every flag a corridor meets, as the route check does.
     const chart: Chart = {
