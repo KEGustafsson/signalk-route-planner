@@ -18,6 +18,12 @@ const NEVER = new AbortController().signal;
 const FROM = tileAt(20.5, 120.5);
 const TO = tileAt(260.5, 130.5);
 
+/**
+ * A work budget no plan here reaches: the plan without the raster asks more of the chart for the
+ * same route, and under the default budget its refinement could stop short of the raster's.
+ */
+const UNBOUNDED = { ...DEFAULT_PLAN, maxWork: 20_000_000 };
+
 async function both(land: [number, number][], over: { xteLimit?: number; narrows?: boolean } = {}) {
   const run = async (raster: boolean) => {
     const api = tiledApi(land, raster);
@@ -26,7 +32,7 @@ async function both(land: [number, number][], over: { xteLimit?: number; narrows
       { from: FROM, to: TO, departure: NOW, speed: 3, xteLimit: 30, ...over },
       NEVER,
       NOW,
-      DEFAULT_PLAN
+      UNBOUNDED
     );
     return { r, api };
   };
@@ -79,7 +85,23 @@ describe("a plan with the session's raster", () => {
           }
         }
       ),
-      { numRuns: 12 }
+      {
+        numRuns: 12,
+        // Under the default budget the plan without the raster stopped refining short here.
+        examples: [
+          [
+            [
+              [199, 141, 24],
+              [185, 108, 22],
+              [136, 100, 11],
+              [99, 85, 16],
+              [98, 132, 21],
+              [192, 89, 20]
+            ],
+            true
+          ]
+        ]
+      }
     );
     expect(differing).toEqual([]);
   });
