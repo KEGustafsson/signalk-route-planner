@@ -66,6 +66,20 @@ describe("REST routes", () => {
     expect(mount().levels).toEqual(["readonly"]);
   });
 
+  test("/prepare answers as the plan's handler does: 503 without signalk-underkeel, 400 for a body no plan takes", async () => {
+    const f = mount();
+    const off = await f.call("POST", "/v1/prepare", { from: at(0, 0), to: at(5000, 0) });
+    expect(off).toMatchObject({
+      code: 503,
+      body: { errors: [expect.stringMatching(/signalk-underkeel/)] }
+    });
+    g[PLANNING_API] = syntheticApi({ obstacles: [] });
+    expect((await f.call("POST", "/v1/prepare", { from: [0, 0] })).code).toBe(400);
+    // A provider that prepares nothing has nothing to build: ready as it is.
+    const ready = await f.call("POST", "/v1/prepare", { from: at(0, 0), to: at(5000, 0) });
+    expect(ready).toEqual({ code: 200, body: { state: "ready" } });
+  });
+
   test("without signalk-underkeel: status off and /plan 503, both with the reason", async () => {
     const f = mount();
     expect((await f.call("GET", "/v1/status")).body).toMatchObject({

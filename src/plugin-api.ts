@@ -11,6 +11,7 @@ import type { PlanInput } from "./plan/plan";
 import { plan } from "./plan/plan";
 import type { Reach } from "./plan/prepare";
 import { leavingAtLeast, longTrip, Preparer, searchRegion, tripLimits } from "./plan/prepare";
+import { warmed } from "./plan/warm";
 import { WorkRate } from "./plan/work-rate";
 
 /** The REST handlers bound to the planning API signalk-underkeel publishes (plan §5). */
@@ -276,6 +277,34 @@ function inputOf(
   };
 }
 
+/** A request taken up: its trip as parsed, the planning API to plan it on, the plugin's stop. */
+interface Admitted {
+  req: PlanRequest;
+  found: PlanningApiV1;
+  stop: AbortSignal;
+}
+
+/** `body` as a plan request on a planning API that is ready, or the refusal of either. */
+function admitted(
+  clock: Clock,
+  running: () => AbortSignal | undefined,
+  body: unknown
+): Admitted | Reply {
+  const stop = running();
+  if (!stop) {
+    return { status: 503, body: { errors: ["plugin not started"] } };
+  }
+  const parsed = parsePlanRequest(body, clock.now());
+  if (!parsed.ok) {
+    return { status: 400, body: { errors: parsed.errors } };
+  }
+  const found = ready();
+  if (typeof found === "string") {
+    return { status: 503, body: { errors: [found] } };
+  }
+  return { req: parsed.value, found, stop };
+}
+
 export function apiFor(
   clock: Clock,
   running: () => AbortSignal | undefined,
@@ -339,26 +368,21 @@ export function apiFor(
       return { state: "ready", provider: api.provider, work: workStatus(base(), rate), defaults };
     },
     async plan(body: unknown, client: AbortSignal): Promise<Reply> {
-      const stop = running();
-      if (!stop) {
-        return { status: 503, body: { errors: ["plugin not started"] } };
+      const a = admitted(clock, running, body);
+      if ("status" in a) {
+        return a;
       }
-      const parsed = parsePlanRequest(body, clock.now());
-      if (!parsed.ok) {
-        return { status: 400, body: { errors: parsed.errors } };
-      }
-      const found = ready();
-      if (typeof found === "string") {
-        return { status: 503, body: { errors: [found] } };
-      }
-      const req = parsed.value;
       // A planning box underkeel releases between preparing it and a session on it (a build for
       // another trip, or the box around the vessel, replaced it) is prepared again, once.
-      let reply = await planOnce(found, req, stop, client);
+      let reply = await planOnce(a.found, a.req, a.stop, client);
       if (boxReleased(reply)) {
-        reply = await planOnce(found, req, stop, client);
+        reply = await planOnce(a.found, a.req, a.stop, client);
       }
       return reply;
+    },
+    prepare(body: unknown): Promise<Reply> {
+      const a = admitted(clock, running, body);
+      return "status" in a ? Promise.resolve(a) : warmed(a.found, a.req, a.stop, preparer, base());
     }
   };
 }

@@ -102,10 +102,11 @@ seamanship rules.
 
 Base `/plugins/signalk-route-planner/v1`, open to logged-in readonly users.
 
-| Route         | Answer                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------- |
-| `GET /status` | `{ state: "ready", provider, work, defaults }` or `{ state: "off", reason }`                  |
-| `POST /plan`  | 200 with the planned `route`, its `length`, `status` and the route check; 422 with a `reason` |
+| Route           | Answer                                                                                        |
+| --------------- | --------------------------------------------------------------------------------------------- |
+| `GET /status`   | `{ state: "ready", provider, work, defaults }` or `{ state: "off", reason }`                  |
+| `POST /plan`    | 200 with the planned `route`, its `length`, `status` and the route check; 422 with a `reason` |
+| `POST /prepare` | 200 or 202 with `state`: the chart index of the trip's region, asked for ahead of its plan    |
 
 A `/plan` body carries `from` and `to` as `[lon, lat]`, and optionally `departure` (ISO 8601),
 `speed` (m/s), `xteLimit` (m), `probability` and `draft` (m); unset options take
@@ -131,7 +132,10 @@ navigation lines when the route kept to them, Traficom's WFS depths when a leg c
 route that used neither lists none.
 
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
-`preparing: true` and a `Retry-After` header; ask again then. A region too large to build on the
+`preparing: true` and a `Retry-After` header; ask again then. `POST /prepare` with the same body
+starts that build without planning and answers at once (`state`: `ready`, `preparing`, or `none`
+for a trip no index is built ahead for); the panel asks it when you pick a route or a start, so
+the index is built while you choose the route's options. A region too large to build on the
 machine is 413 with underkeel's reason.
 
 A fairway narrower than the search can resolve is followed along its charted navigation line.

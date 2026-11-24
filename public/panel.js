@@ -167,6 +167,51 @@ async function write(routeId, route, coordinates, op) {
   return routeWrites.done(ticket);
 }
 
+/** The ends a plan of `route` runs between: from the boat when that start is picked. */
+function endsOf(route) {
+  return $("boat").checked ? P.fromBoat(P.endsOf(route.points), boat) : P.endsOf(route.points);
+}
+
+/** A route or start picked here is asked for ahead once the pick has stood this long, ms. */
+const PREPARE_AFTER_MS = 800;
+let prepareTimer;
+
+/**
+ * Asks the planner to prepare the chart index for the picked route's region ahead of its plan
+ * (`POST /prepare`). The first plan of a region waits for signalk-underkeel to download and
+ * build that index; asked for at the pick, it is built while the options are chosen. Only after
+ * a pick made here, never as the panel opens: the build downloads the region's depths. A planner
+ * without the route answers 404, and the plan asks for the index as before.
+ */
+function prepareAhead() {
+  clearTimeout(prepareTimer);
+  prepareTimer = setTimeout(() => {
+    void askAhead().catch((err) => console.warn("route planner prepare", err));
+  }, PREPARE_AFTER_MS);
+}
+
+async function askAhead() {
+  const routeId = select.value;
+  const params = paramsNow();
+  // A plan in progress asks for its index itself.
+  if (!routeId || button.disabled || params.errors.length > 0) {
+    return;
+  }
+  if ($("boat").checked && !P.hasPosition(boat)) {
+    return;
+  }
+  const ends = endsOf(await client.call("route.get", { routeId }));
+  if (!ends) {
+    return;
+  }
+  await fetch(`${P.API}/prepare`, {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(requestFor(ends, params))
+  });
+}
+
 async function planSelected(fallback = false) {
   const routeId = select.value;
   if (!routeId) {
@@ -192,7 +237,7 @@ async function planSelected(fallback = false) {
       return;
     }
     const route = await client.call("route.get", { routeId });
-    const ends = $("boat").checked ? P.fromBoat(P.endsOf(route.points), boat) : P.endsOf(route.points);
+    const ends = endsOf(route);
     if (!ends) {
       show("fail", "The route needs a start and a destination point.");
       return;
@@ -415,6 +460,9 @@ async function loadDefaults() {
 }
 
 button.addEventListener("click", () => void planSelected());
+for (const picked of [select, $("boat"), $("first")]) {
+  picked.addEventListener("change", prepareAhead);
+}
 lowest.addEventListener("click", () => void planSelected(true));
 $("paramsToggle").addEventListener("click", () => {
   const open = $("paramsBody").hidden;

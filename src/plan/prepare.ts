@@ -386,6 +386,11 @@ export class Preparer {
 
   constructor(private readonly waitMs = PREPARE_WAIT_MS) {}
 
+  /** Whether an index is being built for some trip. */
+  get busy(): boolean {
+    return this.builds.size > 0;
+  }
+
   /**
    * A build that serves the trip, else a new one for it: for its snug region, or with `reach`
    * "whole" for the whole search region.

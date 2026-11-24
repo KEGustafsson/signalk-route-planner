@@ -168,6 +168,12 @@ All notable changes to signalk-route-planner are documented here.
   the REST API.
 - Field trials, `npm run trial`: Turku to Nauvo on the Traficom WFS and Miami from sea on NOAA
   ENC cells, each checked against its recorded expectation.
+- `POST /prepare` starts the index of a trip's region ahead of its plan and answers at once
+  (`ready`, `preparing` or `none`); the panel asks it when a route or a start is picked, so
+  signalk-underkeel builds the index while the route's options are chosen. With Plan pressed
+  10 s after the pick, the first plan of a 13 nm trip's region came 14 s after the press where
+  it takes 25 s from the press alone. Nothing is asked for as the panel opens, for a trip
+  planned in a corridor, or while another index is built.
 
 ### Fixed
 

@@ -13,6 +13,11 @@ export interface ApiProvider {
   status(): unknown;
   /** `signal` aborts when the client goes away. */
   plan(body: unknown, signal: AbortSignal): Promise<Reply>;
+  /**
+   * Starts the index a plan of the same body would wait for, and answers at once (`plan/warm.ts`).
+   * What it starts runs on past the request.
+   */
+  prepare(body: unknown): Promise<Reply>;
 }
 
 type Registrar = {
@@ -101,7 +106,10 @@ function fail(res: Response, err: unknown, log: (message: string) => void): void
   }
 }
 
-/** Reads and plans are open to readonly users: planning writes nothing on the server. */
+/**
+ * Reads, plans and an index asked for ahead of a plan are open to readonly users: a plan writes
+ * nothing on the server, and the index either asks for is signalk-underkeel's own.
+ */
 export function registerRoutes(
   router: RouterLike,
   api: ApiProvider,
@@ -116,6 +124,12 @@ export function registerRoutes(
     res.on("close", () => client.abort(new Error("client disconnected")));
     readJsonBody(req)
       .then((body) => api.plan(body, client.signal))
+      .then((reply) => send(res, reply))
+      .catch((err: unknown) => fail(res, err, log));
+  });
+  r.post(`${API_BASE}/prepare`, (req: Request, res: Response) => {
+    readJsonBody(req)
+      .then((body) => api.prepare(body))
       .then((reply) => send(res, reply))
       .catch((err: unknown) => fail(res, err, log));
   });
