@@ -62,7 +62,9 @@ All notable changes to signalk-route-planner are documented here.
   time. A route no way leaving the region could be cheaper than stands (its price its length and
   the narrows weight on its narrows legs); any other, a route priced by more than that (a risk
   weight, preference lines, alternatives, a fallback) and a
-  refusal for want of a way are planned again in the whole search region. Before any build, an
+  refusal for want of a way are planned again in the whole search region. When the machine
+  refuses the larger region's build (413), the smaller region's answer is kept, so that route
+  had no search past the smaller region. Before any build, an
   index signalk-underkeel holds already that covers the trip's ends is planned on (its `held`).
 - The plugin's debug log says when a plan is planned again in a larger region, and what the
   plan in the smaller one came to.
