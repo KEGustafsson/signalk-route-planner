@@ -789,6 +789,19 @@ is missing or the index is not ready, and with `preparing: true` and `Retry-Afte
 underkeel builds the trip's planning box (§4.2). Reply 413 when the trip's region is too large
 for underkeel to build on the machine.
 
+`POST /plugins/signalk-route-planner/v1/prepare` takes a `/plan` body and starts what a plan of
+it would wait for first, the index of the trip's region held, read back or built (§4.2), without
+planning (`src/plan/warm.ts`). It answers at once, without waiting for the build: 200
+`{ "state": "ready" }` when an index serves the trip, 202 `{ "state": "preparing" }` while one is
+built for it, 200 `{ "state": "none" }` when nothing is started for it (its ends at one point,
+or further apart than `maxDistance`: a corridor's survey and band are minutes of downloads, not
+begun for a route only looked at), and `/plan`'s 400, 413 and 503 otherwise. The build runs on
+past the request, as a plan's does, and the plan that follows waits for the same build. While
+one trip's build runs no other trip's is started ahead, and that trip is answered `none`:
+underkeel builds one index at a time, and a second would hold back the plan of the first. The
+panel asks once a route or a start picked in it has stood a moment, never as it opens: the
+build downloads the region's depths.
+
 ## 6. Performance budget
 
 Raspberry Pi 4 is the reference. One plan may do at least the plugin's work budget setting, by
