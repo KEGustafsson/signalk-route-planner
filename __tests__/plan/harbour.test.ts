@@ -3,6 +3,7 @@ import { haversine } from "../../src/foundation/geo";
 import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
 import { joined } from "../../src/plan/proof";
+import { WORK_LIMIT } from "../../src/plan/search";
 import type { Chart, Circle } from "../helpers/synthetic-oracle";
 import { at, legStatus, legVerdict, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
@@ -210,6 +211,16 @@ describe("harbour stage", () => {
     const tight = await planFrom(at(20, 0), { ...HARBOUR, maxWork: Math.floor(used * 0.6) });
     expect(tight.r.status).toBe(422);
     expect(tight.body.reason).toMatch(/work limit/);
+  });
+
+  test("a harbour stage that runs out of work refuses with the work limit itself", async () => {
+    const full = await planFrom(at(20, 0));
+    const used = (full.body as unknown as { work: number }).work;
+    // At 70 % the main search finishes and the harbour stage at the start runs out.
+    const tight = await planFrom(at(20, 0), { ...HARBOUR, maxWork: Math.floor(used * 0.7) });
+    expect(tight.api.sessions).toHaveLength(2);
+    expect(tight.r.status).toBe(422);
+    expect(tight.body.reason).toBe(WORK_LIMIT);
   });
 
   test("the harbour legs are proved from the time the boat reaches them", async () => {

@@ -199,6 +199,23 @@ describe("a second look at a route's ends", () => {
     });
   });
 
+  test("a look that finds its way with the work past the limit refuses the plan", async () => {
+    // The checks after a search may take its work past what it was given.
+    const out = await secondLook(
+      found(detour, 1_000),
+      () => Promise.resolve(found(straightIn, 600)),
+      {
+        maxWork: 1_500,
+        narrow: 1
+      }
+    );
+    expect(out).toMatchObject({
+      ok: false,
+      refusal: { reason: WORK_LIMIT, work: 1_600, squares: 20 },
+      work: 1_600
+    });
+  });
+
   test("cuts parts at a vertex of theirs", () => {
     const parts: Part[] = [
       { kind: "route", coordinates: [at(0, 0), at(100, 0), at(200, 0)] },

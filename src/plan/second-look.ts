@@ -121,15 +121,16 @@ export async function secondLook(
       return again;
     }
     work += again.work;
-    if (again.ok) {
-      squares += again.squares;
-      parts = spliced(parts, again.parts, at, end, c.narrow);
-      continue;
+    squares += again.ok ? again.squares : again.refusal.squares;
+    // A look found its way and the work past the limit with it, as the checks after a search
+    // may take it, or ran out: the plan reached its limit either way.
+    if (work >= c.maxWork || (!again.ok && again.refusal.reason === WORK_LIMIT)) {
+      const unverified = again.ok ? 0 : again.refusal.unverified;
+      const refusal = { ok: false as const, reason: WORK_LIMIT, direct: found.direct, squares };
+      return { ok: false, refusal: { ...refusal, unverified, work }, direct: found.direct, work };
     }
-    squares += again.refusal.squares;
-    if (again.refusal.reason === WORK_LIMIT) {
-      const refusal = { ...again.refusal, reason: WORK_LIMIT, work, squares };
-      return { ok: false, refusal, direct: found.direct, work };
+    if (again.ok) {
+      parts = spliced(parts, again.parts, at, end, c.narrow);
     }
   }
   return { ...found, parts, work, squares };

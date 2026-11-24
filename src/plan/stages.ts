@@ -155,7 +155,10 @@ async function harbours(
     squares += h.value.squares;
     if ("refused" in h.value) {
       const what = end === "start" ? "start" : "destination";
-      const reason = `${o.reason}; the harbour stage found no way out from the ${what} at xte ${st.opts.harbourXte} m: ${h.value.refused}`;
+      // Out of work, the plan says so as every stage does; no way out says where.
+      const reason = /work limit/.test(h.value.refused)
+        ? WORK_LIMIT
+        : `${o.reason}; the harbour stage found no way out from the ${what} at xte ${st.opts.harbourXte} m: ${h.value.refused}`;
       return { ok: false, refusal: { ...o, reason, work, squares }, direct: o.direct, work };
     }
     ends[end] = {
