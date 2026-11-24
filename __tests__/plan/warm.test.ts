@@ -88,13 +88,26 @@ describe("an index asked for ahead of its plan", () => {
     await warmed(p.api, TRIP, NEVER, preparer, DEFAULT_PLAN, 5);
     const other = { from: at(0, 20_000), to: at(5000, 20_000) };
     const r = await warmed(p.api, other, NEVER, preparer, DEFAULT_PLAN, 5);
-    expect(r).toEqual({ status: 202, body: { state: "preparing" } });
+    expect(r).toEqual({ status: 200, body: { state: "none" } });
     expect(p.calls).toHaveLength(1);
     // Once it is built the next is asked for.
     p.settle();
     await flush();
     await warmed(p.api, other, NEVER, preparer, DEFAULT_PLAN, 5);
     expect(p.calls).toHaveLength(2);
+  });
+
+  test("the trip being built joins its build, and is ready once it is built", async () => {
+    const p = preparing(syntheticApi({ obstacles: [] }));
+    const preparer = new Preparer(60_000);
+    await warmed(p.api, TRIP, NEVER, preparer, DEFAULT_PLAN, 5);
+    const again = await warmed(p.api, TRIP, NEVER, preparer, DEFAULT_PLAN, 5);
+    expect(again).toEqual({ status: 202, body: { state: "preparing" } });
+    const joined = warmed(p.api, TRIP, NEVER, preparer, DEFAULT_PLAN, 1000);
+    await flush();
+    p.settle();
+    expect(await joined).toEqual({ status: 200, body: { state: "ready" } });
+    expect(p.calls).toHaveLength(1);
   });
 
   test("a trip no plan asks an index for starts nothing: one point, or past maxDistance", async () => {

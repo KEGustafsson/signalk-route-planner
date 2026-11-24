@@ -180,8 +180,9 @@ let prepareTimer;
  * Asks the planner to prepare the chart index for the picked route's region ahead of its plan
  * (`POST /prepare`). The first plan of a region waits for signalk-underkeel to download and
  * build that index; asked for at the pick, it is built while the options are chosen. Only after
- * a pick made here, never as the panel opens: the build downloads the region's depths. A planner
- * without the route answers 404, and the plan asks for the index as before.
+ * a pick made here, never as the panel opens: the build downloads the region's depths. An older
+ * planner has no `/prepare`; the plan then asks for the index as before. The answer is not read:
+ * the plan that follows waits for the build, or asks for it, either way.
  */
 function prepareAhead() {
   clearTimeout(prepareTimer);
@@ -190,7 +191,10 @@ function prepareAhead() {
   }, PREPARE_AFTER_MS);
 }
 
+let askedAhead = 0;
+
 async function askAhead() {
+  const asked = ++askedAhead;
   const routeId = select.value;
   const params = paramsNow();
   // A plan in progress asks for its index itself.
@@ -201,7 +205,8 @@ async function askAhead() {
     return;
   }
   const ends = endsOf(await client.call("route.get", { routeId }));
-  if (!ends) {
+  // A pick made while the route was read is asked for by its own timer.
+  if (!ends || asked !== askedAhead) {
     return;
   }
   await fetch(`${P.API}/prepare`, {

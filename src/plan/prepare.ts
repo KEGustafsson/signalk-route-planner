@@ -391,6 +391,13 @@ export class Preparer {
     return this.builds.size > 0;
   }
 
+  /** Whether an index being built serves the trip `from`–`to`: a request for it joins that build. */
+  building(from: LonLat, to: LonLat, draft = COARSE_DRAFT): boolean {
+    const least = tripRegion(from, to);
+    const trip = tripKey(from, to, draft);
+    return [...this.builds].some((b) => serves(b, least, trip));
+  }
+
   /**
    * A build that serves the trip, else a new one for it: for its snug region, or with `reach`
    * "whole" for the whole search region.

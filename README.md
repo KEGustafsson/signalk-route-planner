@@ -134,7 +134,7 @@ route that used neither lists none.
 While signalk-underkeel builds the chart index for a trip's region, `/plan` answers 503 with
 `preparing: true` and a `Retry-After` header; ask again then. `POST /prepare` with the same body
 starts that build without planning and answers at once (`state`: `ready`, `preparing`, or `none`
-for a trip no index is built ahead for); the panel asks it when you pick a route or a start, so
+for a trip no index is built ahead for, as while another trip's is built); the panel asks it when you pick a route or a start, so
 the index is built while you choose the route's options. A region too large to build on the
 machine is 413 with underkeel's reason.
 

@@ -6,9 +6,9 @@ import type { Preparer } from "./prepare";
 
 /**
  * The index of a trip's region asked for ahead of its plan (`POST /prepare`, plan §5). The first
- * plan of a region waits for signalk-underkeel to download and build that region's index, 25 s
- * for a 13 nm trip on a Jetson Orin. The panel asks for it as soon as a route is picked, so the
- * build runs while the route's options are chosen, and the plan waits for what is left of it.
+ * plan of a region waits for signalk-underkeel to download and build that region's index. The
+ * panel asks for it as soon as a route is picked, so the build runs while the route's options
+ * are chosen, and the plan waits for what is left of it.
  */
 
 /** How long `warmed` waits for an index before it answers that one is being built, ms. */
@@ -32,13 +32,13 @@ const waited = (ms: number): Promise<"waiting"> =>
 /**
  * Starts what a plan of `trip` would wait for first: an index its provider `found` holds, reads
  * back from disk or builds for the trip's region, as `Preparer.forTrip` asks for it. Answers
- * within `waitMs`: 200 `ready` when an index serves the trip, 202 `preparing` while one is built,
- * the provider's refusal as it gives it. Nothing is started, and the answer is `none`, for a
- * trip a plan asks no index for: its ends at one point, or further apart than `maxDistance` (a
- * trip that far is planned in a corridor, whose survey and band take minutes to download: not
- * begun for a route only looked at). Nor while another build runs, which is answered
- * `preparing`: signalk-underkeel builds one index at a time, and a second one asked for ahead
- * would hold back the plan of the first.
+ * within `waitMs`: 200 `ready` when an index serves the trip, 202 `preparing` while one is built
+ * for it, the provider's refusal as it gives it. Nothing is started, and the answer is `none`,
+ * for a trip a plan asks no index for: its ends at one point, or further apart than
+ * `maxDistance` (a trip that far is planned in a corridor, whose survey and band take minutes to
+ * download: not begun for a route only looked at). Nor while another trip's index is built:
+ * signalk-underkeel builds one index at a time, and a second one asked for ahead would hold back
+ * the plan of the first. A request for the trip being built joins its build.
  */
 export async function warmed(
   found: PlanningApiV1,
@@ -52,8 +52,8 @@ export async function warmed(
   if (!(dist >= 1 && dist <= opts.maxDistance)) {
     return reply(200, "none");
   }
-  if (preparer.busy) {
-    return reply(202, "preparing");
+  if (preparer.busy && !preparer.building(trip.from, trip.to, trip.draft)) {
+    return reply(200, "none");
   }
   const asked = preparer
     .forTrip(found, trip.from, trip.to, stop, trip.draft)
