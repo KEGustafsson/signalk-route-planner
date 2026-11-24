@@ -120,8 +120,9 @@ All notable changes to signalk-route-planner are documented here.
   `routePlan` in the `navigationSafety` services, and `npm run trial:panel` runs the panel in
   Chromium on the field trials' charts.
 - Planning past the chart box: when signalk-underkeel serves `prepare`, `/plan` asks it for an
-  index of the whole search region, or of the trip's least region (both ends with the search's
-  least margin and a harbour stage around them) when that is too large to build: the chart box
+  index of the trip's snug region, then the whole search region when the plan may be beaten
+  past it (above), or of the trip's least region (both ends with the search's least margin and
+  a harbour stage around them) when the region asked for is too large to build: the chart box
   around the vessel when it covers the region, else a planning box underkeel builds. While the
   build runs past a short wait, `/plan` answers 503 with `preparing: true` and `Retry-After`.
   The panel plans again while the build continues, then asks to plan again later if it is still
