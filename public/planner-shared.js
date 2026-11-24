@@ -244,6 +244,7 @@
   /** What each flag the route check gives a leg says, for the leg table. */
   const FLAG_NOTES = {
     LAND: "touches land",
+    LAND_CROSSED: "crosses land",
     AIR_DRAFT: "a bridge or overhead cable too low for the mast",
     CLEARANCE_UNKNOWN: "a bridge or cable whose clearance is not known",
     CLEARANCE_RISE_ASSUMED: "a bridge passed on an assumed rise of the water",

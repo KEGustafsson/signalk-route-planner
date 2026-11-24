@@ -4,7 +4,7 @@ import { DEFAULT_PLAN } from "../../src/plan/options";
 import { plan } from "../../src/plan/plan";
 import { joined } from "../../src/plan/proof";
 import type { Chart, Circle } from "../helpers/synthetic-oracle";
-import { at, legStatus, syntheticApi, xy } from "../helpers/synthetic-oracle";
+import { at, legStatus, legVerdict, syntheticApi, xy } from "../helpers/synthetic-oracle";
 
 /**
  * The harbour stage and berth legs (plan §4.1): an end in a harbour narrower than the
@@ -56,7 +56,46 @@ async function planFrom(from: LonLat, opts = HARBOUR, closed: Chart["closed"] = 
   return { r, body: r.body as Body, api, chart };
 }
 
+/**
+ * A slot 16 m wide along y = 0, closed at both ends, between a wall south of it and a
+ * breakwater 8 m wide north of it, with open sea north of the breakwater. The harbour corridor,
+ * 10 m each side, fits nowhere in the slot: the nearest water the check passes is 26 m north of
+ * its middle, behind the breakwater.
+ */
+function slot(): Circle[] {
+  const land: Circle[] = [];
+  for (let x = 0; x <= 600; x += 4) {
+    land.push({ x, y: 12, r: 4 }, { x, y: -48, r: 40 });
+  }
+  land.push({ x: -40, y: 0, r: 40 }, { x: 640, y: 0, r: 40 });
+  return land;
+}
+
 describe("harbour stage", () => {
+  test("a berth leg is not taken through a breakwater to the water behind it", async () => {
+    const chart: Chart = { obstacles: slot() };
+    const from = at(300, 0);
+    // The stub a berth leg would be: 30 m north, through the breakwater, to water that passes.
+    const through = at(300, 30);
+    expect(legStatus(chart, through, at(300, 200), 10)).toBe("ok");
+    expect(haversine(from, through)).toBeLessThanOrEqual(DEFAULT_PLAN.berthMetres);
+    expect(legVerdict(chart, from, through, 10).flags).toEqual(["LAND", "LAND_CROSSED"]);
+    for (const fallback of [false, true]) {
+      const r = await plan(
+        syntheticApi(chart),
+        { from, to: at(300, 400), departure: NOW, speed: 3, xteLimit: 30, fallback },
+        NEVER,
+        NOW,
+        HARBOUR
+      );
+      const body = r.body as Body;
+      // Refused, with the reason: the slot has no way out the check passes or may cross.
+      expect(r.status).toBe(422);
+      expect(body.reason).toMatch(/no water the route check passes within 500 m of the start/);
+      expect(body.reason).toMatch(/LAND/);
+    }
+  });
+
   test("an end in a narrow inlet is planned out at the harbour corridor, then the route", async () => {
     const { r, body, api, chart } = await planFrom(at(20, 0));
     expect(r.status).toBe(200);

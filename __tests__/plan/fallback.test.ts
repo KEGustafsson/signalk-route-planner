@@ -97,6 +97,23 @@ describe("fallback", () => {
     }
   });
 
+  test("a leg whose own line crosses land is no berth leg, and nothing the fallback crosses", () => {
+    expect(berthable({ flags: ["LAND", "LAND_CROSSED"] })).toBe(false);
+    expect(berthable({ flags: ["LAND", "LAND_CROSSED", "NOT_FOR_NAVIGATION"] })).toBe(false);
+    expect(crossable({ flags: ["LAND_CROSSED"] })).toBe(false);
+  });
+
+  test("the test chart flags a line through land, not one that leaves the land at its end", () => {
+    const chart: Chart = { obstacles: [{ x: 0, y: 30, r: 6 }] };
+    // Across the obstacle, and from alongside it through it.
+    expect(legVerdict(chart, at(0, 0), at(0, 60), 10).flags).toEqual(["LAND", "LAND_CROSSED"]);
+    expect(legVerdict(chart, at(0, 22), at(0, 60), 10).flags).toEqual(["LAND", "LAND_CROSSED"]);
+    // From alongside it, away; from on its edge, out; past it with the corridor on it.
+    expect(legVerdict(chart, at(0, 22), at(0, -20), 10).flags).toEqual(["LAND"]);
+    expect(legVerdict(chart, at(0, 26), at(0, -20), 10).flags).toEqual(["LAND"]);
+    expect(legVerdict(chart, at(-40, 20), at(40, 20), 10).flags).toEqual(["LAND"]);
+  });
+
   test("a berth leg along a quay into uncharted water keeps NO_COVERAGE and is closed", () => {
     // The test oracle reports every flag a corridor meets, as the route check does.
     const chart: Chart = {

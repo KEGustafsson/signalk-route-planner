@@ -23,6 +23,11 @@ All notable changes to signalk-route-planner are documented here.
 - Harbour stage: an end in a harbour narrower than the corridor is planned out to open water at
   a 10 m corridor, each part proved at its own corridor; a point alongside a quay leaves by a
   berth leg, marked in the reply and the panel.
+- No leg goes through land. With signalk-underkeel 0.8.0, land narrower than a chart tile is
+  land in the Traficom WFS depths (a breakwater at Pargas read as water charted 0 m, and the
+  lowest-risk route left the harbour through it), and a leg whose own line crosses land is
+  flagged `LAND_CROSSED`: a berth leg may touch its quay (`LAND`) and is never taken through a
+  breakwater to the water behind it. The panel's leg table reads "crosses land".
 - Narrows: the main search runs at the harbour corridor, and water narrower than the request's
   corridor costs twice as much per metre unless it lies on a charted fairway line, so a route
   takes a sound or a fairway where the way round costs more and keeps the request's corridor

@@ -24,8 +24,8 @@ export const UNVERIFIED_WEIGHT = 100;
 /**
  * The only flags the fallback crosses: they say how the depth was charted or how the
  * water level was taken, not that the water is closed. Any other flag closes the square:
- * `LAND`, `NO_COVERAGE`, `BOX_TOO_LARGE` (never queried), `TOO_LONG_FOR_ONE_LEG` (never
- * checked) and any flag not listed here, such as an entry-prohibited area (`ENTRY_PROHIBITED`),
+ * `LAND`, `LAND_CROSSED` (a leg's own line over land), `NO_COVERAGE`, `BOX_TOO_LARGE` (never
+ * queried), `TOO_LONG_FOR_ONE_LEG` (never checked) and any flag not listed here, such as an entry-prohibited area (`ENTRY_PROHIBITED`),
  * a traffic lane crossed the wrong way (`TSS_WRONG_WAY`, AGENTS.md invariant 4), or a bridge
  * or overhead cable too low for the boat or of unknown clearance (`AIR_DRAFT`,
  * `CLEARANCE_UNKNOWN`).
@@ -54,6 +54,8 @@ export function crossable(v: Pick<Verdict, "flags">): boolean {
 /**
  * True when a berth leg may carry this verdict: it lies alongside the quay, so `LAND` is
  * expected, but any other flag the fallback may not cross (no chart, a hard rule) closes it.
+ * So does `LAND_CROSSED`, signalk-underkeel's flag of a leg whose own line lies over land past
+ * the land at its ends: a berth leg leaves its quay, it does not go through a breakwater.
  */
 export function berthable(v: Pick<Verdict, "flags">): boolean {
   return v.flags.every((f) => f === "LAND" || CROSSABLE.has(f));

@@ -150,7 +150,10 @@ passage narrower than it is planned at the harbour corridor (above), in parts th
 
 An end in a harbour narrower than the corridor (a guest harbour in a river, a marina) is planned
 out to open water in a harbour stage at the harbour corridor, and a point alongside a quay leaves
-by a short berth leg the reply marks (`berths`, and `underway` for the status of every other leg).
+by a short berth leg the reply marks (`berths`, and `underway` for the status of every other leg). A
+berth leg may touch its quay (the route check's `LAND`); a leg whose own line crosses land
+(`LAND_CROSSED`, signalk-underkeel 0.8.0) is no berth leg and no leg of any route, so a boat
+behind a breakwater is routed round it or refused with the reason.
 
 The plan is the route passable now: each stretch is checked at the water the boat meets there,
 leaving at the departure at its speed, so a bar the tide covers while you cross it is used though
