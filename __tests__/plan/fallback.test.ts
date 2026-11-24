@@ -79,6 +79,10 @@ describe("fallback", () => {
     for (const flag of ["UNASSESSED", "NOT_FOR_NAVIGATION", "DREDGED", "WATER_LEVEL_FALLBACK"]) {
       expect(crossable({ flags: [flag] })).toBe(true);
     }
+    // A leg under a bridge, held to the fairway gap's strip: the strict rule passes it, and a
+    // lowest-risk route that takes it is not refused for it.
+    expect(crossable({ flags: ["SWEPT", "NOT_FOR_NAVIGATION", "FAIRWAY_GAP"] })).toBe(true);
+    expect(berthable({ flags: ["LAND", "FAIRWAY_GAP"] })).toBe(true);
     for (const flag of [
       "LAND",
       "NO_COVERAGE",

@@ -2,7 +2,7 @@ import type { LonLat } from "../foundation/geo";
 import { haversine } from "../foundation/geo";
 import type { Verdict } from "../oracle/contract";
 import type { PassRule } from "./passes";
-import { passes } from "./passes";
+import { DESCRIBES, passes } from "./passes";
 import type { Priced, Shortcut } from "./pull";
 import type { QuadNode, QuadTree } from "./quadtree";
 
@@ -31,19 +31,14 @@ export const UNVERIFIED_WEIGHT = 100;
  * `CLEARANCE_UNKNOWN`).
  */
 const CROSSABLE = new Set([
-  "SWEPT",
   "UNASSESSED",
-  "DREDGED",
-  "LIVECHART_ADJUSTED",
   "NOT_FOR_NAVIGATION",
   "WATER_LEVEL_FALLBACK",
-  // Named by the route check and changing no status: a traffic lane, which a leg is held to
+  // Named by the route check and changing no status (`passes.ts`): swept or dredged water, a
+  // leg held to a fairway gap's strip under a bridge, a traffic lane, which a leg is held to
   // when it crosses it, restricted areas that only ask for care, and a clearance passed on the
   // rise signalk-underkeel allows where it cannot relate it to the water level.
-  "TRAFFIC_LANE",
-  "CLEARANCE_RISE_ASSUMED",
-  "ENTRY_RESTRICTED",
-  "AREA_TO_BE_AVOIDED"
+  ...DESCRIBES
 ]);
 
 /** True when the fallback may cross water with this verdict. */

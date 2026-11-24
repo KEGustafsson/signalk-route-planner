@@ -28,6 +28,11 @@ All notable changes to signalk-route-planner are documented here.
   lowest-risk route left the harbour through it), and a leg whose own line crosses land is
   flagged `LAND_CROSSED`: a berth leg may touch its quay (`LAND`) and is never taken through a
   breakwater to the water behind it. The panel's leg table reads "crosses land".
+- A lowest-risk route is no longer refused for a leg under a bridge held to the fairway gap's
+  strip (`FAIRWAY_GAP`): the strict rule passed such a leg and the fallback's list of flags it
+  may cross left it out, so a harbour at Pargas to Nauvo was refused with "1 of the 40 planned
+  legs cross water no route may cross". The list now takes every flag the strict rule reads as
+  describing the water.
 - Narrows: the main search runs at the harbour corridor, and water narrower than the request's
   corridor costs twice as much per metre unless it lies on a charted fairway line, so a route
   takes a sound or a fairway where the way round costs more and keeps the request's corridor
