@@ -53,7 +53,7 @@ describe("published package", () => {
     const images = [...readme.matchAll(/!\[[^\]]*\]\((?!https?:)([^)\s]+)\)/g)].map((m) => m[1]);
     expect(shots.length).toBeGreaterThan(0);
     const missing = [...shots, ...images]
-      .map((f) => path.normalize(String(f)).replace(/^\.\//, ""))
+      .map((f) => path.posix.normalize(String(f)))
       .filter((f) => !packed.includes(f));
     expect(missing).toEqual([]);
   });
