@@ -8,6 +8,12 @@ limit plus half the boat's beam (with signalk-underkeel 0.7.0, plus its **Least 
 setting instead), scored by P(UKC < 0) from the chart's survey quality, the water level forecast,
 draft and waves. A plan reads no GNSS: position error is underkeel's look-ahead's, underway.
 
+![The route planner panel in Freeboard-SK with a route planned from Gullkrona to Stenskär harbour](docs/images/route-planner.jpg)
+
+_Gullkrona to Stenskär harbour in the Nauvo archipelago, planned through the narrow channels for a
+0.9 m draft. Chart: Traficom S-57 WMS, CC BY 4.0; depths: Traficom INSPIRE WFS, not for
+navigational purposes, so every leg is `unverified`._
+
 **Advisory only.** A plan is a suggestion written into your route as an unsaved change. Check
 every leg on an official chart before you sail it. The plugin never sends autopilot or steering
 commands.
@@ -94,9 +100,7 @@ costs less and follows the fairway through a sound where it does not. The legs y
 not pass are checked at the harbour corridor (`xteLimit: 0`) and named in the panel: keep to the
 fairway there. A request with `narrows: false` turns this off.
 
-`docs/DEVELOPMENT-PLAN.md` describes the design and the milestones that follow: planning past
-the chart box, waiting for the tide, risk-weighted alternatives, air draft under bridges and
-seamanship rules.
+`docs/DEVELOPMENT-PLAN.md` describes the design and each milestone (R1–R5).
 
 ## REST API
 

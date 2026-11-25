@@ -42,4 +42,19 @@ describe("published package", () => {
     }
     expect(packed.filter((f) => /^(src|scripts|__tests__|\.claude)\//.test(f))).toEqual([]);
   });
+
+  // The App Store loads screenshots and README images from the published tarball.
+  test("ships every App Store screenshot and README image", () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, "package.json"), "utf8")) as {
+      signalk?: { screenshots?: string[] };
+    };
+    const shots = pkg.signalk?.screenshots ?? [];
+    const readme = fs.readFileSync(path.join(ROOT, "README.md"), "utf8");
+    const images = [...readme.matchAll(/!\[[^\]]*\]\((?!https?:)([^)\s]+)\)/g)].map((m) => m[1]);
+    expect(shots.length).toBeGreaterThan(0);
+    const missing = [...shots, ...images]
+      .map((f) => path.posix.normalize(String(f)))
+      .filter((f) => !packed.includes(f));
+    expect(missing).toEqual([]);
+  });
 });

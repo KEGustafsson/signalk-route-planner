@@ -6,7 +6,8 @@
   "files": [
     "lib/",
     "public/",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "docs/images/route-planner.jpg"
   ],
   "keywords": [
     "signalk-node-server-plugin",
@@ -14,7 +15,10 @@
     "signalk-category-chart-plotters"
   ],
   "signalk": {
-    "displayName": "Safe-Water Route Planner"
+    "displayName": "Safe-Water Route Planner",
+    "screenshots": [
+      "./docs/images/route-planner.jpg"
+    ]
   },
   "signalk-plugin-enabled-by-default": false,
   "scripts": {
