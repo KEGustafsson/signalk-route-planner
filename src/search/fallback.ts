@@ -198,10 +198,17 @@ export function costShortcut(
     sums.push((sums[k] as number) + haversine(a, b) * per);
   });
   const total = sums[sums.length - 1] as number;
+  // Pulling asks `accept` and then `score` of the same shortcut: priced once.
+  let last: { v: Verdict; i: number; j: number; price: number } | undefined;
   const own = (v: Verdict, i: number, j: number): number => {
+    if (last?.v === v && last.i === i && last.j === j) {
+      return last.price;
+    }
     const a = path[i] as LonLat;
     const b = path[j] as LonLat;
-    return haversine(a, b) * priced(v, a, b);
+    const price = haversine(a, b) * priced(v, a, b);
+    last = { v, i, j, price };
+    return price;
   };
   return {
     accept: (v, i, j) => own(v, i, j) <= (sums[j] as number) - (sums[i] as number) + 1e-6,

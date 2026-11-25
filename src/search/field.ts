@@ -130,16 +130,20 @@ export class Field {
         passes({ status, risk: -Infinity, flags }, this.rule);
       return { ok: at("ok"), unverified: at("unverified") };
     });
-    const classes = new Map<number, number>();
+    // Each cell's class by its byte and flag set, told once: -1 while not yet told.
+    const classes = new Int16Array(256 * Math.max(1, sets.length)).fill(-1);
     for (let j = 0; j < r.rows; j++) {
       for (let i = 0; i < r.cols; i++) {
         const k = j * r.cols + i;
         const byte = r.cells[k] as number;
         const set = r.flags[k] as number;
-        let c = classes.get(byte * 256 + set);
-        if (c === undefined) {
+        const at = set * 256 + byte;
+        let c = classes[at] ?? -1;
+        if (c < 0) {
           c = classOf(byte, sets[set]);
-          classes.set(byte * 256 + set, c);
+          if (at < classes.length) {
+            classes[at] = c;
+          }
         }
         out[j * BLOCK + i] = c;
       }

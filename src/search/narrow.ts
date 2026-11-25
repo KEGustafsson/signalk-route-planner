@@ -4,6 +4,7 @@ import type { Session } from "../oracle/contract";
 import type { PassRule } from "./passes";
 import { passes } from "./passes";
 import { fieldOf } from "./field";
+import { IdMap } from "./id-map";
 import type { QuadNode, QuadTree } from "./quadtree";
 import { MAX_BOX_KM2 } from "./quadtree";
 
@@ -34,8 +35,8 @@ export function narrowIn(
   rule: PassRule,
   c: { margin: number; weight: number; fairway?: (n: QuadNode) => boolean }
 ): Narrow {
-  const seen = new Map<number, boolean>();
-  const onLine = new Map<number, boolean>();
+  const seen = new IdMap<boolean>();
+  const onLine = new IdMap<boolean>();
   const { fairway } = c;
   const field = fieldOf(session, rule);
   return {

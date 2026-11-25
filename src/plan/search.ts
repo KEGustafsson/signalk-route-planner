@@ -347,10 +347,19 @@ async function searchTree(
       tree,
       path,
       (n) => mode.weight?.(n) ?? 1,
-      (v, a, b) =>
-        verdictWeight(v, how.rule, { fallback, cost }) +
-        (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0) +
-        (narrow ? narrow.weight * narrowShare(narrow, tree, a, b, stop) : 0),
+      (v, a, b) => {
+        const base = verdictWeight(v, how.rule, { fallback, cost });
+        // A leg the mode may not cross costs Infinity whatever lies along it: the squares it
+        // crosses, often an island's, are left unasked.
+        if (!Number.isFinite(base)) {
+          return base;
+        }
+        return (
+          base +
+          (pref ? pref.weight * offShare(pref, tree.units(a), tree.units(b), tree) : 0) +
+          (narrow ? narrow.weight * narrowShare(narrow, tree, a, b, stop) : 0)
+        );
+      },
       cost
     );
     return { priced };
