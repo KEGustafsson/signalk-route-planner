@@ -16,6 +16,7 @@
   ],
   "signalk": {
     "displayName": "Safe-Water Route Planner",
+    "appIcon": "./public/icon.svg",
     "requires": [
       "signalk-underkeel"
     ],

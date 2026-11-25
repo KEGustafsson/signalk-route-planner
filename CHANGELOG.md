@@ -186,7 +186,8 @@ All notable changes to signalk-route-planner are documented here.
   planned in a corridor, or while another index is built.
 - The App Store lists signalk-underkeel as required (`signalk.requires` in `package.json`): its
   install with dependencies installs it too. signalk-charts-provider-simple and Freeboard-SK are
-  listed as recommended (`signalk.recommends`).
+  listed as recommended (`signalk.recommends`). Its App Store icon (`signalk.appIcon`) is the route
+  keeping to a deep channel through chart depth bands (`public/icon.svg`).
 
 ### Fixed
 
