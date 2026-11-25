@@ -16,6 +16,14 @@
   ],
   "signalk": {
     "displayName": "Safe-Water Route Planner",
+    "appIcon": "./public/icon.svg",
+    "requires": [
+      "signalk-underkeel"
+    ],
+    "recommends": [
+      "signalk-charts-provider-simple",
+      "@signalk/freeboard-sk"
+    ],
     "screenshots": [
       "./docs/images/route-planner.jpg"
     ]
