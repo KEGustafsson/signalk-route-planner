@@ -1,4 +1,5 @@
 import { Heap } from "./heap";
+import { IdMap } from "./id-map";
 import type { QuadNode, QuadTree } from "./quadtree";
 import { centre } from "./quadtree";
 
@@ -67,16 +68,16 @@ interface State {
   /** No square is queued whose lower bound on a path's length reaches this (`SearchLimits.bound`). */
   bound: number;
   /** Each square's length along its cheapest way in, units. */
-  len: Map<number, number>;
+  len: IdMap<number>;
   /** The estimate from a point, and a lower bound of it over a square not yet classified. */
   h: (p: XY) => number;
   hSquare: (n: QuadNode) => number;
-  g: Map<number, number>;
-  back: Map<number, { prev: QuadNode; portal: XY }>;
-  closed: Map<number, QuadNode>;
+  g: IdMap<number>;
+  back: IdMap<{ prev: QuadNode; portal: XY }>;
+  closed: IdMap<QuadNode>;
   open: Heap<QuadNode>;
   /** The priority each square was last queued at: an entry queued earlier is stale. */
-  queued: Map<number, number>;
+  queued: IdMap<number>;
 }
 
 /** A leaf's weight, 1 while it is not classified: a lower bound, so the queue order holds. */
@@ -193,14 +194,14 @@ export async function aStar(
     goal,
     greed: Math.max(1, limits.greed ?? 1),
     bound: limits.bound ?? Infinity,
-    len: new Map([[from.id, 0]]),
+    len: new IdMap([[from.id, 0]]),
     h,
     hSquare,
-    g: new Map([[from.id, 0]]),
-    back: new Map(),
-    closed: new Map(),
+    g: new IdMap([[from.id, 0]]),
+    back: new IdMap(),
+    closed: new IdMap(),
     open: new Heap<QuadNode>(),
-    queued: new Map([[from.id, h(start)]])
+    queued: new IdMap([[from.id, h(start)]])
   };
   if (dist(start, goal) >= st.bound) {
     return { found: false, reason: "unreachable", expanded: 0 };
@@ -252,7 +253,7 @@ function estimates(
     return { h: (p) => dist(p, goal), hSquare: (n) => toSquare(n, goal) };
   }
   const h = (p: XY): number => Math.max(dist(p, goal), guide(p));
-  const seen = new Map<number, number>();
+  const seen = new IdMap<number>();
   const hSquare = (n: QuadNode): number => {
     let v = seen.get(n.id);
     if (v === undefined) {
@@ -271,7 +272,7 @@ function weighing(limits: SearchLimits): {
 } {
   const of = limits.weight ?? ((n: QuadNode) => (n.state === "free" ? 1 : Infinity));
   // A classified leaf's weight does not change: told once, as each relaxation asks it again.
-  const kept = new Map<number, number>();
+  const kept = new IdMap<number>();
   const weight = (n: QuadNode): number => {
     if (n.state === "unknown" || n.state === "split") {
       return of(n);
@@ -289,7 +290,7 @@ function weighing(limits: SearchLimits): {
 function walkBack(
   end: QuadNode,
   from: QuadNode,
-  back: Map<number, { prev: QuadNode; portal: XY }>,
+  back: IdMap<{ prev: QuadNode; portal: XY }>,
   pos: (n: QuadNode) => XY
 ): XY[] {
   const points: XY[] = [pos(end)];

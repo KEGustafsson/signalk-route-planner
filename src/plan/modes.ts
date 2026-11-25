@@ -8,6 +8,7 @@ import type { Narrow } from "../search/narrow";
 import { narrowCost } from "../search/narrow";
 import type { Preferred, PreferredLine } from "../search/prefer";
 import { offLine, preferredIn } from "../search/prefer";
+import { IdMap } from "../search/id-map";
 import type { QuadNode, QuadTree } from "../search/quadtree";
 import type { PlanOptions } from "./options";
 
@@ -50,7 +51,7 @@ export function preferring(mode: Mode, pref: Preferred | undefined): Mode {
   if (!pref || !base) {
     return mode;
   }
-  const off = new Map<number, number>();
+  const off = new IdMap<number>();
   return {
     ...mode,
     fine: true,
