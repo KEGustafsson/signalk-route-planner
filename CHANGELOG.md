@@ -184,6 +184,9 @@ All notable changes to signalk-route-planner are documented here.
   10 s after the pick, the first plan of a 13 nm trip's region came 14 s after the press where
   it takes 25 s from the press alone. Nothing is asked for as the panel opens, for a trip
   planned in a corridor, or while another index is built.
+- The App Store lists signalk-underkeel as required (`signalk.requires` in `package.json`): its
+  install with dependencies installs it too. signalk-charts-provider-simple and Freeboard-SK are
+  listed as recommended (`signalk.recommends`).
 
 ### Fixed
 
