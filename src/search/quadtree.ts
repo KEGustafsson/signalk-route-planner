@@ -67,6 +67,8 @@ export interface TreeShape {
 export class QuadTree {
   readonly root: QuadNode;
   private nextId = 0;
+  /** Each square's parent, by its id: the root has none. */
+  private readonly parents: QuadNode[] = [];
   /** Squares classified so far. */
   classified = 0;
   /** Squares found unverified: one unit on a side, or past a corridor (`Session.within`). */
@@ -119,6 +121,9 @@ export class QuadTree {
       this.node(n.x, n.y + h, h),
       this.node(n.x + h, n.y + h, h)
     ];
+    for (const c of n.children) {
+      this.parents[c.id] = n;
+    }
   }
 
   /**
@@ -205,10 +210,11 @@ export class QuadTree {
   leaves(
     touches: (n: QuadNode) => boolean,
     classify = true,
-    stop: () => boolean = () => false
+    stop: () => boolean = () => false,
+    from: QuadNode = this.root
   ): QuadNode[] {
     const out: QuadNode[] = [];
-    const stack = [this.root];
+    const stack = [from];
     while (stack.length > 0 && !stop()) {
       const n = stack.pop() as QuadNode;
       if (!touches(n)) {
@@ -284,102 +290,124 @@ export class QuadTree {
   }
 
   /**
+   * The smallest square holding every square that touches `n`'s edge or corners: the first above
+   * `n` reaching past each of its edges, or the region's edge. Every square that touches `n` lies
+   * in it, as squares either nest or do not meet, so a walk from it finds what one from the root
+   * does; its ancestors are split already.
+   */
+  private around(n: QuadNode): QuadNode {
+    const side = this.shape.side;
+    const { x, y, size } = n;
+    const holds = (a: QuadNode): boolean =>
+      (a.x < x || x === 0) &&
+      (a.x + a.size > x + size || x + size === side) &&
+      (a.y < y || y === 0) &&
+      (a.y + a.size > y + size || y + size === side);
+    let a = n;
+    for (let p = this.parents[a.id]; p !== undefined; p = this.parents[a.id]) {
+      a = p;
+      if (holds(a)) {
+        break;
+      }
+    }
+    return a;
+  }
+
+  /**
    * Free leaves sharing an edge of positive length with `n`, with the shared edge's
-   * midpoint, and those meeting it at a corner only, with that corner.
+   * midpoint, and those meeting it at a corner only, with that corner: east, west, north and
+   * south, then the corners north-east, north-west, south-east and south-west, each side's in
+   * the tree's order. One walk down the tree finds them all: every square that touches `n`'s
+   * edge or corner, the ones a side or a corner is asked about, classified as needed.
    */
   neighbours(
     n: QuadNode,
     enter: (m: QuadNode) => boolean = isFree,
     classify = true
   ): { node: QuadNode; portal: [number, number] }[] {
-    const out: { node: QuadNode; portal: [number, number] }[] = [];
     const { x, y, size } = n;
-    const across = (lo: number, hi: number, a: number, b: number) =>
-      Math.max(lo, a) < Math.min(hi, b);
-    const sides: [(m: QuadNode) => boolean, (m: QuadNode) => [number, number]][] = [
-      // east, west, north, south
-      [
-        (m) => m.x <= x + size && x + size < m.x + m.size && across(y, y + size, m.y, m.y + m.size),
-        (m) => [x + size, mid(y, y + size, m.y, m.y + m.size)]
-      ],
-      [
-        (m) => m.x < x && x <= m.x + m.size && across(y, y + size, m.y, m.y + m.size),
-        (m) => [x, mid(y, y + size, m.y, m.y + m.size)]
-      ],
-      [
-        (m) => m.y <= y + size && y + size < m.y + m.size && across(x, x + size, m.x, m.x + m.size),
-        (m) => [mid(x, x + size, m.x, m.x + m.size), y + size]
-      ],
-      [
-        (m) => m.y < y && y <= m.y + m.size && across(x, x + size, m.x, m.x + m.size),
-        (m) => [mid(x, x + size, m.x, m.x + m.size), y]
-      ]
-    ];
+    const x1 = x + size;
+    const y1 = y + size;
+    const ring = this.leaves(
+      (m) => m.x <= x1 && x <= m.x + m.size && m.y <= y1 && y <= m.y + m.size,
+      classify,
+      undefined,
+      this.around(n)
+    );
     // Unclassified: a candidate the caller classifies when it gets to it.
-    const may = (m: QuadNode): boolean => (!classify && m.state === "unknown") || enter(m);
-    for (const [touches, portal] of sides) {
-      for (const m of this.leaves(touches, classify)) {
-        if (may(m) && m !== n) {
-          out.push({ node: m, portal: portal(m) });
+    const may = (m: QuadNode): boolean =>
+      m !== n && ((!classify && m.state === "unknown") || enter(m));
+    // East, west, north, south, then the corners: each in the walk's order.
+    const sides: Found[][] = [[], [], [], []];
+    const corners: (Found | undefined)[] = [];
+    for (const m of ring) {
+      if (may(m)) {
+        sideEntries(n, m, sides);
+        const c = cornerEntry(n, m);
+        if (c) {
+          corners[c.k] ??= c.found;
         }
       }
     }
-    return [...out, ...this.cornerNeighbours(n, may, classify)];
-  }
-
-  /**
-   * Free leaves that meet `n` at a corner only, entered through that corner. A
-   * diagonal channel one square wide is a chain of such squares. A path through the
-   * corner lies in the two squares, so every point within the corridor half-width of
-   * it lies in one of the two footprints their box verdicts cover.
-   */
-  private cornerNeighbours(
-    n: QuadNode,
-    enter: (m: QuadNode) => boolean,
-    classify: boolean
-  ): { node: QuadNode; portal: [number, number] }[] {
-    const out: { node: QuadNode; portal: [number, number] }[] = [];
-    for (const [dx, dy] of [
-      [1, 1],
-      [-1, 1],
-      [1, -1],
-      [-1, -1]
-    ] as const) {
-      const cx = dx > 0 ? n.x + n.size : n.x;
-      const cy = dy > 0 ? n.y + n.size : n.y;
-      const m = this.diagonal(cx, cy, dx, dy, classify);
-      if (m && enter(m)) {
-        out.push({ node: m, portal: [cx, cy] });
+    const out = sides.flat();
+    for (const c of corners) {
+      if (c) {
+        out.push(c);
       }
     }
     return out;
   }
+}
 
-  /** The leaf beyond corner (cx, cy) in direction (dx, dy), when it has that corner as its own. */
-  private diagonal(
-    cx: number,
-    cy: number,
-    dx: 1 | -1,
-    dy: 1 | -1,
-    classify: boolean
-  ): QuadNode | undefined {
-    const side = this.shape.side;
-    const px = cx + dx * 1e-6;
-    const py = cy + dy * 1e-6;
-    if (px < 0 || py < 0 || px > side || py > side) {
-      return undefined;
+type Found = { node: QuadNode; portal: [number, number] };
+
+const across = (lo: number, hi: number, a: number, b: number): boolean =>
+  Math.max(lo, a) < Math.min(hi, b);
+
+/**
+ * Leaf `m` added to each of `sides`, east, west, north and south of `n`, along which it shares
+ * an edge of positive length with `n`, entered at the shared edge's midpoint.
+ */
+function sideEntries(n: QuadNode, m: QuadNode, sides: Found[][]): void {
+  const { x, y } = n;
+  const x1 = x + n.size;
+  const y1 = y + n.size;
+  const mx1 = m.x + m.size;
+  const my1 = m.y + m.size;
+  if (across(y, y1, m.y, my1)) {
+    if (m.x <= x1 && x1 < mx1) {
+      sides[0]?.push({ node: m, portal: [x1, mid(y, y1, m.y, my1)] });
     }
-    const m = this.leaves(
-      (q) => px >= q.x && px < q.x + q.size && py >= q.y && py < q.y + q.size,
-      classify
-    )[0];
-    if (!m) {
-      return undefined;
+    if (m.x < x && x <= mx1) {
+      sides[1]?.push({ node: m, portal: [x, mid(y, y1, m.y, my1)] });
     }
-    const cornerX = dx > 0 ? m.x === cx : m.x + m.size === cx;
-    const cornerY = dy > 0 ? m.y === cy : m.y + m.size === cy;
-    return cornerX && cornerY ? m : undefined;
   }
+  if (across(x, x1, m.x, mx1)) {
+    if (m.y <= y1 && y1 < my1) {
+      sides[2]?.push({ node: m, portal: [mid(x, x1, m.x, mx1), y1] });
+    }
+    if (m.y < y && y <= my1) {
+      sides[3]?.push({ node: m, portal: [mid(x, x1, m.x, mx1), y] });
+    }
+  }
+}
+
+/**
+ * Leaf `m` when it meets `n` at a corner alone, its own, entered through it: `k` 0 to 3 for the
+ * corners north-east, north-west, south-east and south-west. A diagonal channel one square wide
+ * is a chain of such squares; a path through the corner lies in the two squares, so every point
+ * within the corridor half-width of it lies in one of the two footprints their box verdicts cover.
+ */
+function cornerEntry(n: QuadNode, m: QuadNode): { k: number; found: Found } | undefined {
+  const x1 = n.x + n.size;
+  const y1 = n.y + n.size;
+  const east = m.x === x1;
+  const north = m.y === y1;
+  if (!(east || m.x + m.size === n.x) || !(north || m.y + m.size === n.y)) {
+    return undefined;
+  }
+  const portal: [number, number] = [east ? x1 : n.x, north ? y1 : n.y];
+  return { k: (east ? 0 : 1) + (north ? 0 : 2), found: { node: m, portal } };
 }
 
 /** Midpoint of the overlap of [a0, a1] and [b0, b1]. */

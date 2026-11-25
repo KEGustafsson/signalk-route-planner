@@ -269,7 +269,20 @@ function weighing(limits: SearchLimits): {
   weight: (n: QuadNode) => number;
   enter: (n: QuadNode) => boolean;
 } {
-  const weight = limits.weight ?? ((n: QuadNode) => (n.state === "free" ? 1 : Infinity));
+  const of = limits.weight ?? ((n: QuadNode) => (n.state === "free" ? 1 : Infinity));
+  // A classified leaf's weight does not change: told once, as each relaxation asks it again.
+  const kept = new Map<number, number>();
+  const weight = (n: QuadNode): number => {
+    if (n.state === "unknown" || n.state === "split") {
+      return of(n);
+    }
+    let w = kept.get(n.id);
+    if (w === undefined) {
+      w = of(n);
+      kept.set(n.id, w);
+    }
+    return w;
+  };
   return { weight, enter: (n) => Number.isFinite(weight(n)) };
 }
 
